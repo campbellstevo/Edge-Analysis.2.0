@@ -81,7 +81,8 @@ def normalize_result_label(x:str)->str:
     if t=="early close (ended up being a win)": return "WIN"
     if t=="early close (ended up being a be)":  return "WIN"
     if t=="full tp":                            return "WIN"
-    if t in {"breakeven","break even","b/e"}:   return "BE"
+    if t=="win":                                return "WIN"
+    if t in {"breakeven","break even","b/e","be"}: return "BE"
     if t=="loss":                               return "LOSS"
     return ""
 

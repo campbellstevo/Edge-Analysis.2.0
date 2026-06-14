@@ -38,7 +38,7 @@ def load_live_df(token: Optional[str], dbid: Optional[str]) -> pd.DataFrame:
     schema = st.session_state.get("detected_schema", "unknown")
 
     # Apply template mapping for non-Salty schemas (SR schema still benefits from this)
-    if schema != "salty":
+    if schema not in ("salty", "mt5"):
         adapted, template_name = adapt_df(raw, mappings_dir="config/templates")
         df = adapted if template_name else raw
     else:

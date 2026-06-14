@@ -100,6 +100,12 @@ _SALTY_SIGNATURE_COLS = {
     "HTF/MTF Bias Strength", "Confirmation/Risk", "Double Confirmation",
     "+S (Execution)", "Did price hit full TP without you?",
 }
+# MT5 Trade Log schema (auto-imported from MetaTrader 5).
+# These columns are unique to the MT5 template (not in SR or Salty).
+_MT5_SIGNATURE_COLS = {
+    "R Multiple", "MAE (R)", "MFE (R)", "Position ID", "PnL (USD)",
+    "Open Time", "Close Time", "Lot Size", "Entry Price", "Exit Price", "Pips",
+}
 
 def detect_schema(df: pd.DataFrame) -> str:
     """
@@ -109,6 +115,9 @@ def detect_schema(df: pd.DataFrame) -> str:
     cols = set(df.columns)
     sr_hits    = len(cols & _SR_SIGNATURE_COLS)
     salty_hits = len(cols & _SALTY_SIGNATURE_COLS)
+    mt5_hits   = len(cols & _MT5_SIGNATURE_COLS)
+    if mt5_hits >= 3 and mt5_hits >= sr_hits and mt5_hits >= salty_hits:
+        return "mt5"
     if salty_hits >= 3 and salty_hits > sr_hits:
         return "salty"
     if sr_hits >= 3:
@@ -214,6 +223,33 @@ def normalise_salty_df(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+# -- MT5 Trade Log normalisation ----------------------------------------------
+_MT5_COLUMN_MAP = {
+    "Symbol":            "Pair",
+    "Entry Confluences": "Entry Confluence",
+    "PnL (USD)":         "PnL",
+    "Duration":          "Trade Duration",
+}
+
+def normalise_mt5_df(df: pd.DataFrame) -> pd.DataFrame:
+    """Rename MT5 columns that differ from the app's canonical names.
+    Date comes from "Open Time" and RR from numeric "R Multiple" (set in loader)."""
+    out = df.copy()
+    rename = {src: dst for src, dst in _MT5_COLUMN_MAP.items() if src in out.columns}
+    out = out.rename(columns=rename)
+
+    if "Result" in out.columns:
+        _fix = {"win": "Win", "loss": "Loss", "be": "BE", "breakeven": "BE"}
+        out["Result"] = out["Result"].map(
+            lambda v: _fix.get(str(v).strip().lower(), str(v).strip()) if pd.notna(v) else v
+        )
+
+    if "Session" in out.columns and "Session Norm" not in out.columns:
+        out["Session Norm"] = out["Session"]
+
+    return out
+
+
 # ── main loader ──────────────────────────────────────────────────────────────
 def load_trades_from_notion(token: str, database_id: str, page_size: int = 100) -> pd.DataFrame:
     client = Client(auth=token)
@@ -245,6 +281,11 @@ def load_trades_from_notion(token: str, database_id: str, page_size: int = 100) 
         # After normalisation, "Closed RR" came from "R Result"
         rr_source = ["Closed RR"]
         date_source = ["Date"]
+    elif schema == "mt5":
+        df = normalise_mt5_df(df)
+        # MT5 gives an EXACT numeric R via "R Multiple"; date from Open Time.
+        rr_source = ["R Multiple"]
+        date_source = ["Open Time", "Close Time"]
     else:
         # SR schema
         rr_source = RR_FIELDS
