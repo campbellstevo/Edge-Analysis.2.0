@@ -3261,9 +3261,12 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table):
     f_perf = _prep_perf_df(f)
     df_all_safe = df_all.copy() if df_all is not None else df_all
 
-    t_performance, t_setup, t_timing, t_psychology, t_externals, t_projections, t_refinements = st.tabs(
-        ["Performance", "Setup", "Timing", "Psychology", "Externals", "Projections", "Refinements"]
-    )
+    _labels = ["Performance", "Setup", "Timing", "Psychology", "Externals", "Projections", "Refinements"]
+    _show_mt5 = _get_schema() == "mt5"
+    if _show_mt5:
+        _labels.append("MT5 ⚡")
+    _tab_objs = st.tabs(_labels)
+    t_performance, t_setup, t_timing, t_psychology, t_externals, t_projections, t_refinements = _tab_objs[:7]
 
     # ── Tab 1: Performance ────────────────────────────────────────────────────
     with t_performance:
@@ -3315,3 +3318,9 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table):
     # ── Tab 7: Refinements ────────────────────────────────────────────────────
     with t_refinements:
         _refinements_tab(f_perf, df_all_safe, styler)
+
+    # Tab 8: MT5 analytics (only when the MT5 Trade Log is connected)
+    if _show_mt5:
+        with _tab_objs[7]:
+            from edge_analysis.ui.mt5_tabs import render_mt5_tab
+            render_mt5_tab(f_perf, df_all_safe, styler)
