@@ -1,0 +1,9 @@
+streamlit>=1.30
+pandas
+scipy
+numpy
+altair
+python-dateutil
+requests
+notion-client
+streamlit-js-eval

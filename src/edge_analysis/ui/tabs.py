@@ -1,0 +1,3315 @@
+from __future__ import annotations
+import numpy as np
+import pandas as pd
+import altair as alt
+import streamlit as st
+from pathlib import Path
+import re
+import os
+from datetime import time as dt_time, timedelta
+from zoneinfo import ZoneInfo
+
+from edge_analysis.ui.components import (
+    render_entry_model_table,
+    render_session_performance_table,
+    render_day_performance_table,
+    render_timeframe_table,
+)
+
+from edge_analysis.data.template_adapter import adapt_auto
+
+CONFLUENCE_OPTIONS = ["DIV", "Sweep", "DIV & Sweep"]
+
+# Psychology thresholds
+OVERTRADE_LIMIT = 3          # max trades per day before flagged
+REVENGE_WINDOW_MINS = 120    # minutes after a loss before next entry = revenge
+ASIA_WARN_THRESHOLD = 45.0   # % of trades in Asia before session alert fires
+
+# ── Schema helpers ────────────────────────────────────────────────────────────
+def _get_schema() -> str:
+    """Return detected schema: 'sr', 'salty', or 'unknown'."""
+    try:
+        import streamlit as st
+        return st.session_state.get("detected_schema", "sr")
+    except Exception:
+        return "sr"
+
+def _is_salty() -> bool:
+    return _get_schema() == "salty"
+
+def _unavailable(label: str) -> None:
+    """Show a consistent 'not available for this schema' message."""
+    st.markdown(
+        f'''<div style="background:#f8f8ff;border-left:4px solid #c4b5fd;border-radius:6px;
+padding:12px 16px;font-size:13px;color:#6b7280;margin:8px 0;">
+<b>{label}</b> — data not available for this Notion template.
+This section requires columns that are not present in the connected database.
+</div>''',
+        unsafe_allow_html=True,
+    )
+
+
+
+def _insight_box(body: str, kind: str = "info") -> None:
+    """Live-data insight callout. Always purple — kind only affects the prefix icon."""
+    icons = {"info": "", "warn": "⚠ ", "good": "✓ ", "bad": "⚠ "}
+    prefix = icons.get(kind, "")
+    st.markdown(
+        f'<div style="background:#f0ebff;border-left:4px solid #4800ff;border-radius:6px;'
+        f'padding:14px 18px;font-size:14px;line-height:1.8;margin:12px 0;">'
+        f'{prefix}{body}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _asset_label(name: str) -> str:
+    return "GOLD" if str(name) == "Gold" else str(name)
+
+
+# ─────────────────────────── Session/Date helpers ────────────────────────────
+def _extract_iso_from_notion(v):
+    try:
+        if isinstance(v, dict):
+            return v.get("start") or v.get("date") or v.get("timestamp") or v.get("name")
+        if isinstance(v, (list, tuple)) and v:
+            return _extract_iso_from_notion(v[0])
+    except Exception:
+        pass
+    return v
+
+
+def _coerce_datetime_series(df: pd.DataFrame, tz_name: str = "UTC"):
+    cand_single = [
+        "Date & Time", "Datetime", "Entry Datetime", "Opened At",
+        "Timestamp", "Created", "Created At", "Entry Time (UTC)", "Time & Date",
+    ]
+    cand_date = ["Date", "Trade Date", "Entry Date"]
+    cand_time = ["Time", "Trade Time", "Entry Time"]
+
+    for c in cand_single:
+        if c in df.columns:
+            s = df[c].map(_extract_iso_from_notion)
+
+            def _num_to_ts(x):
+                try:
+                    if x is None or (isinstance(x, float) and pd.isna(x)):
+                        return None
+                    if isinstance(x, (int, float)) and not isinstance(x, bool):
+                        x = int(x)
+                        if x > 10 ** 11:
+                            return pd.to_datetime(x, unit="ms", utc=True)
+                        return pd.to_datetime(x, unit="s", utc=True)
+                    return x
+                except Exception:
+                    return x
+
+            s = s.map(_num_to_ts)
+            s_dt = pd.to_datetime(s, utc=True, errors="coerce")
+            break
+    else:
+        s_dt = None
+
+    if s_dt is None:
+        dcol = next((c for c in cand_date if c in df.columns), None)
+        tcol = next((c for c in cand_time if c in df.columns), None)
+        if dcol and tcol:
+            s_date = pd.to_datetime(df[dcol].map(_extract_iso_from_notion), errors="coerce")
+            s_time = df[tcol].astype(str).str.strip().replace({"": "00:00"})
+            s_dt = pd.to_datetime(
+                s_date.dt.strftime("%Y-%m-%d") + " " + s_time, errors="coerce"
+            )
+
+    if s_dt is None:
+        dcol = next((c for c in cand_date if c in df.columns), None)
+        if dcol:
+            s_date = pd.to_datetime(df[dcol].map(_extract_iso_from_notion), errors="coerce")
+            s_dt = pd.to_datetime(s_date.dt.strftime("%Y-%m-%d") + " 00:00", errors="coerce")
+
+    if s_dt is None:
+        return None
+
+    try:
+        tz = ZoneInfo(str(tz_name or "UTC"))
+        if s_dt.dt.tz is None:
+            s_dt = s_dt.dt.tz_localize(tz).dt.tz_convert("UTC")
+        else:
+            s_dt = s_dt.dt.tz_convert("UTC")
+    except Exception:
+        if s_dt.dt.tz is None:
+            s_dt = s_dt.dt.tz_localize("UTC")
+        else:
+            s_dt = s_dt.dt.tz_convert("UTC")
+
+    return s_dt
+
+
+_SESSIONS = {
+    "Asia":     {"tz": ZoneInfo("Asia/Tokyo"),        "start": dt_time(9, 0),  "end": dt_time(18, 0)},
+    "London":   {"tz": ZoneInfo("Europe/London"),     "start": dt_time(8, 0),  "end": dt_time(17, 0)},
+    "New York": {"tz": ZoneInfo("America/New_York"),  "start": dt_time(8, 0),  "end": dt_time(17, 0)},
+}
+
+
+def _time_in_window(local_dt: pd.Timestamp, start: dt_time, end: dt_time) -> bool:
+    if pd.isna(local_dt):
+        return False
+    t = local_dt.timetz()
+    if start <= end:
+        return start <= t < end
+    return (t >= start) or (t < end)
+
+
+def _classify_session_market_local(ts_aware: pd.Timestamp) -> str | None:
+    if ts_aware is None or pd.isna(ts_aware):
+        return None
+    active = []
+    for name, cfg in _SESSIONS.items():
+        local = ts_aware.astimezone(cfg["tz"])
+        if _time_in_window(local, cfg["start"], cfg["end"]):
+            active.append(name)
+    if not active:
+        return "Other"
+    for winner in ["New York", "London", "Asia"]:
+        if winner in active:
+            return winner
+
+
+def _clean_session_value(v):
+    if v is None:
+        return None
+    s = str(v).strip()
+    if not s:
+        return None
+    sl = s.lower()
+    if "asia" in sl:
+        return "Asia"
+    if "london" in sl:
+        return "London"
+    if "new york" in sl or sl in {"ny", "ny session"}:
+        return "New York"
+    return s
+
+
+def _ensure_session_and_day(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
+    out = df.copy()
+
+    if "Session Norm" in out.columns and not out["Session Norm"].isna().all():
+        out["Session Norm"] = out["Session Norm"].map(_clean_session_value)
+        if "DayName" not in out.columns or out["DayName"].isna().all():
+            s_dt = _coerce_datetime_series(out, tz_name=os.getenv("EDGE_SESSIONS_TZ", "Australia/Sydney"))
+            if s_dt is not None:
+                try:
+                    local_tz = ZoneInfo(os.getenv("EDGE_LOCAL_TZ", "Australia/Sydney"))
+                    out["DayName"] = s_dt.dt.tz_convert(local_tz).dt.day_name()
+                except Exception:
+                    out["DayName"] = s_dt.dt.day_name()
+        return out
+
+    if "Session" in out.columns:
+        out["Session Norm"] = out["Session"].map(_clean_session_value)
+        if "DayName" not in out.columns or out["DayName"].isna().all():
+            s_dt = _coerce_datetime_series(out, tz_name=os.getenv("EDGE_SESSIONS_TZ", "Australia/Sydney"))
+            if s_dt is not None:
+                try:
+                    local_tz = ZoneInfo(os.getenv("EDGE_LOCAL_TZ", "Australia/Sydney"))
+                    out["DayName"] = s_dt.dt.tz_convert(local_tz).dt.day_name()
+                except Exception:
+                    out["DayName"] = s_dt.dt.day_name()
+            elif "Date" in out.columns:
+                dts = pd.to_datetime(out["Date"], errors="coerce")
+                out["DayName"] = dts.dt.day_name()
+        return out
+
+    s_dt_utc = _coerce_datetime_series(out, tz_name=os.getenv("EDGE_SESSIONS_TZ", "Australia/Sydney"))
+    if s_dt_utc is None:
+        out["Session Norm"] = None
+        if "DayName" not in out.columns:
+            out["DayName"] = None
+        return out
+
+    out["__ts_utc"] = s_dt_utc
+    out["Session Norm"] = out["__ts_utc"].map(_classify_session_market_local)
+    try:
+        local_tz = ZoneInfo(os.getenv("EDGE_LOCAL_TZ", "Australia/Sydney"))
+        out["DayName"] = out["__ts_utc"].dt.tz_convert(local_tz).dt.day_name()
+    except Exception:
+        out["DayName"] = out["__ts_utc"].dt.day_name()
+
+    return out.drop(columns=["__ts_utc"])
+
+
+# ── Completion-aware helper ───────────────────────────────────────────────────
+def _prep_perf_df(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
+    out = df.copy()
+    if "Is Complete" in out.columns:
+        out = out[out["Is Complete"] == True].copy()
+    if "Outcome Canonical" in out.columns:
+        if "Outcome" not in out.columns:
+            out["Outcome"] = out["Outcome Canonical"]
+        else:
+            mask_bad = ~out["Outcome"].isin(["Win", "BE", "Loss"])
+            out.loc[mask_bad, "Outcome"] = out.loc[mask_bad, "Outcome Canonical"]
+    if "Closed RR Num" in out.columns:
+        if "Closed RR" not in out.columns:
+            out["Closed RR"] = out["Closed RR Num"]
+        else:
+            mask_nan = out["Closed RR"].isna()
+            out.loc[mask_nan, "Closed RR"] = out["Closed RR Num"]
+    try:
+        out = _ensure_session_and_day(out)
+    except Exception:
+        pass
+    return out
+
+
+def outcome_rates_from(df):
+    if df.empty or "Outcome" not in df.columns:
+        return dict(total=0, counted=0, wins=0, bes=0, losses=0,
+                    win_rate=0.0, be_rate=0.0, loss_rate=0.0)
+    counted = df[df["Outcome"].isin(["Win", "BE", "Loss"])]
+    counted_n = len(counted)
+    wins = int(counted["Outcome"].eq("Win").sum())
+    bes = int(counted["Outcome"].eq("BE").sum())
+    losses = int(counted["Outcome"].eq("Loss").sum())
+    return dict(
+        total=len(df), counted=counted_n, wins=wins, bes=bes, losses=losses,
+        win_rate=round((wins / max(1, counted_n)) * 100.0, 2),
+        be_rate=round((bes / max(1, counted_n)) * 100.0, 2),
+        loss_rate=round((losses / max(1, counted_n)) * 100.0, 2),
+    )
+
+
+def _rr_stats(df: pd.DataFrame):
+    if df is None or df.empty or "Closed RR" not in df.columns:
+        return (None, None)
+    rr = pd.to_numeric(df["Closed RR"], errors="coerce").dropna()
+    if rr.empty:
+        return (None, None)
+    return (float(rr.sum()), float(rr.mean()))
+
+
+def generate_overall_stats(df: pd.DataFrame):
+    if df.empty:
+        return dict(total=0, wins=0, losses=0, bes=0, win_rate=0.0, loss_rate=0.0,
+                    be_rate=0.0, avg_rr=0.0, avg_pnl=0.0, total_pnl=0.0, unknown=0)
+    rates = outcome_rates_from(df)
+    unknown = rates["total"] - rates["counted"]
+    if {"Closed RR", "Outcome"} <= set(df.columns):
+        wins_only = df[df["Outcome"] == "Win"]
+        avg_rr = (float(wins_only["Closed RR"].mean())
+                  if not wins_only.empty and not wins_only["Closed RR"].isna().all() else 0.0)
+    else:
+        avg_rr = 0.0
+    avg_pnl = float(df["PnL"].mean()) if "PnL" in df.columns and not df["PnL"].isna().all() else 0.0
+    total_pnl = float(df["PnL"].sum()) if "PnL" in df.columns and not df["PnL"].isna().all() else 0.0
+    return dict(total=rates["total"], wins=rates["wins"], losses=rates["losses"], bes=rates["bes"],
+                win_rate=rates["win_rate"], loss_rate=rates["loss_rate"], be_rate=rates["be_rate"],
+                avg_rr=avg_rr, avg_pnl=avg_pnl, total_pnl=total_pnl, unknown=unknown)
+
+
+def _to_alt_values(df: pd.DataFrame):
+    if df is None or len(df) == 0:
+        return []
+    d = df.reset_index(drop=True).copy()
+    for c in d.columns:
+        col = d[c]
+        if pd.api.types.is_datetime64_any_dtype(col):
+            tmp = pd.to_datetime(col, errors="coerce")
+            if getattr(tmp.dt, "tz", None) is not None:
+                tmp = tmp.dt.tz_localize(None)
+            d[c] = tmp.dt.to_pydatetime()
+        elif pd.api.types.is_integer_dtype(col):
+            d[c] = col.apply(lambda v: None if pd.isna(v) else int(v))
+        elif pd.api.types.is_float_dtype(col):
+            d[c] = col.apply(lambda v: None if pd.isna(v) else float(v))
+        else:
+            d[c] = col.astype(object)
+    return d.to_dict(orient="records")
+
+
+def _ensure_entry_models_list(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
+    out = df.copy()
+    if "Entry Models List" in out.columns:
+        def _coerce_to_list(v):
+            if isinstance(v, (list, tuple)):
+                return list(v)
+            if pd.isna(v) or v == "":
+                return []
+            return [str(v)]
+        out["Entry Models List"] = out["Entry Models List"].apply(_coerce_to_list)
+        return out
+    lower_map = {str(c).strip().lower(): c for c in out.columns}
+    alt_col = None
+    for key in ("entry models", "entry model", "entry models list"):
+        if key in lower_map:
+            alt_col = lower_map[key]
+            break
+
+    def _split_models(x):
+        if isinstance(x, (list, tuple)):
+            return [str(i).strip() for i in x if str(i).strip()]
+        if pd.isna(x):
+            return []
+        s = str(x)
+        parts = [p.strip() for p in re.split(r"[;,/|+]", s) if p.strip()]
+        return parts if parts else ([] if s.strip() == "" else [s.strip()])
+
+    if alt_col:
+        out["Entry Models List"] = out[alt_col].apply(_split_models)
+    else:
+        out["Entry Models List"] = [[] for _ in range(len(out))]
+    return out
+
+
+def _ensure_instrument_column(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
+    out = df.copy()
+    lower_map = {str(c).strip().lower(): c for c in out.columns}
+
+    def pick(*names):
+        for n in names:
+            if n in lower_map:
+                return lower_map[n]
+        return None
+
+    if "Instrument" in out.columns:
+        alt = pick("pair", "symbol", "ticker", "market", "asset")
+        if alt is not None:
+            mask = out["Instrument"].isna() | (out["Instrument"].astype(str).str.strip() == "")
+            out.loc[mask, "Instrument"] = out.loc[mask, alt]
+        return out
+    alt = pick("instrument", "pair", "symbol", "ticker", "market", "asset")
+    if alt is not None:
+        out["Instrument"] = out[alt]
+    return out
+
+
+# ───────────────────────────── Early Close helpers ───────────────────────────
+
+def _parse_closed_rr_mid(val) -> float:
+    if pd.isna(val):
+        return np.nan
+    v = str(val).strip()
+    if v == "+0":
+        return 0.0
+    if v == "-1":
+        return -1.0
+    m = re.match(r"[+\-]?(\d+\.?\d*)-(\d+\.?\d*)", v)
+    if m:
+        lo, hi = float(m.group(1)), float(m.group(2))
+        mid = (lo + hi) / 2
+        return mid if not v.startswith("-") else -mid
+    m2 = re.match(r"([+\-]?\d+\.?\d*)", v)
+    if m2:
+        return float(m2.group(1))
+    return np.nan
+
+
+def _parse_targeted_rr_mid(val) -> float:
+    if pd.isna(val):
+        return np.nan
+    v = str(val).strip().upper().replace("RR", "").strip()
+    if v.endswith("+"):
+        return float(v.replace("+", "")) + 0.5
+    m = re.match(r"(\d+\.?\d*)-(\d+\.?\d*)", v)
+    if m:
+        return (float(m.group(1)) + float(m.group(2))) / 2
+    return np.nan
+
+
+# ───────────────────────────── Growth tab ────────────────────────────────────
+def _growth_tab(f: pd.DataFrame, df_all: pd.DataFrame, styler):
+    st.markdown('<div class="section">', unsafe_allow_html=True)
+
+    if f is None or f.empty:
+        st.info("No dated rows yet. Add some trades or adjust filters.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    g = f.copy()
+    date_col = None
+    if "Date" in g.columns:
+        date_col = "Date"
+    else:
+        for c in g.columns:
+            cl = str(c).strip().lower()
+            if cl == "date" or "date" in cl or "time" in cl:
+                date_col = c
+                break
+
+    if not date_col:
+        st.warning("No date-like column found in complete trades.")
+        st.info("No dated rows yet. Add some trades or adjust filters.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    g["__Date"] = g[date_col].astype(str).str.replace(r"\s*\(GMT.*\)$", "", regex=True)
+    g["__Date"] = pd.to_datetime(g["__Date"], errors="coerce")
+    g = g[g["__Date"].notna()].copy()
+    if g.empty:
+        with st.expander("Debug: date parsing", expanded=False):
+            try:
+                st.write("Sample raw values:", f[date_col].head(5).tolist())
+            except Exception:
+                pass
+        st.info("No dated rows yet. Add some trades or adjust filters.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    try:
+        if getattr(g["__Date"].dt, "tz", None) is not None:
+            g["__Date"] = g["__Date"].dt.tz_localize(None)
+    except Exception:
+        pass
+
+    if "PnL_from_RR" not in g.columns:
+        rr_col = "Closed RR Num" if "Closed RR Num" in g.columns else "Closed RR"
+        g["PnL_from_RR"] = g.get(rr_col, 0.0).fillna(0.0)
+
+    c1, _, _ = st.columns([1, 1, 2])
+    with c1:
+        bucket = st.selectbox("Time Bucket", ["Day", "Week", "Month"], index=1, key="growth_bucket")
+
+    g = g.sort_values("__Date").copy()
+    g_indexed = g.set_index("__Date")
+
+    if bucket == "Day":
+        eq_df = g_indexed.groupby(g_indexed.index.date)["PnL_from_RR"].sum().reset_index()
+        eq_df.columns = ["Bucket", "PnLBucket"]
+        eq_df["Bucket"] = pd.to_datetime(eq_df["Bucket"])
+        axis_fmt = "%b %d"
+    elif bucket == "Week":
+        eq_df = g_indexed["PnL_from_RR"].resample("W-MON", label="left", closed="left").sum().reset_index()
+        eq_df.columns = ["Bucket", "PnLBucket"]
+        axis_fmt = "%b %d"
+    else:
+        eq_df = g_indexed["PnL_from_RR"].resample("MS").sum().reset_index()
+        eq_df.columns = ["Bucket", "PnLBucket"]
+        axis_fmt = "%b %Y"
+
+    eq_df["CumPnL"] = eq_df["PnLBucket"].fillna(0).cumsum()
+
+    def _x_enc(fmt, ang=-45):
+        return alt.X("Bucket:T", title=None,
+                     axis=alt.Axis(format=fmt, labelAngle=ang, labelLimit=100,
+                                   labelOverlap=False, tickCount=8),
+                     scale=alt.Scale(nice=False, padding=0.02))
+
+    x_time = _x_enc(axis_fmt)
+    pnl_vals = _to_alt_values(eq_df[["Bucket", "CumPnL"]])
+
+    wr = g[["__Date", "Outcome"]].dropna()
+    wr = wr[wr["Outcome"].isin(["Win", "BE", "Loss"])]
+    wr_vals = []
+    if not wr.empty:
+        wr_indexed = wr.set_index("__Date")
+        if bucket == "Day":
+            wr_grouped = (wr_indexed.groupby(wr_indexed.index.date)
+                          .agg(trades=("Outcome", "count"), wins=("Outcome", lambda s: (s == "Win").sum()))
+                          .reset_index())
+            wr_grouped.columns = ["Bucket", "trades", "wins"]
+            wr_grouped["Bucket"] = pd.to_datetime(wr_grouped["Bucket"])
+        elif bucket == "Week":
+            wr_grouped = (wr_indexed.resample("W-MON", label="left", closed="left")
+                          .agg(trades=("Outcome", "count"), wins=("Outcome", lambda s: (s == "Win").sum()))
+                          .reset_index())
+            wr_grouped.columns = ["Bucket", "trades", "wins"]
+        else:
+            wr_grouped = (wr_indexed.resample("MS")
+                          .agg(trades=("Outcome", "count"), wins=("Outcome", lambda s: (s == "Win").sum()))
+                          .reset_index())
+            wr_grouped.columns = ["Bucket", "trades", "wins"]
+
+        wr_grouped["CumTrades"] = wr_grouped["trades"].cumsum()
+        wr_grouped["CumWins"] = wr_grouped["wins"].cumsum()
+        wr_grouped["Win %"] = np.where(
+            wr_grouped["CumTrades"] > 0,
+            (wr_grouped["CumWins"] / wr_grouped["CumTrades"]) * 100.0, 0.0)
+        wr_vals = _to_alt_values(
+            wr_grouped[["Bucket", "Win %"]].assign(**{"Win %": lambda d: d["Win %"].round(2)}))
+
+    c_left, c_right = st.columns(2)
+    with c_left:
+        st.markdown("### Cumulative PnL (RR)")
+        if pnl_vals:
+            area = (alt.Chart(alt.Data(values=pnl_vals)).mark_area(opacity=0.12, color="#4800ff")
+                    .encode(x=x_time, y=alt.Y("CumPnL:Q", title="Cumulative PnL (RR)")))
+            line = (alt.Chart(alt.Data(values=pnl_vals))
+                    .mark_line(strokeWidth=2, color="#4800ff", interpolate="linear")
+                    .encode(x=x_time, y="CumPnL:Q"))
+            st.altair_chart(styler(alt.layer(area, line).properties(height=320)),
+                            use_container_width=True)
+        else:
+            st.info("Not enough data for PnL chart.")
+    with c_right:
+        st.markdown("### Win Rate (%)")
+        if wr_vals:
+            line_color = "#0f172a" if st.session_state.get("ui_theme", "light") == "light" else "#e5e7eb"
+            xwr = _x_enc(axis_fmt)
+            line = (alt.Chart(alt.Data(values=wr_vals))
+                    .mark_line(strokeWidth=2, color=line_color, interpolate="linear")
+                    .encode(x=xwr,
+                            y=alt.Y("Win %:Q", title="Win Rate (%)", scale=alt.Scale(domain=[0, 100])))
+                    .properties(height=320))
+            st.altair_chart(styler(line), use_container_width=True)
+        else:
+            st.info("Not enough data for Win Rate chart.")
+
+    latest_wr = float(pd.DataFrame(wr_vals)["Win %"].dropna().iloc[-1]) if wr_vals else float("nan")
+    latest_eq = float(pd.DataFrame(pnl_vals)["CumPnL"].dropna().iloc[-1]) if pnl_vals else float("nan")
+    st.markdown(
+        f"<div class='muted'>Latest Win %: <b>{latest_wr:.2f}%</b> &nbsp;|&nbsp; "
+        f"Cumulative PnL: <b>{latest_eq:,.2f} R</b></div>",
+        unsafe_allow_html=True)
+
+    if not (pd.isna(latest_wr) or pd.isna(latest_eq)):
+        if latest_eq > 0 and latest_wr >= 30:
+            _insight_box(
+                f"Cumulative PnL is <b>+{latest_eq:,.1f}R</b> with a win rate of "
+                f"<b>{latest_wr:.1f}%</b>. System is profitable — protect the equity curve "
+                f"by respecting your weekly profit target and stepping away once it's hit.", "good")
+        elif latest_eq > 0 and latest_wr < 30:
+            _insight_box(
+                f"Cumulative PnL is positive at <b>+{latest_eq:,.1f}R</b> but win rate is "
+                f"<b>{latest_wr:.1f}%</b>. Profitability is driven by RR, not win rate — "
+                f"losing streaks will feel extended. Stick to the 3SL.", "warn")
+        elif latest_eq <= 0:
+            _insight_box(
+                f"Cumulative PnL is <b>{latest_eq:,.1f}R</b>. Review whether losses are "
+                f"systematic (wrong conditions, wrong session) or behavioural (overtrading, "
+                f"revenge). Check the Psychology tab for flags.", "bad")
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+# ── Account comparison cards ──────────────────────────────────────────────────
+def _account_comparison_tab(f: pd.DataFrame, styler):
+    st.markdown('<div class="section">', unsafe_allow_html=True)
+    st.markdown("### Account Comparison")
+
+    if f is None or f.empty:
+        st.info("No trades for current filters.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    lower_map = {str(c).strip().lower(): c for c in f.columns}
+    acct_col = lower_map.get("account") or lower_map.get("accounts") or lower_map.get("account name")
+    if acct_col is None:
+        st.info("No 'Account' column found in data.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    g = f.copy()
+    g["__Account"] = g[acct_col].astype(str).str.strip()
+    g = g[~g["__Account"].isin(["", "nan", "NaN", "None"])]
+    if g.empty:
+        st.info("No account values present.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    counted = g[g["Outcome"].isin(["Win", "BE", "Loss"])]
+    if counted.empty:
+        st.info("No counted outcomes for any account.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    rows = []
+    for acct, grp in counted.groupby("__Account"):
+        r = outcome_rates_from(grp)
+        net_rr, avg_rr = _rr_stats(grp)
+        rows.append(dict(
+            account=acct,
+            trades=len(grp),
+            win_rate=r["win_rate"],
+            be_rate=r["be_rate"],
+            loss_rate=r["loss_rate"],
+            net_pnl=net_rr or 0.0,
+            avg_rr=round(avg_rr, 2) if avg_rr is not None else 0.0,
+        ))
+
+    if not rows:
+        st.info("No account stats available.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    per_row = 3
+    for i in range(0, len(rows), per_row):
+        chunk = rows[i: i + per_row]
+        cols = st.columns(len(chunk))
+        for col, row in zip(cols, chunk):
+            net_fmt = f"+{row['net_pnl']:.2f}R" if row["net_pnl"] >= 0 else f"{row['net_pnl']:.2f}R"
+            with col:
+                st.markdown(f"""
+                    <div class='kpi'>
+                      <div class='label'>{row['account']}</div>
+                      <div class='value' style='color:#4800ff'>{row['trades']}</div>
+                      <div class='muted'>Trades</div>
+                      <div style='margin-top:8px'></div>
+                      <div class='muted'>Win % &nbsp;<b>{row['win_rate']:.1f}%</b></div>
+                      <div class='muted'>BE % &nbsp;<b>{row['be_rate']:.1f}%</b></div>
+                      <div class='muted'>Loss % &nbsp;<b>{row['loss_rate']:.1f}%</b></div>
+                      <div style='margin-top:8px'></div>
+                      <div class='muted'>Net PnL &nbsp;<b style='color:#4800ff'>{net_fmt}</b></div>
+                      <div class='muted'>Avg RR &nbsp;<b>{row['avg_rr']:.2f}R</b></div>
+                    </div>""", unsafe_allow_html=True)
+
+    if rows:
+        best_acct = max(rows, key=lambda r: r["win_rate"])
+        worst_acct = min(rows, key=lambda r: r["win_rate"])
+        net_total = sum(r["net_pnl"] for r in rows)
+        if len(rows) > 1 and best_acct["account"] != worst_acct["account"]:
+            _insight_box(
+                f"<b>{best_acct['account']}</b> leads with <b>{best_acct['win_rate']:.1f}%</b> win rate "
+                f"and <b>{best_acct['net_pnl']:+.1f}R</b> net. "
+                f"<b>{worst_acct['account']}</b> trails at <b>{worst_acct['win_rate']:.1f}%</b>. "
+                f"Combined net across all accounts: <b>{net_total:+.1f}R</b>.")
+        elif rows:
+            _insight_box(
+                f"<b>{rows[0]['account']}</b> — <b>{rows[0]['win_rate']:.1f}%</b> win rate, "
+                f"<b>{rows[0]['net_pnl']:+.1f}R</b> net PnL across {rows[0]['trades']} trades.")
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+# ── Early Close Analysis ──────────────────────────────────────────────────────
+def _early_close_tab(df: pd.DataFrame, styler):
+    st.markdown('<div class="section">', unsafe_allow_html=True)
+
+    EC_BE  = "Early Close (Ended up being a BE)"
+    EC_WIN = "Early Close (Ended up being a win)"
+
+    if df is None or df.empty or "Result" not in df.columns:
+        st.info("No early close data available.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    ec = df[df["Result"].isin([EC_BE, EC_WIN])].copy()
+
+    if ec.empty:
+        st.info("No early close trades found in the current data.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    ec["__closed_mid"]   = ec["Closed RR"].apply(_parse_closed_rr_mid)
+    ec["__targeted_mid"] = ec["Targeted RR"].apply(_parse_targeted_rr_mid)
+
+    be_group  = ec[ec["Result"] == EC_BE].copy()
+    win_group = ec[ec["Result"] == EC_WIN].copy()
+
+    be_group["__rr_diff"] = be_group["__closed_mid"]
+    win_group["__rr_diff"] = win_group["__closed_mid"] - win_group["__targeted_mid"]
+
+    be_n          = len(be_group)
+    win_n         = len(win_group)
+    be_captured   = float(be_group["__closed_mid"].sum())
+    be_net        = float(be_group["__rr_diff"].sum())
+    be_avg        = float(be_group["__rr_diff"].mean()) if be_n > 0 else 0.0
+    win_captured  = float(win_group["__closed_mid"].sum())
+    win_target    = float(win_group["__targeted_mid"].sum())
+    win_left      = float(win_group["__rr_diff"].sum())
+    win_avg       = float(win_group["__rr_diff"].mean()) if win_n > 0 else 0.0
+    net_impact    = be_net + win_left
+    efficiency    = (win_captured / win_target * 100) if win_target > 0 else 0.0
+
+    st.markdown("### Early Close Profitability")
+    st.caption(
+        "How much R your early close decisions saved vs. BE trades, "
+        "and how much you left on the table vs. win trades."
+    )
+
+    m1, m2, m3, m4, m5 = st.columns(5)
+    with m1:
+        st.markdown(f"<div class='kpi'><div class='label'>Early Close Trades</div>"
+                    f"<div class='value' style='color:#4800ff'>{be_n + win_n}</div>"
+                    f"<div class='muted'>{be_n} BE · {win_n} win</div></div>", unsafe_allow_html=True)
+    with m2:
+        st.markdown(f"<div class='kpi'><div class='label'>Saved vs BE</div>"
+                    f"<div class='value' style='color:#4800ff'>+{be_net:.1f}R</div>"
+                    f"<div class='muted'>avg +{be_avg:.1f}R per trade</div></div>", unsafe_allow_html=True)
+    with m3:
+        st.markdown(f"<div class='kpi'><div class='label'>Left on Table</div>"
+                    f"<div class='value' style='color:#4800ff'>{win_left:.1f}R</div>"
+                    f"<div class='muted'>of {win_target:.1f}R targeted</div></div>", unsafe_allow_html=True)
+    with m4:
+        net_color = "#4800ff"
+        st.markdown(f"<div class='kpi'><div class='label'>Net EC Impact</div>"
+                    f"<div class='value' style='color:{net_color}'>{net_impact:+.1f}R</div>"
+                    f"<div class='muted'>saved minus left on table</div></div>", unsafe_allow_html=True)
+    with m5:
+        st.markdown(f"<div class='kpi'><div class='label'>Win-Group Efficiency</div>"
+                    f"<div class='value' style='color:#4800ff'>{efficiency:.0f}%</div>"
+                    f"<div class='muted'>{win_captured:.1f}R of {win_target:.1f}R captured</div></div>", unsafe_allow_html=True)
+
+    st.divider()
+
+    # ── Cumulative R chart: your system vs held to full TP/BE ─────────────────
+    ec_chart = (
+        ec[["__closed_mid", "__targeted_mid", "Result", "Closed RR", "Targeted RR"]]
+        .dropna(subset=["__closed_mid", "__targeted_mid"])
+        .reset_index(drop=True)
+        .reset_index()
+        .rename(columns={"index": "i"})
+    )
+    ec_chart["Trade"] = ec_chart["i"] + 1
+
+    # Actual = what was captured
+    ec_chart["actual"] = ec_chart["__closed_mid"]
+
+    # Hypothetical = 0R if BE group, full targeted if win group
+    ec_chart["hypo"] = ec_chart.apply(
+        lambda r: 0.0 if EC_BE in str(r["Result"]) else r["__targeted_mid"], axis=1
+    )
+
+    ec_chart["actual_cum"] = ec_chart["actual"].cumsum()
+    ec_chart["hypo_cum"]   = ec_chart["hypo"].cumsum()
+
+    actual_vals = _to_alt_values(
+        ec_chart[["Trade", "actual_cum", "Closed RR", "Targeted RR", "Result"]]
+        .rename(columns={"actual_cum": "Cumulative R"})
+        .assign(Series="Your early close system")
+    )
+    hypo_vals = _to_alt_values(
+        ec_chart[["Trade", "hypo_cum", "Closed RR", "Targeted RR", "Result"]]
+        .rename(columns={"hypo_cum": "Cumulative R"})
+        .assign(Series="Held to full TP / BE")
+    )
+
+    if actual_vals and hypo_vals:
+        color_scale = alt.Scale(
+            domain=["Your early close system", "Held to full TP / BE"],
+            range=["#4800ff", "#e07b00"],
+        )
+        base_actual = alt.Chart(alt.Data(values=actual_vals))
+        base_hypo   = alt.Chart(alt.Data(values=hypo_vals))
+
+        line_actual = (
+            base_actual.mark_line(strokeWidth=2.5, point=alt.OverlayMarkDef(size=30))
+            .encode(
+                x=alt.X("Trade:Q", axis=alt.Axis(title="Early close trade #", tickMinStep=1)),
+                y=alt.Y("Cumulative R:Q", axis=alt.Axis(title="Cumulative R")),
+                color=alt.Color("Series:N", scale=color_scale, legend=alt.Legend(title=None, orient="top-left")),
+                tooltip=[
+                    alt.Tooltip("Trade:Q", title="Trade #"),
+                    alt.Tooltip("Series:N"),
+                    alt.Tooltip("Cumulative R:Q", title="Cumulative R", format=".1f"),
+                    alt.Tooltip("Closed RR:N", title="Closed RR"),
+                    alt.Tooltip("Targeted RR:N", title="Targeted RR"),
+                    alt.Tooltip("Result:N"),
+                ],
+            )
+        )
+        line_hypo = (
+            base_hypo.mark_line(strokeWidth=2.5, strokeDash=[6, 3], point=alt.OverlayMarkDef(size=30))
+            .encode(
+                x=alt.X("Trade:Q"),
+                y=alt.Y("Cumulative R:Q"),
+                color=alt.Color("Series:N", scale=color_scale, legend=alt.Legend(title=None, orient="top-left")),
+                tooltip=[
+                    alt.Tooltip("Trade:Q", title="Trade #"),
+                    alt.Tooltip("Series:N"),
+                    alt.Tooltip("Cumulative R:Q", title="Cumulative R", format=".1f"),
+                    alt.Tooltip("Closed RR:N", title="Closed RR"),
+                    alt.Tooltip("Targeted RR:N", title="Targeted RR"),
+                    alt.Tooltip("Result:N"),
+                ],
+            )
+        )
+
+        st.altair_chart(
+            styler((line_actual + line_hypo).properties(height=300).resolve_scale(color="shared")),
+            use_container_width=True,
+        )
+
+        final_actual = float(ec_chart["actual_cum"].iloc[-1])
+        final_hypo   = float(ec_chart["hypo_cum"].iloc[-1])
+        diff         = final_actual - final_hypo
+        diff_str     = f"+{diff:.1f}R" if diff >= 0 else f"{diff:.1f}R"
+        st.caption(
+            f"Solid = what you captured. Dashed = what holding to full TP/BE would have returned. "
+            f"Net difference: **{diff_str}** across {len(ec_chart)} early close trades."
+        )
+
+    st.divider()
+
+    if net_impact > 0:
+        verdict_bg     = "#f0ebff"
+        verdict_border = "#4800ff"
+        verdict_icon   = "✓"
+        verdict_body   = (
+            f"Your early close system is <b>net positive</b> at <b>+{net_impact:.1f}R</b>. "
+            f"Saving {be_net:.1f}R from BE trades outweighs the {abs(win_left):.1f}R left on "
+            f"the table from win trades. Win-group efficiency: <b>{efficiency:.0f}%</b> of "
+            f"targeted R captured."
+        )
+    else:
+        verdict_bg     = "#fff4e6"
+        verdict_border = "#e07b00"
+        verdict_icon   = "!"
+        verdict_body   = (
+            f"Your early close system is <b>net negative</b> at <b>{net_impact:.1f}R</b>. "
+            f"The {abs(win_left):.1f}R left on the table from win trades outweighs the "
+            f"{be_net:.1f}R saved from BE trades. "
+            f"Win-group efficiency: <b>{efficiency:.0f}%</b> of targeted R captured."
+        )
+
+    st.markdown(
+        f"""<div style="
+            background:{verdict_bg};
+            border-left:4px solid {verdict_border};
+            border-radius:6px;
+            padding:14px 18px;
+            font-size:14px;
+            line-height:1.7;
+        "><b>{verdict_icon}&nbsp;</b>{verdict_body}</div>""",
+        unsafe_allow_html=True,
+    )
+
+    if win_n > 0 and efficiency < 70:
+        _insight_box(
+            f"You're capturing only <b>{efficiency:.0f}%</b> of targeted R on winning early closes. "
+            f"Consider letting more winners run to weak structure before managing.", "warn")
+    elif be_n > 0 and be_avg > 1.5:
+        _insight_box(
+            f"Early close saves averaging <b>+{be_avg:.1f}R</b> per BE trade — "
+            f"meaningful edge. Keep logging so the pattern stays measurable.", "good")
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+# ── Psychology helpers ───────────────────────────────────────────────────────
+
+def _psych_session_alert(df: pd.DataFrame, styler) -> None:
+    st.markdown("### Session Redistribution")
+    sess_col = next((c for c in ["Session Norm", "Session"] if c in df.columns), None)
+    if sess_col is None:
+        st.info("No Session column found.")
+        return
+    g = df.copy()
+    g["__sess"] = g[sess_col].apply(_clean_session_value)
+    g = g[g["__sess"].notna()]
+    if g.empty:
+        st.info("No session data in current filters.")
+        return
+    total = len(g)
+    counts = g["__sess"].value_counts()
+    asia_n, london_n, ny_n = int(counts.get("Asia",0)), int(counts.get("London",0)), int(counts.get("New York",0))
+    asia_pct = round(asia_n/max(1,total)*100,1)
+    lon_pct  = round(london_n/max(1,total)*100,1)
+    ny_pct   = round(ny_n/max(1,total)*100,1)
+
+    def _swr(name):
+        sub = g[(g["__sess"]==name) & g["Outcome"].isin(["Win","BE","Loss"])]
+        return round(sub["Outcome"].eq("Win").sum()/max(1,len(sub))*100,1) if not sub.empty else None
+
+    asia_wr, london_wr, ny_wr = _swr("Asia"), _swr("London"), _swr("New York")
+
+    k1, k2, k3 = st.columns(3)
+    with k1:
+        col = "#ef4444" if asia_pct > ASIA_WARN_THRESHOLD else "#4800ff"
+        wr_s = f" · {asia_wr}% WR" if asia_wr is not None else ""
+        st.markdown(f"<div class='kpi'><div class='label'>Asia</div>"
+                    f"<div class='value' style='color:{col}'>{asia_pct}%</div>"
+                    f"<div class='muted'>{asia_n} trades{wr_s}</div></div>", unsafe_allow_html=True)
+    with k2:
+        wr_s = f" · {london_wr}% WR" if london_wr is not None else ""
+        st.markdown(f"<div class='kpi'><div class='label'>London</div>"
+                    f"<div class='value' style='color:#4800ff'>{lon_pct}%</div>"
+                    f"<div class='muted'>{london_n} trades{wr_s}</div></div>", unsafe_allow_html=True)
+    with k3:
+        wr_s = f" · {ny_wr}% WR" if ny_wr is not None else ""
+        st.markdown(f"<div class='kpi'><div class='label'>New York</div>"
+                    f"<div class='value' style='color:#4800ff'>{ny_pct}%</div>"
+                    f"<div class='muted'>{ny_n} trades{wr_s}</div></div>", unsafe_allow_html=True)
+
+    if asia_pct > ASIA_WARN_THRESHOLD and london_wr and asia_wr:
+        extra = round(asia_n*((london_wr-asia_wr)/100),1)
+        _insight_box(f"<b>Asia overweight</b> — {asia_pct}% of trades (threshold {ASIA_WARN_THRESHOLD}%). "
+                     f"London win rate <b>{london_wr}%</b> vs Asia <b>{asia_wr}%</b>. "
+                     f"Redistributing Asia trades to London = approx <b>+{extra} wins</b> this period.", "bad")
+    elif asia_pct > ASIA_WARN_THRESHOLD:
+        _insight_box(f"<b>Asia overweight</b> — {asia_pct}% of trades. Shift toward London open.", "warn")
+    else:
+        _insight_box(f"Session balance healthy — Asia at {asia_pct}%, within {ASIA_WARN_THRESHOLD}% threshold.", "good")
+
+    sess_data = [{"Session":n,"Trades":c,"Pct":p}
+                 for n,c,p in [("Asia",asia_n,asia_pct),("London",london_n,lon_pct),("New York",ny_n,ny_pct)] if c>0]
+    if sess_data:
+        cv = _to_alt_values(pd.DataFrame(sess_data))
+        bar = (alt.Chart(alt.Data(values=cv))
+               .mark_bar(color="#4800ff",opacity=0.8,cornerRadiusTopLeft=3,cornerRadiusTopRight=3)
+               .encode(x=alt.X("Session:N",sort=["Asia","London","New York"],axis=alt.Axis(title=None)),
+                       y=alt.Y("Pct:Q",axis=alt.Axis(title="% of trades")),
+                       tooltip=[alt.Tooltip("Session:N"),alt.Tooltip("Trades:Q"),
+                                alt.Tooltip("Pct:Q",format=".1f")]))
+        rule = (alt.Chart(alt.Data(values=[{"y":ASIA_WARN_THRESHOLD}]))
+                .mark_rule(color="#ef4444",strokeDash=[4,4],strokeWidth=1.5).encode(y="y:Q"))
+        st.altair_chart(styler(alt.layer(bar,rule).properties(height=180)),use_container_width=True)
+        st.markdown(f"<div class='muted'>Dashed line = {ASIA_WARN_THRESHOLD}% Asia threshold</div>",
+                    unsafe_allow_html=True)
+
+
+def _psych_mental_state_gate(df: pd.DataFrame, styler) -> None:
+    st.markdown("### Mental State Gate")
+    ms_col   = next((c for c in ["Mental State","Mental state","mental_state"] if c in df.columns), None)
+    bias_col = next((c for c in ["Execution/Bias","Execution / Bias","Bias"] if c in df.columns), None)
+    if ms_col is None:
+        st.info("No Mental State column found — add it to your Notion database.")
+        return
+    g = df.copy()
+    g["__ms"] = g[ms_col].astype(str).str.strip()
+    g = g[~g["__ms"].isin(["","nan","NaN","None"])]
+    if g.empty:
+        st.info("No mental state data.")
+        return
+    states, rows = ["Good","Okay","Bad"], []
+    for state in states:
+        sub = g[g["__ms"]==state]
+        if sub.empty: continue
+        cnt = sub[sub["Outcome"].isin(["Win","BE","Loss"])]
+        wr  = round(cnt["Outcome"].eq("Win").sum()/max(1,len(cnt))*100,1)
+        wb  = round(sub[bias_col].fillna("").str.contains("Wrong Bias").sum()/max(1,len(sub))*100,1) if bias_col else 0.0
+        rows.append({"State":state,"Trades":len(sub),"Win Rate":wr,"Wrong Bias %":wb})
+    if not rows:
+        st.info("No mental state stats available.")
+        return
+    for col, row in zip(st.columns(len(rows)), rows):
+        c = "#f59e0b" if row["State"]=="Okay" else "#16a34a" if row["State"]=="Good" else "#6b7280"
+        badge = " ⚠" if row["State"]=="Okay" else ""
+        wb_html = f'<div class="muted">Wrong bias: <b>{row["Wrong Bias %"]}%</b></div>' if bias_col else ""
+        with col:
+            st.markdown(f"<div class='kpi'><div class='label'>{row['State']}{badge}</div>"
+                        f"<div class='value' style='color:{c}'>{row['Win Rate']}%</div>"
+                        f"<div class='muted'>Win rate · {row['Trades']} trades</div>"
+                        f"{wb_html}</div>", unsafe_allow_html=True)
+    if bias_col and len(rows) >= 2:
+        ok = next((r for r in rows if r["State"]=="Okay"), None)
+        gd = next((r for r in rows if r["State"]=="Good"), None)
+        if ok and gd and ok["Wrong Bias %"] > gd["Wrong Bias %"]:
+            gap = round(ok["Wrong Bias %"]-gd["Wrong Bias %"],1)
+            _insight_box(f"<b>Okay is your hidden danger state.</b> Wrong bias is <b>{gap}% higher</b> "
+                         f"when feeling Okay vs Good ({ok['Wrong Bias %']}% vs {gd['Wrong Bias %']}%). "
+                         f"Sub-optimal mental state corrupts bias more than feeling bad. "
+                         f"Treat Okay days like Bad days — step back if you're not sharp.", "warn")
+    if rows and bias_col:
+        melted = pd.DataFrame(rows).melt(id_vars=["State","Trades"],
+                                         value_vars=["Win Rate","Wrong Bias %"],
+                                         var_name="Metric", value_name="Value")
+        cv = _to_alt_values(melted)
+        cs = alt.Scale(domain=["Win Rate","Wrong Bias %"],range=["#4800ff","#f59e0b"])
+        bar = (alt.Chart(alt.Data(values=cv)).mark_bar(opacity=0.85)
+               .encode(x=alt.X("State:N",sort=states,axis=alt.Axis(title=None)),
+                       y=alt.Y("Value:Q",axis=alt.Axis(title="%")),
+                       color=alt.Color("Metric:N",scale=cs,legend=alt.Legend(title=None,orient="top")),
+                       xOffset="Metric:N",
+                       tooltip=[alt.Tooltip("State:N"),alt.Tooltip("Metric:N"),
+                                alt.Tooltip("Value:Q",format=".1f"),alt.Tooltip("Trades:Q")])
+               .properties(height=200))
+        st.altair_chart(styler(bar),use_container_width=True)
+
+
+def _psych_bad_beat_tracker(df: pd.DataFrame) -> None:
+    st.markdown("### Bad Beat Tracker")
+    result_col = next((c for c in ["Result","result"] if c in df.columns), None)
+    if result_col is None:
+        st.info("No Result column found — bad beat tracking requires a Result field.")
+        return
+    g = df.copy()
+    bbs = g[g[result_col].astype(str).str.strip()=="Bad Beat"]
+    n_bb, total = len(bbs), len(g)
+    bb_pct = round(n_bb/max(1,total)*100,1)
+    recent = "—"
+    dcol = next((c for c in ["Date & Time","Day/Time/Date of Trade","Date","Datetime"] if c in g.columns), None)
+    if dcol and not bbs.empty:
+        try:
+            bd = pd.to_datetime(bbs[dcol].astype(str).str.replace(r"\s*\(GMT.*\)$","",regex=True),errors="coerce").dropna()
+            if not bd.empty: recent = bd.max().strftime("%d %b %Y")
+        except Exception: pass
+    scol = next((c for c in ["Session Norm","Session"] if c in g.columns), None)
+    by_sess: dict = {}
+    if scol and not bbs.empty:
+        for s, grp in bbs.groupby(bbs[scol].apply(_clean_session_value)):
+            if s: by_sess[s] = len(grp)
+    top_s = max(by_sess, key=by_sess.get) if by_sess else "—"
+    top_n = by_sess.get(top_s, 0)
+    k1, k2, k3 = st.columns(3)
+    with k1:
+        c = "#ef4444" if n_bb>=5 else "#f59e0b" if n_bb>=3 else "#4800ff"
+        st.markdown(f"<div class='kpi'><div class='label'>Total Bad Beats</div>"
+                    f"<div class='value' style='color:{c}'>{n_bb}</div>"
+                    f"<div class='muted'>{bb_pct}% of all trades</div></div>",unsafe_allow_html=True)
+    with k2:
+        st.markdown(f"<div class='kpi'><div class='label'>Most Recent</div>"
+                    f"<div class='value' style='color:#4800ff;font-size:18px'>{recent}</div>"
+                    f"<div class='muted'>last bad beat date</div></div>",unsafe_allow_html=True)
+    with k3:
+        st.markdown(f"<div class='kpi'><div class='label'>Worst Session</div>"
+                    f"<div class='value' style='color:#4800ff;font-size:18px'>{top_s}</div>"
+                    f"<div class='muted'>{top_n} bad beats</div></div>",unsafe_allow_html=True)
+    _insight_box(
+        "<b>Step-away protocol after a bad beat</b><br>"
+        "A bad beat = A+ setup stopped out then price runs to your TP. "
+        "The chemicals that fire at this point will destroy your next trade.<br>"
+        "<b>1.</b> Close the platform immediately. "
+        "<b>2.</b> Walk, gym, or meditate. "
+        "<b>3.</b> Do not return until the next 3SL window.<br>"
+        "<span style='color:#6b7280;font-size:12px'>Breakevens are not bad beats. "
+        "A bad beat is specifically: stopped out → price runs to TP.</span>", "info")
+
+
+def _psych_3sl_compliance(df: pd.DataFrame, styler) -> None:
+    st.markdown("### 3SL Compliance")
+    st.caption("Two rules: trades must be inside the 2h session window, and only one trade per session per day.")
+
+    wcol     = next((c for c in ["2h session window","2h Session Window","Session Window"] if c in df.columns), None)
+    sess_col = next((c for c in ["Session Norm","Session"] if c in df.columns), None)
+    dcol     = next((c for c in ["Date & Time","Day/Time/Date of Trade","Date","Datetime"] if c in df.columns), None)
+
+    if wcol is None and (sess_col is None or dcol is None):
+        st.info("Add a '2h session window' Yes/No field to Notion to track 3SL window compliance.")
+        return
+
+    g = df.copy()
+
+    if dcol:
+        try:
+            g["__dp"] = pd.to_datetime(
+                g[dcol].astype(str).str.replace(r"\s*\(GMT.*\)$", "", regex=True),
+                errors="coerce")
+            g["__date"] = g["__dp"].dt.date
+        except Exception:
+            g["__dp"] = pd.NaT
+            g["__date"] = None
+
+    has_window = wcol is not None
+    ins_n = out_n = total_w = 0
+    comp_pct = ins_wr = out_wr = None
+
+    if has_window:
+        g["__w"] = g[wcol].astype(str).str.strip().str.lower().map(
+            lambda v: "yes" if v in ("yes","y","true","1") else ("no" if v in ("no","n","false","0") else None))
+        gw = g[g["__w"].notna()].copy()
+        total_w  = len(gw)
+        ins_n    = int((gw["__w"] == "yes").sum())
+        out_n    = int((gw["__w"] == "no").sum())
+        comp_pct = round(ins_n / max(1, total_w) * 100, 1)
+
+        def _wr(sub):
+            c = sub[sub["Outcome"].isin(["Win", "BE", "Loss"])]
+            return round(c["Outcome"].eq("Win").sum() / max(1, len(c)) * 100, 1) if not c.empty else None
+
+        ins_wr = _wr(gw[gw["__w"] == "yes"])
+        out_wr = _wr(gw[gw["__w"] == "no"])
+
+    gs = pd.DataFrame()
+    multi_session_days   = 0
+    multi_session_breaks = 0
+    session_counts       = pd.DataFrame()
+    has_session_rule     = sess_col is not None and dcol is not None
+
+    if has_session_rule:
+        try:
+            g["__sess_clean"] = g[sess_col].apply(_clean_session_value)
+            gs = g.dropna(subset=["__dp", "__sess_clean"]).copy()
+            if not gs.empty:
+                session_counts = gs.groupby(["__date", "__sess_clean"]).size().reset_index(name="n")
+                breaks = session_counts[session_counts["n"] > 1]
+                multi_session_days   = int(breaks["__date"].nunique())
+                multi_session_breaks = int((breaks["n"] - 1).sum())
+        except Exception:
+            pass
+
+    k1, k2, k3, k4 = st.columns(4)
+    with k1:
+        if has_window and comp_pct is not None:
+            col_c = "#4800ff" if comp_pct >= 70 else "#f59e0b" if comp_pct >= 50 else "#ef4444"
+            st.markdown(f"<div class='kpi'><div class='label'>Window Compliance</div>"
+                        f"<div class='value' style='color:{col_c}'>{comp_pct}%</div>"
+                        f"<div class='muted'>{ins_n} inside · {out_n} outside</div></div>",
+                        unsafe_allow_html=True)
+        else:
+            st.markdown("<div class='kpi'><div class='label'>Window Compliance</div>"
+                        "<div class='value' style='color:#9ca3af'>—</div>"
+                        "<div class='muted'>No window field in Notion</div></div>",
+                        unsafe_allow_html=True)
+    with k2:
+        v = f"{ins_wr}%" if ins_wr is not None else "—"
+        st.markdown(f"<div class='kpi'><div class='label'>Win Rate (Inside)</div>"
+                    f"<div class='value' style='color:#4800ff'>{v}</div>"
+                    f"<div class='muted'>{ins_n} trades in window</div></div>",
+                    unsafe_allow_html=True)
+    with k3:
+        v = f"{out_wr}%" if out_wr is not None else "—"
+        st.markdown(f"<div class='kpi'><div class='label'>Win Rate (Outside)</div>"
+                    f"<div class='value' style='color:#4800ff'>{v}</div>"
+                    f"<div class='muted'>{out_n} trades outside window</div></div>",
+                    unsafe_allow_html=True)
+    with k4:
+        msb_color = "#ef4444" if multi_session_breaks > 0 else "#4800ff"
+        st.markdown(f"<div class='kpi'><div class='label'>One-Trade Rule Breaks</div>"
+                    f"<div class='value' style='color:{msb_color}'>{multi_session_breaks}</div>"
+                    f"<div class='muted'>{multi_session_days} sessions with 2+ trades</div></div>",
+                    unsafe_allow_html=True)
+
+    if has_window and total_w == 0:
+        _insight_box("The '2h session window' field exists but has no Yes/No values recorded yet. "
+                     "Tick it on each trade to start tracking window compliance.", "warn")
+    elif has_window and ins_wr is not None and out_wr is not None:
+        if ins_wr >= out_wr:
+            _insight_box(f"Window compliance is working — inside win rate <b>{ins_wr}%</b> "
+                         f"vs <b>{out_wr}%</b> outside. "
+                         f"{out_n} of {total_w} trades were outside the 2h window.")
+        else:
+            _insight_box(f"Outside-window win rate ({out_wr}%) currently exceeds inside ({ins_wr}%). "
+                         f"Sample may be small — keep logging. "
+                         f"The window rule protects drawdown control regardless of short-term rates.", "warn")
+    elif has_window and comp_pct is not None and comp_pct < 70:
+        _insight_box(f"Only <b>{comp_pct}%</b> of trades inside the 2h window ({ins_n} of {total_w}). "
+                     f"The 3SL system only protects you when you follow it.", "warn")
+
+    if multi_session_breaks > 0:
+        _insight_box(
+            f"<b>{multi_session_breaks} extra trades</b> were taken in sessions where you already had an entry "
+            f"({multi_session_days} sessions affected). "
+            f"The 3SL rule is one trade per session — a second trade removes the protection entirely. "
+            f"After a loss the session is finished, even if another setup forms.", "warn")
+    elif has_session_rule and not gs.empty:
+        _insight_box("One-trade-per-session rule is clean — no sessions with multiple entries detected.")
+
+    if has_window and dcol and total_w > 0:
+        try:
+            gw_dated = gw.dropna(subset=["__dp"]).copy()
+            if not gw_dated.empty:
+                gw_dated["__wk"] = gw_dated["__dp"].dt.to_period("W").apply(lambda p: p.start_time)
+                wk = (gw_dated.groupby("__wk")
+                       .agg(total=("__w", "count"), inside=("__w", lambda s: (s == "yes").sum()))
+                       .reset_index())
+                wk["Compliance %"] = (wk["inside"] / wk["total"] * 100).round(1)
+                wk = wk.rename(columns={"__wk": "Week"})
+                cv = _to_alt_values(wk[["Week", "Compliance %"]])
+                if cv:
+                    st.markdown("#### Window compliance by week")
+                    bar = (alt.Chart(alt.Data(values=cv))
+                           .mark_bar(color="#4800ff", opacity=0.7,
+                                     cornerRadiusTopLeft=3, cornerRadiusTopRight=3)
+                           .encode(
+                               x=alt.X("Week:T", axis=alt.Axis(format="%b %d", labelAngle=-45,
+                                                                tickCount=8, labelOverlap=False, title=None)),
+                               y=alt.Y("Compliance %:Q", scale=alt.Scale(domain=[0, 100]),
+                                       axis=alt.Axis(title="% inside 2h window")),
+                               tooltip=[alt.Tooltip("Week:T", format="%d %b %Y"),
+                                        alt.Tooltip("Compliance %:Q", format=".1f")])
+                           .properties(height=200))
+                    rule = (alt.Chart(alt.Data(values=[{"y": 70}]))
+                            .mark_rule(color="#4800ff", strokeDash=[4, 4], strokeWidth=1.5)
+                            .encode(y="y:Q"))
+                    st.altair_chart(styler(alt.layer(bar, rule)), use_container_width=True)
+                    st.markdown("<div class='muted'>Dashed line = 70% target</div>",
+                                unsafe_allow_html=True)
+        except Exception:
+            pass
+
+    if has_session_rule and multi_session_breaks > 0 and not session_counts.empty:
+        try:
+            breaks_df = session_counts[session_counts["n"] > 1].copy()
+            breaks_df = breaks_df.rename(columns={"__date": "Date", "__sess_clean": "Session"})
+            breaks_df["Date"] = breaks_df["Date"].astype(str)
+            breaks_df["Extra trades"] = (breaks_df["n"] - 1).astype(int)
+            st.markdown("#### One-trade rule breaks by session")
+            cv2 = _to_alt_values(breaks_df[["Date", "Session", "Extra trades"]])
+            if cv2:
+                bar2 = (alt.Chart(alt.Data(values=cv2))
+                        .mark_bar(opacity=0.8, cornerRadiusTopLeft=3, cornerRadiusTopRight=3)
+                        .encode(
+                            x=alt.X("Date:N", axis=alt.Axis(labelAngle=-45, labelOverlap=False, title=None)),
+                            y=alt.Y("Extra trades:Q", axis=alt.Axis(title="Extra trades beyond 1")),
+                            color=alt.Color("Session:N",
+                                            scale=alt.Scale(domain=["Asia", "London", "New York"],
+                                                            range=["#4800ff", "#7c3aed", "#a78bfa"]),
+                                            legend=alt.Legend(title=None, orient="top")),
+                            tooltip=[alt.Tooltip("Date:N"), alt.Tooltip("Session:N"),
+                                     alt.Tooltip("Extra trades:Q")])
+                        .properties(height=200))
+                st.altair_chart(styler(bar2), use_container_width=True)
+        except Exception:
+            pass
+
+
+def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
+    st.markdown('<div class="section">', unsafe_allow_html=True)
+
+    if f is None or f.empty:
+        st.info("No trades for current filters.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    g = f.copy()
+
+    s_dt = _coerce_datetime_series(g, tz_name=os.getenv("EDGE_LOCAL_TZ", "Australia/Sydney"))
+    if s_dt is None:
+        date_col = next((c for c in ["Date", "Trade Date", "Entry Date"] if c in g.columns), None)
+        if date_col:
+            s_dt = pd.to_datetime(
+                g[date_col].astype(str).str.replace(r"\s*\(GMT.*\)$", "", regex=True),
+                errors="coerce")
+            if s_dt.dt.tz is None:
+                s_dt = s_dt.dt.tz_localize("UTC")
+        else:
+            st.info("No datetime column found — psychology metrics require a date/time per trade.")
+            st.markdown("</div>", unsafe_allow_html=True)
+            return
+
+    g["__ts"] = s_dt
+    g = g[g["__ts"].notna()].sort_values("__ts").reset_index(drop=True)
+    if g.empty:
+        st.info("No dated trades in current filters.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    try:
+        local_tz = ZoneInfo(os.getenv("EDGE_LOCAL_TZ", "Australia/Sydney"))
+        g["__local_ts"] = g["__ts"].dt.tz_convert(local_tz)
+    except Exception:
+        g["__local_ts"] = g["__ts"]
+
+    g["__date"] = g["__local_ts"].dt.date
+
+    trades_per_day = g.groupby("__date")["__ts"].transform("count")
+    g["__overtrade"] = trades_per_day > OVERTRADE_LIMIT
+
+    g["__revenge"] = False
+    revenge_window = timedelta(minutes=REVENGE_WINDOW_MINS)
+    outcome_col = "Outcome" if "Outcome" in g.columns else None
+
+    if outcome_col:
+        loss_times = g.loc[g[outcome_col] == "Loss", "__ts"].tolist()
+        for idx, row in g.iterrows():
+            entry_ts = row["__ts"]
+            for lt in loss_times:
+                if lt < entry_ts and (entry_ts - lt) <= revenge_window:
+                    g.at[idx, "__revenge"] = True
+                    break
+
+    day_flags = g.groupby("__date").agg(
+        overtrade=("__overtrade", "any"),
+        revenge=("__revenge", "any"),
+    ).reset_index()
+    day_flags["__violation"] = day_flags["overtrade"] | day_flags["revenge"]
+    total_days = len(day_flags)
+    clean_days = int((~day_flags["__violation"]).sum())
+    discipline_score = round((clean_days / max(1, total_days)) * 100, 1)
+
+    if outcome_col:
+        day_outcome = g.groupby("__date").agg(
+            trade_count=("__ts", "count"),
+            net_wins=("Outcome", lambda s: int((s == "Win").sum()) - int((s == "Loss").sum())),
+        ).reset_index()
+        day_outcome["day_result"] = day_outcome["net_wins"].apply(
+            lambda x: "Winning Day" if x > 0 else ("Losing Day" if x < 0 else "Neutral Day"))
+        avg_by_result = day_outcome.groupby("day_result")["trade_count"].mean().round(2)
+        avg_win_day = float(avg_by_result.get("Winning Day", 0.0))
+        avg_loss_day = float(avg_by_result.get("Losing Day", 0.0))
+    else:
+        avg_win_day = avg_loss_day = 0.0
+
+    n_revenge = int(g["__revenge"].sum())
+    n_overtrade_days = int(day_flags["overtrade"].sum())
+    n_total = len(g)
+    n_flagged = int((g["__overtrade"] | g["__revenge"]).sum())
+
+    score_color = (
+        "#16a34a" if discipline_score >= 80
+        else "#f59e0b" if discipline_score >= 60
+        else "#ef4444"
+    )
+
+    st.markdown("### Discipline")
+    k1, k2, k3, k4 = st.columns(4)
+    with k1:
+        st.markdown(f"""
+            <div class='kpi'>
+              <div class='label'>Discipline Score</div>
+              <div class='value' style='color:{score_color}'>{discipline_score}%</div>
+              <div class='muted'>{clean_days} / {total_days} clean days</div>
+            </div>""", unsafe_allow_html=True)
+    with k2:
+        st.markdown(f"""
+            <div class='kpi'>
+              <div class='label'>Avg Trades — Win Day</div>
+              <div class='value' style='color:#4800ff'>{avg_win_day:.1f}</div>
+              <div class='muted'>trades per winning day</div>
+            </div>""", unsafe_allow_html=True)
+    with k3:
+        st.markdown(f"""
+            <div class='kpi'>
+              <div class='label'>Avg Trades — Loss Day</div>
+              <div class='value' style='color:#4800ff'>{avg_loss_day:.1f}</div>
+              <div class='muted'>trades per losing day</div>
+            </div>""", unsafe_allow_html=True)
+    with k4:
+        st.markdown(f"""
+            <div class='kpi'>
+              <div class='label'>Flagged Trades</div>
+              <div class='value' style='color:#4800ff'>{n_flagged}</div>
+              <div class='muted'>{round(n_flagged / max(1, n_total) * 100, 1)}% of all trades</div>
+            </div>""", unsafe_allow_html=True)
+
+    st.divider()
+
+    st.markdown("### Tilt Detection")
+    t1, t2 = st.columns(2)
+    with t1:
+        st.markdown(f"""
+            <div class='kpi'>
+              <div class='label'>Overtrading Days</div>
+              <div class='value' style='color:#4800ff'>{n_overtrade_days}</div>
+              <div class='muted'>Days with {OVERTRADE_LIMIT}+ trades</div>
+            </div>""", unsafe_allow_html=True)
+    with t2:
+        st.markdown(f"""
+            <div class='kpi'>
+              <div class='label'>Revenge Trades</div>
+              <div class='value' style='color:#4800ff'>{n_revenge}</div>
+              <div class='muted'>Entries within {REVENGE_WINDOW_MINS}min of a loss</div>
+            </div>""", unsafe_allow_html=True)
+
+    st.divider()
+
+    st.markdown("### Discipline Score Over Time")
+
+    day_flags["__date"] = pd.to_datetime(day_flags["__date"])
+    day_flags_indexed = day_flags.set_index("__date").sort_index()
+
+    if len(day_flags_indexed) >= 2:
+        rolling = (
+            (~day_flags_indexed["__violation"]).astype(int)
+            .rolling("28D", min_periods=1).mean().mul(100).round(1)
+            .reset_index()
+        )
+        rolling.columns = ["Date", "Score"]
+        rolling_vals = _to_alt_values(rolling)
+
+        area = (alt.Chart(alt.Data(values=rolling_vals))
+                .mark_area(opacity=0.10, color="#4800ff")
+                .encode(x="Date:T", y="Score:Q"))
+        line = (alt.Chart(alt.Data(values=rolling_vals))
+                .mark_line(strokeWidth=2, color="#4800ff", interpolate="monotone")
+                .encode(
+                    x=alt.X("Date:T", title=None,
+                             axis=alt.Axis(format="%b %d", labelAngle=-45, labelOverlap=True)),
+                    y=alt.Y("Score:Q", title="Score (%)", scale=alt.Scale(domain=[0, 100])))
+                .properties(height=240))
+        st.altair_chart(styler(alt.layer(area, line)), use_container_width=True)
+        st.markdown(
+            "<div class='muted'>Rolling 4-week average — higher is better</div>",
+            unsafe_allow_html=True)
+        if discipline_score >= 80:
+            _insight_box(f"Discipline score is <b>{discipline_score}%</b> — strong. "
+                         f"{clean_days} of {total_days} trading days had no overtrading or revenge trades.", "good")
+        elif discipline_score >= 60:
+            _insight_box(f"Discipline score is <b>{discipline_score}%</b>. "
+                         f"{total_days - clean_days} days had violations — "
+                         f"overtrading ({n_overtrade_days} days) or revenge entries ({n_revenge} trades). "
+                         f"Each violation day is a compounding leak in your edge.", "warn")
+        else:
+            _insight_box(f"Discipline score is <b>{discipline_score}%</b> — needs attention. "
+                         f"{total_days - clean_days} of {total_days} days had rule violations. "
+                         f"The 3SL system exists specifically to eliminate these mechanically — "
+                         f"review the compliance section below.", "bad")
+    else:
+        st.info("Not enough data for rolling chart yet.")
+
+    st.divider()
+
+    raw = df_raw if df_raw is not None and not df_raw.empty else g
+    _psych_session_alert(raw, styler)
+
+    st.divider()
+
+    _psych_mental_state_gate(raw, styler)
+
+    st.divider()
+
+    _psych_bad_beat_tracker(raw)
+
+    st.divider()
+
+    _psych_3sl_compliance(raw, styler)
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+# ── Section renderers ─────────────────────────────────────────────────────────
+def _entry_models_tab(f: pd.DataFrame, show_table):
+    st.markdown('<div class="section">', unsafe_allow_html=True)
+    if f is None or f.empty:
+        st.info("No trades for current filters.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+    f_norm = _ensure_entry_models_list(f)
+    if "Entry Models List" not in f_norm.columns:
+        st.info("No entry model data.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+    em = f_norm.copy()
+    em = em[em["Entry Models List"].apply(lambda x: isinstance(x, (list, tuple)) and len(x) > 0)]
+    if em.empty:
+        st.info("No entry model data.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+    em = em.explode("Entry Models List", ignore_index=True)
+    em = em[em["Entry Models List"].astype(str).str.strip() != ""]
+    if em.empty:
+        st.info("No entry model data.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+    counted = em[em["Outcome"].isin(["Win", "BE", "Loss"])]
+    if counted.empty:
+        st.info("No counted outcomes yet.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+    rates = []
+    for model, group in counted.groupby("Entry Models List"):
+        r = outcome_rates_from(group)
+        net_rr, ex_rr = _rr_stats(group)
+        rates.append(dict(Entry_Model=str(model), Trades=len(group),
+                          **{"Win %": r["win_rate"], "BE %": r["be_rate"], "Loss %": r["loss_rate"],
+                             "Net PnL (R)": net_rr, "Expectancy (R)": ex_rr}))
+    if rates:
+        df_em = pd.DataFrame(rates).sort_values("Win %", ascending=False)
+        render_entry_model_table(df_em, title="Entry Model Performance")
+        if not df_em.empty:
+            best_em = df_em.iloc[0]
+            worst_em = df_em.iloc[-1]
+            if best_em["Entry_Model"] != worst_em["Entry_Model"]:
+                _insight_box(
+                    f"<b>{best_em['Entry_Model']}</b> leads with <b>{best_em['Win %']:.1f}%</b> win rate "
+                    f"across {int(best_em['Trades'])} trades. "
+                    f"<b>{worst_em['Entry_Model']}</b> is your weakest model at "
+                    f"<b>{worst_em['Win %']:.1f}%</b> — consider filtering it out or reviewing entry criteria.", "info")
+    else:
+        st.info("No counted outcomes yet.")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+def _confluences_tab(f: pd.DataFrame, show_table):
+    st.markdown('<div class="section">', unsafe_allow_html=True)
+    if f is None or f.empty:
+        st.info("No trades for current filters.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+    g = f.copy()
+    lower_map = {str(c).strip().lower(): c for c in g.columns}
+
+    def _norm_name(name):
+        return re.sub(r"[^a-z]", "", name.lower())
+
+    div_col_name = None
+    sweep_col_name = None
+    for key, col in lower_map.items():
+        norm = _norm_name(key)
+        if norm == "div" and div_col_name is None:
+            div_col_name = col
+        if norm == "sweep" and sweep_col_name is None:
+            sweep_col_name = col
+
+    def _from_yes_no(val):
+        if val is None:
+            return False
+        if isinstance(val, float) and pd.isna(val):
+            return False
+        return str(val).strip().lower() in {"yes", "y", "true", "1"}
+
+    def _classify_row(row):
+        if div_col_name is not None or sweep_col_name is not None:
+            div_flag = _from_yes_no(row.get(div_col_name)) if div_col_name else False
+            sweep_flag = _from_yes_no(row.get(sweep_col_name)) if sweep_col_name else False
+            if div_flag and sweep_flag:
+                return "DIV & Sweep"
+            if div_flag:
+                return "DIV"
+            if sweep_flag:
+                return "Sweep"
+            return None
+        for col_name in ["Entry Confluence", "Confluence"]:
+            if col_name in row.index:
+                v = row[col_name]
+                items = ([str(x).strip().lower() for x in v] if isinstance(v, (list, tuple, set))
+                         else [p.strip().lower() for p in re.split(r"[;,/|+]", str(v)) if p.strip()])
+                has_div = any("div" in it for it in items)
+                has_sweep = any("sweep" in it for it in items)
+                if has_div and has_sweep:
+                    return "DIV & Sweep"
+                if has_div:
+                    return "DIV"
+                if has_sweep:
+                    return "Sweep"
+                return None
+        return None
+
+    g["Confluence"] = g.apply(_classify_row, axis=1)
+    g = g[g["Confluence"].notna()]
+    if g.empty:
+        st.info("No DIV / Sweep confluence data in current slice.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+    counted = g[g["Outcome"].isin(["Win", "BE", "Loss"])]
+    if counted.empty:
+        st.info("No counted outcomes yet for any confluence.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+    rows = []
+    for conf in CONFLUENCE_OPTIONS:
+        sub = counted[counted["Confluence"] == conf]
+        if sub.empty:
+            continue
+        r = outcome_rates_from(sub)
+        net_rr, ex_rr = _rr_stats(sub)
+        rows.append(dict(Confluence=conf, Trades=len(sub),
+                         **{"Win %": r["win_rate"], "BE %": r["be_rate"], "Loss %": r["loss_rate"],
+                            "Net PnL (R)": net_rr, "Expectancy (R)": ex_rr}))
+    if rows:
+        conf_df = pd.DataFrame(rows).sort_values("Win %", ascending=False).reset_index(drop=True)
+        render_entry_model_table(conf_df.rename(columns={"Confluence": "Entry_Model"}),
+                                 title="Confluence Performance")
+        if not conf_df.empty and "Win %" in conf_df.columns:
+            best_conf = conf_df.iloc[0]
+            _insight_box(
+                f"<b>{best_conf['Confluence']}</b> is your highest-probability confluence at "
+                f"<b>{best_conf['Win %']:.1f}%</b> win rate across {int(best_conf['Trades'])} trades. "
+                f"Prioritise setups where this confluence is present.")
+    else:
+        st.info("No confluence stats available.")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+def _hourly_expectancy_clock(df_raw: pd.DataFrame) -> None:
+    """
+    24-hour radial clock showing expectancy by entry hour.
+    Reads from the raw (pre-pipeline) df so early-close rows are included
+    and Closed RR values are used directly.
+    Renders via st.components.v1.html so the interactive JS hover works.
+    """
+    import json
+    import streamlit.components.v1 as components
+
+    WIN_RESULTS  = {"Full TP", "Early Close (Ended up being a win)", "TP2 (SL2TP1)", "Win"}
+    LOSS_RESULTS = {"Loss", "Bad Beat", "Breakeven, Loss"}
+
+    def _parse_hour(dt_str):
+        if pd.isna(dt_str):
+            return None
+        s = str(dt_str).strip()
+        m = re.search(r'(\d{1,2}):(\d{2})\s*(AM|PM)', s, re.IGNORECASE)
+        if m:
+            h, ampm = int(m.group(1)), m.group(3).upper()
+            if ampm == "PM" and h != 12:
+                h += 12
+            if ampm == "AM" and h == 12:
+                h = 0
+            return h
+        m = re.search(r'(\d{1,2}):(\d{2})(?!\s*[AP]M)', s, re.IGNORECASE)
+        if m:
+            return int(m.group(1)) % 24
+        return None
+
+    if df_raw is None or df_raw.empty:
+        st.info("No trade data available for the hourly clock.")
+        return
+
+    df = df_raw.copy()
+
+    dt_col  = next((c for c in ["Day/Time/Date of Trade", "Date & Time", "Datetime"] if c in df.columns), None)
+    time_col = "Time of Trade" if "Time of Trade" in df.columns else None
+
+    if dt_col:
+        df["_hour"] = df[dt_col].apply(_parse_hour)
+    elif time_col:
+        df["_hour"] = df[time_col].apply(_parse_hour)
+    else:
+        st.info("No entry time column found — hourly clock unavailable.")
+        return
+
+    df["_outcome"] = df["Result"].apply(
+        lambda r: "win" if str(r).strip() in WIN_RESULTS
+        else ("loss" if str(r).strip() in LOSS_RESULTS else "be")
+    ) if "Result" in df.columns else "be"
+
+    df["_rr"] = pd.to_numeric(df["Closed RR"], errors="coerce") if "Closed RR" in df.columns else float("nan")
+
+    hourly = df.dropna(subset=["_hour", "_rr"]).copy()
+    hourly["_hour"] = hourly["_hour"].astype(int)
+
+    hour_data = {}
+    for h, grp in hourly.groupby("_hour"):
+        wins   = grp[grp["_outcome"] == "win"]["_rr"]
+        losses = grp[grp["_outcome"] == "loss"]["_rr"]
+        n      = len(grp)
+        wr     = len(wins)   / n if n else 0
+        lr     = len(losses) / n if n else 0
+        avg_w  = float(wins.mean())   if len(wins)   else 0.0
+        avg_l  = float(losses.mean()) if len(losses) else 0.0
+        exp    = round(wr * avg_w + lr * avg_l, 3)
+        hour_data[int(h)] = {"e": exp, "n": int(n)}
+
+    if not hour_data:
+        st.info("Not enough data to build the hourly expectancy clock.")
+        return
+
+    all_exp     = [v["e"] for v in hour_data.values()]
+    overall_avg = round(sum(all_exp) / len(all_exp), 2)
+    data_js     = json.dumps(hour_data)
+
+    html = f"""
+<div style="font-family:-apple-system,sans-serif;display:flex;flex-direction:column;align-items:center;padding:0.5rem 0 0;background:#f6f7fb;border-radius:12px;">
+  <p style="margin:0 0 4px;font-size:14px;font-weight:500;color:#0f172a;">Expectancy by entry hour</p>
+  <p style="margin:0 0 14px;font-size:12px;color:#64748b;">hover a segment to inspect</p>
+  <svg id="eclock" width="360" height="360"
+       viewBox="-180 -180 360 360"
+       xmlns="http://www.w3.org/2000/svg" role="img">
+    <title>24-hour expectancy clock</title>
+    <desc>Radial clock showing trading expectancy per entry hour. Purple = positive, red = negative, opacity encodes magnitude.</desc>
+    <g id="cg"></g>
+    <circle cx="0" cy="0" r="100" fill="none" stroke="rgba(72,0,255,0.06)" stroke-width="0.5"/>
+    <circle cx="0" cy="0" r="130" fill="none" stroke="rgba(72,0,255,0.06)" stroke-width="0.5"/>
+    <circle cx="0" cy="0" r="68" fill="#ffffff" stroke="rgba(72,0,255,0.12)" stroke-width="0.5"/>
+    <text id="ch" x="0" y="-22" text-anchor="middle" dominant-baseline="central"
+          style="font-size:11px;fill:#64748b;"></text>
+    <text id="cv" x="0" y="-2" text-anchor="middle" dominant-baseline="central"
+          style="font-size:20px;font-weight:500;fill:#4800ff;"></text>
+    <text id="cs" x="0" y="20" text-anchor="middle" dominant-baseline="central"
+          style="font-size:11px;fill:#64748b;"></text>
+  </svg>
+  <div style="display:flex;gap:14px;margin-top:8px;font-size:12px;color:#64748b;align-items:center;">
+    <span style="display:flex;align-items:center;gap:4px;">
+      <span style="width:9px;height:9px;background:#4800ff;border-radius:2px;opacity:0.75;display:inline-block;"></span>positive
+    </span>
+    <span style="display:flex;align-items:center;gap:4px;">
+      <span style="width:9px;height:9px;background:#ef4444;border-radius:2px;opacity:0.75;display:inline-block;"></span>negative
+    </span>
+    <span style="display:flex;align-items:center;gap:4px;">
+      <span style="width:9px;height:9px;background:#e2e8f0;border-radius:2px;display:inline-block;"></span>no data
+    </span>
+  </div>
+</div>
+<script>
+(function(){{
+  const DATA    = {data_js};
+  const OVERALL = {overall_avg};
+  const NS      = "http://www.w3.org/2000/svg";
+  const g       = document.getElementById("cg");
+  const cv      = document.getElementById("cv");
+  const cs      = document.getElementById("cs");
+  const ch      = document.getElementById("ch");
+  const INNER   = 74, OUTER = 152, MAX_ABS = 3.0;
+
+  function polar(deg, r) {{
+    const rad = (deg - 90) * Math.PI / 180;
+    return [r * Math.cos(rad), r * Math.sin(rad)];
+  }}
+
+  function arc(h, ir, or_) {{
+    const sd = 360/24, sa = h*sd, ea = sa+sd-1.2;
+    const [x1,y1]=polar(sa,or_),[x2,y2]=polar(ea,or_);
+    const [x3,y3]=polar(ea,ir),[x4,y4]=polar(sa,ir);
+    return `M${{x1.toFixed(2)}},${{y1.toFixed(2)}} A${{or_}},${{or_}} 0 0,1 ${{x2.toFixed(2)}},${{y2.toFixed(2)}} L${{x3.toFixed(2)}},${{y3.toFixed(2)}} A${{ir}},${{ir}} 0 0,0 ${{x4.toFixed(2)}},${{y4.toFixed(2)}} Z`;
+  }}
+
+  function color(e, alpha) {{
+    if (e >= 0) {{
+      const t = Math.min(e / MAX_ABS, 1);
+      return `rgba(72,0,255,${{Math.min(alpha * (0.3 + t * 0.7), 1).toFixed(2)}})`;
+    }} else {{
+      const t = Math.min(Math.abs(e) / MAX_ABS, 1);
+      return `rgba(239,68,68,${{Math.min(alpha * (0.3 + t * 0.7), 1).toFixed(2)}})`;
+    }}
+  }}
+
+  function setCenter(h) {{
+    if (h === null) {{
+      ch.textContent = "";
+      cs.textContent = "avg expectancy";
+      cv.textContent = (OVERALL>=0?"+":"")+OVERALL.toFixed(2)+"R";
+      cv.style.fill = OVERALL>=0 ? "#4800ff" : "#dc2626";
+    }} else {{
+      const d = DATA[h];
+      ch.textContent = String(h).padStart(2,"0")+"h";
+      if (d) {{
+        cs.textContent = d.n+" trade"+(d.n===1?"":"s");
+        cv.textContent = (d.e>=0?"+":"")+d.e.toFixed(2)+"R";
+        cv.style.fill = d.e>=0 ? "#4800ff" : "#dc2626";
+      }} else {{
+        cs.textContent = "no data";
+        cv.textContent = "—";
+        cv.style.fill = "#64748b";
+      }}
+    }}
+  }}
+
+  const segs = [];
+  for (let h=0; h<24; h++) {{
+    const d = DATA[h];
+    const seg = document.createElementNS(NS,"path");
+    seg.setAttribute("d", arc(h, INNER, OUTER));
+    seg.setAttribute("fill", d ? color(d.e, 0.7) : "#e2e8f0");
+    seg.setAttribute("stroke","#f6f7fb");
+    seg.setAttribute("stroke-width","1");
+    seg.style.cursor = d ? "pointer" : "default";
+    seg.style.transition = "fill 0.12s";
+    segs.push({{seg, h, d}});
+
+    seg.addEventListener("mouseenter", () => {{
+      segs.forEach(s => s.seg.setAttribute("fill",
+        s.h===h
+          ? (s.d ? color(s.d.e, 1) : "#cbd5e1")
+          : (s.d ? color(s.d.e, 0.25) : "#eaecf0")
+      ));
+      setCenter(h);
+    }});
+    seg.addEventListener("mouseleave", () => {{
+      segs.forEach(s => s.seg.setAttribute("fill", s.d ? color(s.d.e, 0.7) : "#e2e8f0"));
+      setCenter(null);
+    }});
+    g.appendChild(seg);
+
+    const mid = h*(360/24)+(360/48);
+    const [lx,ly] = polar(mid, OUTER+14);
+    const lbl = document.createElementNS(NS,"text");
+    lbl.setAttribute("x", lx.toFixed(1));
+    lbl.setAttribute("y", ly.toFixed(1));
+    lbl.setAttribute("text-anchor","middle");
+    lbl.setAttribute("dominant-baseline","central");
+    lbl.style.cssText = "font-size:9px;fill:#64748b;font-family:-apple-system,sans-serif;";
+    lbl.textContent = String(h).padStart(2,"0")+"h";
+    g.appendChild(lbl);
+  }}
+
+  setCenter(null);
+}})();
+</script>
+"""
+    components.html(html, height=460, scrolling=False)
+
+
+def _sessions_tab(f: pd.DataFrame, show_table):
+    st.markdown('<div class="section">', unsafe_allow_html=True)
+    if f.empty or "Session Norm" not in f.columns or f["Session Norm"].isna().all():
+        st.info("No session data.")
+    else:
+        counted = f[f["Outcome"].isin(["Win", "BE", "Loss"])]
+        rates = []
+        for sess, g in counted.groupby("Session Norm"):
+            r = outcome_rates_from(g)
+            net_rr, ex_rr = _rr_stats(g)
+            rates.append(dict(Session=sess, Trades=len(g),
+                              **{"Win %": r["win_rate"], "BE %": r["be_rate"], "Loss %": r["loss_rate"],
+                                 "Net PnL (R)": net_rr, "Expectancy (R)": ex_rr}))
+        df_rates = pd.DataFrame(rates).sort_values("Win %", ascending=False)
+        render_session_performance_table(df_rates, title="Session Performance")
+        if not df_rates.empty:
+            best = df_rates.iloc[0]
+            worst = df_rates.iloc[-1]
+            if best["Session"] != worst["Session"] and best["Win %"] - worst["Win %"] > 10:
+                _insight_box(
+                    f"<b>{best['Session']}</b> is your best session at <b>{best['Win %']:.1f}%</b> win rate. "
+                    f"<b>{worst['Session']}</b> trails at <b>{worst['Win %']:.1f}%</b>. "
+                    f"Concentrate trade frequency in {best['Session']} and reduce exposure in {worst['Session']}.", "info")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+def _instruments_tab(f: pd.DataFrame, show_table):
+    st.markdown('<div class="section">', unsafe_allow_html=True)
+    if f is None or f.empty:
+        st.info("No trades for current filters.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+    g = _ensure_instrument_column(f)
+    if "Instrument" not in g.columns:
+        st.info("No instrument/pair column detected.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+    g = g.copy()
+    g["Instrument"] = g["Instrument"].astype(str).str.strip()
+    g = g[g["Instrument"] != ""]
+    if g.empty:
+        st.info("No instrument values present.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+    counted = g[g["Outcome"].isin(["Win", "BE", "Loss"])]
+    if counted.empty:
+        st.info("No counted outcomes yet for any instrument.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+    rows = []
+    for inst, g_inst in counted.groupby("Instrument"):
+        r = outcome_rates_from(g_inst)
+        net_rr, ex_rr = _rr_stats(g_inst)
+        rows.append(dict(Instrument=_asset_label(inst), Trades=len(g_inst),
+                         **{"Win %": r["win_rate"], "BE %": r["be_rate"], "Loss %": r["loss_rate"],
+                            "Net PnL (R)": net_rr, "Expectancy (R)": ex_rr}))
+    if rows:
+        inst_df = pd.DataFrame(rows).sort_values("Win %", ascending=False).reset_index(drop=True)
+        render_entry_model_table(inst_df, title="Asset Performance")
+        if not inst_df.empty:
+            best_inst = inst_df.iloc[0]
+            worst_inst = inst_df.iloc[-1]
+            if len(inst_df) > 1 and best_inst["Instrument"] != worst_inst["Instrument"]:
+                _insight_box(
+                    f"<b>{best_inst['Instrument']}</b> is your best-performing asset at "
+                    f"<b>{best_inst['Win %']:.1f}%</b> win rate. "
+                    f"<b>{worst_inst['Instrument']}</b> trails at <b>{worst_inst['Win %']:.1f}%</b>. "
+                    f"Focus on assets where your system has trending HTF conditions — "
+                    f"the playbook principle of switching pairs when conditions don't suit your edge.")
+    else:
+        st.info("No instrument stats available.")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+def _time_days_tab(f: pd.DataFrame, show_table):
+    st.markdown('<div class="section">', unsafe_allow_html=True)
+    counted = f[f["Outcome"].isin(["Win", "BE", "Loss"])]
+    day_col = "DayName" if "DayName" in counted.columns else ("Day" if "Day" in counted.columns else None)
+    if not day_col or counted.empty:
+        st.info("No day-of-week signal in current slice.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+    order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+    df_days = counted[counted[day_col].isin(order)].copy()
+    if df_days.empty:
+        st.info("No Mon–Fri data in current slice.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+    df_days["__Day"] = pd.Categorical(df_days[day_col], categories=order, ordered=True)
+
+    def _agg_day(g):
+        r = outcome_rates_from(g)
+        net_rr, ex_rr = _rr_stats(g)
+        return pd.Series({"Trades": len(g), "Win %": r["win_rate"], "BE %": r["be_rate"],
+                           "Loss %": r["loss_rate"], "Net PnL (R)": net_rr, "Expectancy (R)": ex_rr})
+
+    perf = (df_days.groupby("__Day").apply(_agg_day).reset_index()
+            .rename(columns={"__Day": "Day"}))
+    render_day_performance_table(perf.sort_values("Day"), title="Day Performance (Mon–Fri)")
+    if not perf.empty and "Win %" in perf.columns:
+        best_day = perf.loc[perf["Win %"].idxmax()]
+        worst_day = perf.loc[perf["Win %"].idxmin()]
+        if best_day["Day"] != worst_day["Day"]:
+            _insight_box(
+                f"<b>{best_day['Day']}</b> is your strongest day at <b>{best_day['Win %']:.1f}%</b> "
+                f"win rate ({int(best_day['Trades'])} trades). "
+                f"<b>{worst_day['Day']}</b> is your weakest at <b>{worst_day['Win %']:.1f}%</b>. "
+                f"Consider reducing trade frequency on {worst_day['Day']}.")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+def _gap_alignment_tab(f: pd.DataFrame, show_table):
+    st.markdown('<div class="section">', unsafe_allow_html=True)
+    if f is None or f.empty or "Gap Alignment" not in f.columns:
+        st.info("No GAP Alignment data in current slice.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+    g = f.copy()
+    counted = g[g["Outcome"].isin(["Win", "BE", "Loss"])]
+    counted["Gap Alignment"] = counted["Gap Alignment"].astype(str).str.strip()
+    counted = counted[~counted["Gap Alignment"].isin(["", "nan", "NaN", "None"])]
+    if counted.empty:
+        st.info("No counted outcomes with GAP Alignment set.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+    rows = []
+    for ga, group in counted.groupby("Gap Alignment"):
+        r = outcome_rates_from(group)
+        net_rr, ex_rr = _rr_stats(group)
+        rows.append(dict(Entry_Model=ga, Trades=len(group),
+                         **{"Win %": r["win_rate"], "BE %": r["be_rate"], "Loss %": r["loss_rate"],
+                            "Net PnL (R)": net_rr, "Expectancy (R)": ex_rr}))
+    if rows:
+        render_entry_model_table(pd.DataFrame(rows).sort_values("Entry_Model").reset_index(drop=True),
+                                 title="GAP Alignment")
+    else:
+        st.info("No GAP Alignment stats available.")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+def _parse_target_rr_label(label: str):
+    if label is None:
+        return None
+    s = str(label).lower().replace("rr", "").strip().replace(" ", "")
+    if not s:
+        return None
+    m = re.match(r"^([+-]?\d+(?:\.\d+)?)[-–]([+-]?\d+(?:\.\d+)?)$", s)
+    if m:
+        return (float(m.group(1)) + float(m.group(2))) / 2.0
+    m = re.match(r"^([+-]?\d+(?:\.\d+)?)\+$", s)
+    if m:
+        return float(m.group(1))
+    try:
+        return float(s)
+    except Exception:
+        return None
+
+
+def _target_rr_tab(f: pd.DataFrame, show_table):
+    st.markdown('<div class="section">', unsafe_allow_html=True)
+    if f is None or f.empty or "Targeted RR" not in f.columns:
+        st.info("No Target RR data in current slice.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+    g = f.copy()
+    counted = g[g["Outcome"].isin(["Win", "BE", "Loss"])]
+    counted["Targeted RR"] = counted["Targeted RR"].astype(str).str.strip()
+    counted = counted[counted["Targeted RR"] != ""]
+    if counted.empty:
+        st.info("No counted outcomes with Target RR set.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+    rows = []
+    for target, group in counted.groupby("Targeted RR"):
+        r = outcome_rates_from(group)
+        net_rr, ex_rr = _rr_stats(group)
+        rows.append(dict(Target_RR=target, Trades=len(group),
+                         **{"Win %": r["win_rate"], "BE %": r["be_rate"], "Loss %": r["loss_rate"],
+                            "Net PnL (R)": net_rr, "Expectancy (R)": ex_rr}))
+    if rows:
+        df_rr = pd.DataFrame(rows)
+        df_rr["_sort_num"] = df_rr["Target_RR"].apply(_parse_target_rr_label)
+        df_rr = (df_rr.sort_values(["_sort_num", "Target_RR"], na_position="last")
+                 .drop(columns=["_sort_num"]).reset_index(drop=True)
+                 .rename(columns={"Target_RR": "Entry_Model"}))
+        render_entry_model_table(df_rr, title="Risk to Reward")
+    else:
+        st.info("No Target RR stats available.")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+def _parse_rr_value(v):
+    """Parse RR strings like '+2-3', '1-2', '10+', or plain floats into a midpoint float."""
+    s = str(v).strip().replace("RR", "").strip()
+    try:
+        return float(s)
+    except ValueError:
+        pass
+    m = re.match(r"^([+-]?\d+(?:\.\d+)?)[^\d]+(\d+(?:\.\d+)?)$", s)
+    if m:
+        return (float(m.group(1)) + float(m.group(2))) / 2
+    m2 = re.match(r"^(\d+)\+$", s)
+    if m2:
+        return float(m2.group(1))
+    return None
+
+
+def _conditions_tab(f: pd.DataFrame, show_table):
+    st.markdown('<div class="section">', unsafe_allow_html=True)
+    st.markdown("### Conditions")
+
+    if f is None or f.empty:
+        st.info("No trades for current filters.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    c_etf = "Conditions ETF" if "Conditions ETF" in f.columns else None
+    c_mtf = "Conditions MTF" if "Conditions MTF" in f.columns else None
+    c_htf = "Conditions HTF" if "Conditions HTF" in f.columns else None
+    present_cols = [c for c in [c_etf, c_mtf, c_htf] if c]
+    tf_labels = {"Conditions ETF": "ETF", "Conditions MTF": "MTF", "Conditions HTF": "HTF"}
+
+    if not present_cols:
+        st.info("No Conditions ETF/MTF/HTF columns in current data.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    g = f.copy()
+    rr_col = next((c for c in ["Closed RR", "RR", "Closed R"] if c in g.columns), None)
+    g["__rr"] = g[rr_col].map(_parse_rr_value) if rr_col else float("nan")
+
+    for col in present_cols:
+        g[col] = g[col].astype(str).str.strip().replace(
+            {"": None, "nan": None, "NaN": None, "None": None}
+        )
+
+    counted = g[g["Outcome"].isin(["Win", "BE", "Loss"])]
+    mask = pd.Series(False, index=counted.index)
+    for col in present_cols:
+        mask = mask | counted[col].notna()
+    counted = counted[mask]
+
+    if counted.empty:
+        st.info("No Conditions values in current slice.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    def _expectancy(grp):
+        rr = grp["__rr"].dropna()
+        return float(rr.mean()) if len(rr) > 0 else float("nan")
+
+    def _build_chart(rows_data, title, subtitle):
+        """Render a ranked horizontal bar chart using Altair."""
+        chart_df = (
+            pd.DataFrame(rows_data)
+            .sort_values("Expectancy", ascending=False)
+            .reset_index(drop=True)
+        )
+        chart_df["Colour"]  = chart_df["Expectancy"].apply(
+            lambda x: "positive" if x >= 0 else "negative"
+        )
+        chart_df["Label"]   = chart_df["Expectancy"].apply(lambda x: f"{x:+.2f}R")
+        chart_df["SortKey"] = range(len(chart_df))
+
+        x_min = min(chart_df["Expectancy"].min() - 0.35, -0.15)
+        x_max = max(chart_df["Expectancy"].max() + 0.35,  0.15)
+
+        base = alt.Chart(chart_df).encode(
+            y=alt.Y(
+                "Condition:N",
+                sort=alt.EncodingSortField(field="SortKey", order="ascending"),
+                axis=alt.Axis(
+                    labelFontSize=12, labelColor="#0f172a",
+                    ticks=False, domain=False, labelLimit=220,
+                ),
+            ),
+            x=alt.X(
+                "Expectancy:Q",
+                scale=alt.Scale(domain=[x_min, x_max]),
+                axis=alt.Axis(
+                    labelFontSize=10, labelColor="#94a3b8",
+                    format="+.2f", title="Expectancy (R)",
+                    titleColor="#94a3b8", titleFontSize=10,
+                    grid=True, gridColor="#e2e8f0",
+                ),
+            ),
+            color=alt.Color(
+                "Colour:N",
+                scale=alt.Scale(
+                    domain=["positive", "negative"],
+                    range=["#4800ff", "#fca5a5"],
+                ),
+                legend=alt.Legend(
+                    title=None,
+                    labelFontSize=10,
+                    symbolType="square",
+                    values=["positive", "negative"],
+                    labelExpr="datum.value === 'positive' ? 'Positive' : 'Negative'",
+                ),
+            ),
+        )
+
+        bars = base.mark_bar(
+            cornerRadiusTopRight=3, cornerRadiusBottomRight=3,
+            cornerRadiusTopLeft=3, cornerRadiusBottomLeft=3,
+            height=22,
+        )
+
+        text = base.mark_text(
+            align=alt.expr(alt.expr.if_(alt.datum.Expectancy >= 0, "left", "right")),
+            dx=alt.expr(alt.expr.if_(alt.datum.Expectancy >= 0, 6, -6)),
+            fontSize=11, fontWeight="bold",
+        ).encode(
+            text="Label:N",
+            color=alt.Color(
+                "Colour:N",
+                scale=alt.Scale(
+                    domain=["positive", "negative"],
+                    range=["#4800ff", "#ef4444"],
+                ),
+                legend=None,
+            ),
+        )
+
+        rule = alt.Chart(pd.DataFrame({"x": [0]})).mark_rule(
+            color="#cbd5e1", strokeWidth=1.5
+        ).encode(x="x:Q")
+
+        chart = (bars + text + rule).properties(
+            title=alt.TitleParams(
+                text=title, subtitle=subtitle,
+                fontSize=13, subtitleFontSize=10,
+                color="#0f172a", subtitleColor="#94a3b8",
+                anchor="start",
+            ),
+            height=max(160, len(chart_df) * 46),
+        ).configure_view(
+            strokeWidth=0, fill="#ffffff"
+        ).configure_axis(
+            domainColor="#e2e8f0"
+        )
+        st.altair_chart(chart, use_container_width=True)
+
+    # ── Individual per-TF expectancy ──────────────────────────────────────────
+    ind_rows = []
+    for col in present_cols:
+        label = tf_labels.get(col, col)
+        col_data = counted.copy()
+        col_data["__cond"] = col_data[col].fillna("N/A")
+        for cond_val, group in col_data.groupby("__cond"):
+            exp = _expectancy(group)
+            if not pd.isna(exp):
+                ind_rows.append({
+                    "Condition": f"{label}  ·  {cond_val}",
+                    "Expectancy": exp,
+                })
+
+    if ind_rows:
+        _build_chart(
+            ind_rows,
+            title="Condition Expectancy",
+            subtitle="Average R per trade · ranked best → worst",
+        )
+        best_ind  = max(ind_rows, key=lambda x: x["Expectancy"])
+        worst_ind = min(ind_rows, key=lambda x: x["Expectancy"])
+        _insight_box(
+            f"Best condition: <b>{best_ind['Condition']}</b> "
+            f"(<b>{best_ind['Expectancy']:+.2f}R</b> expectancy). "
+            f"Worst: <b>{worst_ind['Condition']}</b> "
+            f"(<b>{worst_ind['Expectancy']:+.2f}R</b>)."
+        )
+
+    # ── Combo alignment chart ─────────────────────────────────────────────────
+    if len(present_cols) > 1:
+        st.divider()
+        combo_data = counted.copy()
+        for col in present_cols:
+            combo_data[col] = combo_data[col].fillna("N/A")
+        combo_rows = []
+        for key, group in combo_data.groupby(present_cols):
+            if not isinstance(key, tuple):
+                key = (key,)
+            if len(group) < 2:
+                continue
+            exp = _expectancy(group)
+            if pd.isna(exp):
+                continue
+            short = " · ".join(
+                "T" if str(v).startswith("Trend") else
+                ("R" if str(v).startswith("Rang") else str(v)[:1])
+                for v in key
+            )
+            combo_rows.append({"Condition": short, "Expectancy": exp})
+
+        if combo_rows:
+            _build_chart(
+                combo_rows,
+                title="Alignment Combinations",
+                subtitle="ETF · MTF · HTF    T = Trending    R = Ranging    (min 2 trades)",
+            )
+            best_c  = max(combo_rows, key=lambda x: x["Expectancy"])
+            worst_c = min(combo_rows, key=lambda x: x["Expectancy"])
+            _insight_box(
+                f"Best alignment: <b>{best_c['Condition']}</b> "
+                f"(<b>{best_c['Expectancy']:+.2f}R</b>). "
+                f"Avoid <b>{worst_c['Condition']}</b> "
+                f"(<b>{worst_c['Expectancy']:+.2f}R</b>).",
+                "good" if best_c["Expectancy"] > 0 else "warn",
+            )
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+def _timeframes_tab(f: pd.DataFrame, show_table):
+    st.markdown('<div class="section">', unsafe_allow_html=True)
+    if f is None or f.empty:
+        st.info("No trades for current filters.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+    lower_map = {str(c).strip().lower(): c for c in f.columns}
+    tf_col = (lower_map.get("entry timeframe") or lower_map.get("timeframe")
+              or lower_map.get("time frame") or lower_map.get("tf"))
+    if tf_col is None:
+        st.info("No 'Timeframe' column found in current data.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+    g = f.copy()
+    g["__TF"] = g[tf_col].astype(str).str.strip()
+    g = g[~g["__TF"].isin(["", "nan", "NaN", "None"])]
+    if g.empty:
+        st.info("No timeframe values present.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+    counted = g[g["Outcome"].isin(["Win", "BE", "Loss"])]
+    if counted.empty:
+        st.info("No counted outcomes yet for any timeframe.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+    _TF_ORDER = {
+        "1m": 1, "2m": 2, "3m": 3, "5m": 5, "10m": 10, "15m": 15, "30m": 30, "45m": 45,
+        "1h": 60, "2h": 120, "3h": 180, "4h": 240, "6h": 360, "8h": 480, "12h": 720,
+        "1d": 1440, "d": 1440, "daily": 1440,
+        "1w": 10080, "w": 10080, "weekly": 10080,
+        "1mo": 43200, "monthly": 43200,
+    }
+
+    def _tf_sort_key(label):
+        return _TF_ORDER.get(str(label).strip().lower(), 9999)
+
+    rows = []
+    for tf, group in counted.groupby("__TF"):
+        r = outcome_rates_from(group)
+        rr_series = pd.to_numeric(group.get("Closed RR", pd.Series(dtype=float)),
+                                   errors="coerce").dropna()
+        avg_rr = round(float(rr_series.mean()), 2) if not rr_series.empty else None
+        wins_rr = rr_series[rr_series > 0].sum()
+        losses_rr = abs(rr_series[rr_series < 0].sum())
+        profit_factor = round(wins_rr / losses_rr, 2) if losses_rr > 0 else None
+        rows.append(dict(Timeframe=tf, Trades=len(group),
+                         **{"Win %": r["win_rate"], "BE %": r["be_rate"], "Loss %": r["loss_rate"],
+                            "Avg RR": avg_rr, "Profit Factor": profit_factor}))
+    if not rows:
+        st.info("No timeframe stats available.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+    tf_df = (pd.DataFrame(rows)
+             .assign(_sort=lambda d: d["Timeframe"].apply(_tf_sort_key))
+             .sort_values(["_sort", "Timeframe"]).drop(columns=["_sort"])
+             .reset_index(drop=True).rename(columns={"Timeframe": "Entry_Model"}))
+    render_timeframe_table(tf_df, title="Timeframe Performance")
+    if not tf_df.empty and "Win %" in tf_df.columns:
+        best_tf = tf_df.loc[tf_df["Win %"].idxmax()]
+        _insight_box(
+            f"<b>{best_tf['Entry_Model']}</b> is your highest-performing timeframe at "
+            f"<b>{best_tf['Win %']:.1f}%</b> win rate across {int(best_tf['Trades'])} trades. "
+            f"Concentrating executions on your best timeframe reduces noise and "
+            f"aligns with the 5M-only refinement from your playbook.")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+def _coach_tab(f: pd.DataFrame):
+    st.markdown('<div class="section">', unsafe_allow_html=True)
+    st.markdown("## Edge Coach (disabled for now)")
+    st.info("Coach is hidden for now.")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+# ── Coverage tab ──────────────────────────────────────────────────────────────
+def _render_data_completeness_by_instrument(f_all: pd.DataFrame):
+    st.markdown("### Data Completeness by Instrument")
+    if f_all is None or f_all.empty:
+        st.info("No rows for the current filters.")
+        return
+    g = _ensure_instrument_column(f_all.copy())
+    if "Instrument" not in g.columns:
+        st.info("No instrument-like column found.")
+        return
+    g["Instrument"] = g["Instrument"].astype(str).str.strip()
+    g = g[g["Instrument"] != ""]
+    if g.empty:
+        st.info("No instrument values present.")
+        return
+    closed_rr = (pd.to_numeric(g["Closed RR"], errors="coerce")
+                 if "Closed RR" in g.columns else pd.Series(index=g.index, dtype=float))
+    g["__complete"] = closed_rr.notna()
+    agg = (g.groupby("Instrument", dropna=False)
+           .agg(total=("Instrument", "size"), complete=("__complete", "sum"))
+           .reset_index())
+    agg["incomplete"] = agg["total"] - agg["complete"]
+    agg = agg.sort_values("Instrument").reset_index(drop=True)
+    per_row = 3
+    for i in range(0, len(agg), per_row):
+        chunk = agg.iloc[i: i + per_row]
+        cols = st.columns(len(chunk))
+        for col, (_, r) in zip(cols, chunk.iterrows()):
+            with col:
+                label = _asset_label(r["Instrument"])
+                st.markdown(f"""
+                    <div class='kpi'>
+                      <div class='label'>{label}</div>
+                      <div class='value' style='color:#4800ff'>{int(r['total'])}</div>
+                      <div class='muted'>Complete: <b>{int(r['complete'])}</b></div>
+                      <div class='muted'>Incomplete: <b>{int(r['incomplete'])}</b></div>
+                    </div>""", unsafe_allow_html=True)
+
+
+def _data_tab(f_all: pd.DataFrame, show_table):
+    st.markdown('<div class="section">', unsafe_allow_html=True)
+    _render_data_completeness_by_instrument(f_all)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+# ── Notion templates UI ───────────────────────────────────────────────────────
+def render_connect_notion_templates_ui():
+    st.markdown('<div class="section">', unsafe_allow_html=True)
+    st.markdown("## Connect Notion / Templates")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("### My Template")
+        p1 = Path("assets/templates/my_template.csv")
+        if p1.exists():
+            st.download_button("⬇️ Download My Template (CSV)", data=p1.read_bytes(),
+                               file_name="my_template.csv", mime="text/csv", use_container_width=True)
+        else:
+            st.warning("Missing: assets/templates/my_template.csv")
+    with c2:
+        st.markdown("### TradingPools Template")
+        p2 = Path("assets/templates/tradingpools_template.csv")
+        if p2.exists():
+            st.download_button("⬇️ Download TradingPools Template (CSV)", data=p2.read_bytes(),
+                               file_name="tradingpools_template.csv", mime="text/csv",
+                               use_container_width=True)
+        else:
+            st.warning("Missing: assets/templates/tradingpools_template.csv")
+    st.divider()
+    st.subheader("Upload your filled template")
+    up = st.file_uploader("CSV/TSV/XLSX supported. Both templates work.",
+                          type=["csv", "tsv", "xlsx", "xls"], key="upload_templates_dual")
+    if up:
+        uploads = Path("uploads")
+        uploads.mkdir(parents=True, exist_ok=True)
+        fpath = uploads / up.name
+        with open(fpath, "wb") as f:
+            f.write(up.getbuffer())
+        df, mapping_name = adapt_auto(fpath, "config/templates")
+        if mapping_name:
+            st.success(f"Detected template: **{mapping_name}**")
+        else:
+            st.warning("No mapping detected. Add a JSON mapping under config/templates/ if needed.")
+        issues = []
+        for col in ["Date", "Pair", "Outcome", "Closed RR", "Is Complete"]:
+            if col not in df.columns:
+                issues.append(f"Missing required column: {col}")
+        if "Outcome" in df.columns:
+            bad = ~df["Outcome"].isin(["Win", "BE", "Loss"]) & df["Outcome"].notna()
+            if bad.any():
+                issues.append("Unexpected Outcome values: " +
+                               str(list(df.loc[bad, "Outcome"].astype(str).unique()[:5])))
+        if issues:
+            st.info("Checks:\n\n- " + "\n- ".join(issues))
+        st.dataframe(df.head(25), use_container_width=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+# ── Projections Tab ───────────────────────────────────────────────────────────
+def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
+    from scipy import stats as scipy_stats
+
+    st.markdown("""
+    <style>
+    .proj-stat-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+        margin: 16px 0;
+    }
+    .proj-stat-cell {
+        background: #f8f8ff;
+        border: 1px solid #e8e0ff;
+        border-radius: 10px;
+        padding: 14px 16px;
+        text-align: center;
+    }
+    .proj-stat-label {
+        font-size: 0.75rem;
+        color: #666;
+        margin-bottom: 4px;
+    }
+    .proj-stat-value {
+        font-size: 1.15rem;
+        font-weight: 700;
+        color: #4800ff;
+    }
+    .proj-table-header {
+        background: #1a0066;
+        color: white;
+        padding: 10px 14px;
+        border-radius: 8px 8px 0 0;
+        font-weight: 700;
+        font-size: 0.9rem;
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        text-align: center;
+    }
+    .proj-table-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        padding: 7px 14px;
+        font-size: 0.82rem;
+        text-align: center;
+        border-bottom: 1px solid #f0ecff;
+    }
+    .proj-table-row:nth-child(even) { background: #faf8ff; }
+    .proj-table-total {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        padding: 10px 14px;
+        font-weight: 700;
+        font-size: 0.85rem;
+        text-align: center;
+        background: #1a0066;
+        color: white;
+        border-radius: 0 0 8px 8px;
+    }
+    .proj-positive { color: #00a86b; font-weight: 600; }
+    .proj-negative { color: #e03131; font-weight: 600; }
+    @media (max-width: 768px) {
+        .proj-stat-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # ── Derive baseline stats ─────────────────────────────────────────────────
+    df = df_raw.copy()
+
+    result_col = next(
+        (c for c in df.columns if c.lower() in ("result", "outcome", "trade result")),
+        None
+    )
+    rr_col = next(
+        (c for c in df.columns if "closed rr" in c.lower() or c.lower() == "closed rr"),
+        None
+    )
+
+    # Prefer Outcome over Result for Win/Loss classification
+    outcome_col = "Outcome" if "Outcome" in df.columns else result_col
+
+    if rr_col is None or outcome_col is None:
+        st.warning("Couldn't find required columns (Outcome / Closed RR).")
+        return
+
+    df[rr_col] = pd.to_numeric(df[rr_col], errors="coerce")
+    df_counted = df[df[outcome_col].isin(["Win", "Loss"])].dropna(subset=[rr_col])
+
+    wins   = df_counted[df_counted[outcome_col] == "Win"]
+    losses = df_counted[df_counted[outcome_col] == "Loss"]
+    total  = len(df_counted)
+
+    if total == 0:
+        st.warning("No Win/Loss trades with Closed RR found — add more complete trades to use this tab.")
+        return
+
+    base_wr          = round(len(wins) / total, 4)
+    base_avg_win_rr  = round(wins[rr_col].mean(), 2)  if len(wins)   > 0 else 1.5
+    base_avg_loss_rr = round(abs(losses[rr_col].mean()), 2) if len(losses) > 0 else 1.0
+
+    # Derive avg trades/month from date column
+    date_col = next(
+        (c for c in df_raw.columns if any(k in c.lower() for k in ("date", "time"))),
+        None
+    )
+    base_trades_per_month = 10
+    if date_col:
+        try:
+            dates = pd.to_datetime(
+                df_raw[date_col].astype(str).str.replace(r"\s*\(GMT.*\)$", "", regex=True),
+                errors="coerce"
+            ).dropna()
+            if len(dates) > 1:
+                months_span = max((dates.max() - dates.min()).days / 30.44, 1)
+                base_trades_per_month = max(1, round(len(df_raw) / months_span))
+        except Exception:
+            pass
+
+    # ── Header ───────────────────────────────────────────────────────────────
+    st.markdown("### Monte Carlo Projections")
+    st.caption(
+        f"Auto-filled from **{total} completed trades** — "
+        f"Win rate: **{base_wr:.1%}** · Avg win RR: **{base_avg_win_rr}** · "
+        f"Avg loss RR: **{base_avg_loss_rr}** · "
+        f"Est. trades/month: **{base_trades_per_month}**"
+    )
+
+    # ── Inputs ────────────────────────────────────────────────────────────────
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        starting_balance = st.number_input(
+            "Initial Balance ($)", min_value=100, max_value=10_000_000,
+            value=10_000, step=500, key="proj_balance"
+        )
+        risk_pct = st.slider(
+            "Risk % per Trade", min_value=0.25, max_value=10.0,
+            value=1.0, step=0.25, format="%.2f%%", key="proj_risk"
+        )
+    with c2:
+        win_rate_input = st.slider(
+            "Winning Trades %", min_value=10, max_value=90,
+            value=int(base_wr * 100), step=1, format="%d%%", key="proj_wr"
+        )
+        avg_win_rr = st.number_input(
+            "Avg Win RR", min_value=0.1, max_value=20.0,
+            value=float(base_avg_win_rr), step=0.1, format="%.2f", key="proj_win_rr"
+        )
+    with c3:
+        trades_per_month = st.number_input(
+            "Avg Trades per Month", min_value=1, max_value=200,
+            value=int(base_trades_per_month), step=1, key="proj_tpm"
+        )
+        total_months = st.slider(
+            "Total Months", min_value=1, max_value=120,
+            value=24, step=1, key="proj_months"
+        )
+
+    # ── Run simulation ────────────────────────────────────────────────────────
+    N_PATHS      = 500
+    wr_frac      = win_rate_input / 100.0
+    total_trades = int(trades_per_month) * int(total_months)
+    loss_rr      = base_avg_loss_rr  # always from real data
+
+    rng         = np.random.default_rng(42)
+    draws       = rng.random((N_PATHS, total_trades))
+    is_win      = draws < wr_frac
+    rr_matrix   = np.where(is_win, avg_win_rr, -loss_rr)
+    pct_change  = rr_matrix * (risk_pct / 100.0)
+    growth      = np.cumprod(1 + pct_change, axis=1)
+    equity_paths = starting_balance * growth
+
+    final_balances = equity_paths[:, -1]
+    median_idx = int(np.argsort(final_balances)[N_PATHS // 2])
+    best_idx   = int(np.argmax(final_balances))
+    worst_idx  = int(np.argmin(final_balances))
+
+    scenario_indices = {
+        "Most Possible": median_idx,
+        "Worst":         worst_idx,
+        "Best":          best_idx,
+    }
+
+    # ── Per-path stats ────────────────────────────────────────────────────────
+    def path_stats(path_idx: int) -> dict:
+        eq   = np.concatenate([[starting_balance], equity_paths[path_idx]])
+        peak = np.maximum.accumulate(eq)
+        dd   = (eq - peak) / peak
+        max_dd = float(dd.min())
+
+        outcomes = rr_matrix[path_idx]
+        max_cl = max_cw = cur_l = cur_w = 0
+        for o in outcomes:
+            if o < 0:
+                cur_l += 1; cur_w = 0
+            else:
+                cur_w += 1; cur_l = 0
+            max_cl = max(max_cl, cur_l)
+            max_cw = max(max_cw, cur_w)
+
+        return {
+            "result_balance":  float(eq[-1]),
+            "total_return":    float((eq[-1] / starting_balance) - 1),
+            "max_dd":          max_dd,
+            "max_loss_streak": max_cl,
+            "max_win_streak":  max_cw,
+            "actual_wr":       float(np.mean(rr_matrix[path_idx] > 0)),
+        }
+
+    def monthly_breakdown(path_idx: int) -> list:
+        rows = []
+        balance  = starting_balance
+        t_idx    = 0
+        tpm      = int(trades_per_month)
+        from datetime import date
+        start_year = date.today().year + 1
+        for m in range(int(total_months)):
+            year  = start_year + m // 12
+            month = (m % 12) + 1
+            month_rr = rr_matrix[path_idx, t_idx: t_idx + tpm]
+            t_idx   += tpm
+            start_bal = balance
+            for rr in month_rr:
+                balance *= (1 + rr * risk_pct / 100.0)
+            rows.append({
+                "year":   year,
+                "month":  month,
+                "pct":    (balance - start_bal) / start_bal,
+                "dollar": balance - start_bal,
+            })
+        return rows
+
+    stats = {k: path_stats(v) for k, v in scenario_indices.items()}
+    MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+
+    # ── Scenario toggle ───────────────────────────────────────────────────────
+    st.markdown("---")
+    selected = st.radio(
+        "Scenario", options=["Most Possible", "Worst", "Best"],
+        horizontal=True, label_visibility="collapsed", key="proj_scenario"
+    )
+
+    active_idx   = scenario_indices[selected]
+    active_stats = stats[selected]
+
+    # ── Spaghetti chart ───────────────────────────────────────────────────────
+    trade_axis  = np.arange(0, total_trades + 1)
+    step        = max(1, total_trades // 200)
+    sample_idxs = rng.choice(N_PATHS, size=min(80, N_PATHS), replace=False)
+
+    bg_rows = []
+    for i in sample_idxs:
+        eq_path = np.concatenate([[starting_balance], equity_paths[i]])
+        for t, b in zip(trade_axis[::step], eq_path[::step]):
+            bg_rows.append({"trade": int(t), "balance": float(b), "path": str(i)})
+
+    hl_rows = []
+    for label, pidx in scenario_indices.items():
+        eq_path = np.concatenate([[starting_balance], equity_paths[pidx]])
+        for t, b in zip(trade_axis[::step], eq_path[::step]):
+            hl_rows.append({"trade": int(t), "balance": float(b), "Scenario": label})
+
+    bg_chart = (
+        alt.Chart(alt.Data(values=bg_rows))
+        .mark_line(opacity=0.06, strokeWidth=1, color="#4800ff")
+        .encode(
+            x=alt.X("trade:Q", title="Trade #"),
+            y=alt.Y("balance:Q", title="Balance ($)", axis=alt.Axis(format="$,.0f")),
+            detail="path:N"
+        )
+    )
+
+    hl_chart = (
+        alt.Chart(alt.Data(values=hl_rows))
+        .mark_line(strokeWidth=2.5)
+        .encode(
+            x="trade:Q",
+            y="balance:Q",
+            color=alt.Color(
+                "Scenario:N",
+                scale=alt.Scale(
+                    domain=["Most Possible", "Worst", "Best"],
+                    range=["#4800ff", "#e03131", "#00a86b"]
+                ),
+                legend=alt.Legend(title=None, orient="top-left")
+            ),
+            tooltip=[
+                alt.Tooltip("trade:Q", title="Trade"),
+                alt.Tooltip("Scenario:N"),
+                alt.Tooltip("balance:Q", title="Balance", format="$,.0f"),
+            ]
+        )
+    )
+
+    rule = (
+        alt.Chart(alt.Data(values=[{"y": float(starting_balance)}]))
+        .mark_rule(strokeDash=[4, 4], color="#aaa", strokeWidth=1)
+        .encode(y="y:Q")
+    )
+
+    st.altair_chart(
+        styler((bg_chart + hl_chart + rule).properties(height=360)),
+        use_container_width=True
+    )
+
+    # ── Stats cards ───────────────────────────────────────────────────────────
+    s = active_stats
+    ret_sign = "+" if s["total_return"] >= 0 else ""
+    prob_profit = float(np.mean(final_balances > starting_balance))
+
+    st.markdown(f"""
+    <div class="proj-stat-grid">
+        <div class="proj-stat-cell">
+            <div class="proj-stat-label">Initial Balance</div>
+            <div class="proj-stat-value">${starting_balance:,.0f}</div>
+        </div>
+        <div class="proj-stat-cell">
+            <div class="proj-stat-label">Result Balance</div>
+            <div class="proj-stat-value">${s['result_balance']:,.0f}</div>
+        </div>
+        <div class="proj-stat-cell">
+            <div class="proj-stat-label">Total Return</div>
+            <div class="proj-stat-value">{ret_sign}{s['total_return']:.1%}</div>
+        </div>
+        <div class="proj-stat-cell">
+            <div class="proj-stat-label">Max Drawdown</div>
+            <div class="proj-stat-value">{s['max_dd']:.1%}</div>
+        </div>
+        <div class="proj-stat-cell">
+            <div class="proj-stat-label">Max Consec. Losses</div>
+            <div class="proj-stat-value">{s['max_loss_streak']}</div>
+        </div>
+        <div class="proj-stat-cell">
+            <div class="proj-stat-label">Max Consec. Wins</div>
+            <div class="proj-stat-value">{s['max_win_streak']}</div>
+        </div>
+        <div class="proj-stat-cell">
+            <div class="proj-stat-label">Simulated Win Rate</div>
+            <div class="proj-stat-value">{s['actual_wr']:.1%}</div>
+        </div>
+        <div class="proj-stat-cell">
+            <div class="proj-stat-label">Prob. of Profit</div>
+            <div class="proj-stat-value">{prob_profit:.1%}</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Monthly breakdown ─────────────────────────────────────────────────────
+    st.markdown("#### Monthly Breakdown")
+    monthly = monthly_breakdown(active_idx)
+
+    years_dict: dict = {}
+    for row in monthly:
+        years_dict.setdefault(row["year"], []).append(row)
+
+    year_list = sorted(years_dict.keys())
+
+    for row_start in range(0, len(year_list), 3):
+        chunk = year_list[row_start: row_start + 3]
+        cols  = st.columns(len(chunk))
+        for col, yr in zip(cols, chunk):
+            yr_rows        = years_dict[yr]
+            yr_total_pct   = sum(r["pct"]    for r in yr_rows)
+            yr_total_dollar = sum(r["dollar"] for r in yr_rows)
+
+            header = f'<div class="proj-table-header"><span>{yr}</span><span>Results %</span><span>Results $</span></div>'
+            body   = ""
+            for r in yr_rows:
+                pct_cls = "proj-positive" if r["pct"] >= 0 else "proj-negative"
+                dol_cls = "proj-positive" if r["dollar"] >= 0 else "proj-negative"
+                pct_str = f"{'+' if r['pct'] >= 0 else ''}{r['pct']:.1%}"
+                dol_str = f"{'$' if r['dollar'] >= 0 else '-$'}{abs(r['dollar']):,.0f}"
+                body += (
+                    f'<div class="proj-table-row">'
+                    f'<span>{MONTHS[r["month"]-1]}</span>'
+                    f'<span class="{pct_cls}">{pct_str}</span>'
+                    f'<span class="{dol_cls}">{dol_str}</span>'
+                    f'</div>'
+                )
+
+            tot_pct_str = f"{'+' if yr_total_pct >= 0 else ''}{yr_total_pct:.1%}"
+            tot_dol_str = f"{'$' if yr_total_dollar >= 0 else '-$'}{abs(yr_total_dollar):,.0f}"
+            footer = (
+                f'<div class="proj-table-total">'
+                f'<span>Total</span>'
+                f'<span>{tot_pct_str}</span>'
+                f'<span>{tot_dol_str}</span>'
+                f'</div>'
+            )
+
+            with col:
+                st.markdown(header + body + footer, unsafe_allow_html=True)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+    # ── Win rate CI ───────────────────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("#### Win Rate — Confidence vs Sample Size")
+
+    _z = scipy_stats.norm.ppf(0.95)  # 90% two-sided Wilson CI
+    sample_sizes = np.arange(10, max(total + 100, 300), 5)
+    ci_rows = []
+    for n in sample_sizes:
+        p = wr_frac
+        denom  = 1 + _z ** 2 / n
+        centre = (p + _z ** 2 / (2 * n)) / denom
+        spread = _z * np.sqrt(p * (1 - p) / n + _z ** 2 / (4 * n ** 2)) / denom
+        ci_rows.append({
+            "n":    int(n),
+            "low":  float(max(0.0, centre - spread)),
+            "mid":  float(wr_frac),
+            "high": float(min(1.0, centre + spread)),
+        })
+
+    ci_df = pd.DataFrame(ci_rows)
+    ci_vals = _to_alt_values(ci_df)
+
+    band = (
+        alt.Chart(alt.Data(values=ci_vals))
+        .mark_area(opacity=0.15, color="#4800ff")
+        .encode(x="n:Q", y="low:Q", y2="high:Q")
+    )
+    line = (
+        alt.Chart(alt.Data(values=ci_vals))
+        .mark_line(color="#4800ff", strokeWidth=2)
+        .encode(
+            x=alt.X("n:Q", title="Sample Size (trades)"),
+            y=alt.Y("mid:Q", title="Win Rate",
+                    axis=alt.Axis(format=".0%"), scale=alt.Scale(zero=False)),
+        )
+    )
+    sample_rule = (
+        alt.Chart(alt.Data(values=[{"x": total}]))
+        .mark_rule(strokeDash=[4, 4], color="#4800ff", strokeWidth=1.5)
+        .encode(x="x:Q")
+    )
+
+    st.altair_chart(
+        styler((band + line + sample_rule).properties(height=220)),
+        use_container_width=True
+    )
+    st.caption(
+        f"Dashed line = your current sample ({total} trades). "
+        "Shaded band = 90% confidence interval — narrows as sample grows."
+    )
+
+
+
+# ─────────────────────────── Refinements Tab ─────────────────────────────────
+
+def _build_refinements_stats(f_perf: pd.DataFrame, df_all_safe: pd.DataFrame) -> dict:
+    """Compile a stats dict from the current dataframes for the AI prompt."""
+    stats: dict = {}
+
+    # ── Overall ───────────────────────────────────────────────────────────────
+    if f_perf is not None and not f_perf.empty:
+        counted = f_perf[f_perf["Outcome"].isin(["Win", "BE", "Loss"])]
+        total = len(counted)
+        if total > 0:
+            wr = round(counted["Outcome"].eq("Win").sum() / total * 100, 1)
+            stats["overall_trades"] = total
+            stats["overall_win_rate"] = wr
+            net_rr, _ = _rr_stats(counted)
+            stats["overall_net_rr"] = round(net_rr, 2) if net_rr is not None else 0.0
+
+    # ── By session ────────────────────────────────────────────────────────────
+    sess_col = next((c for c in ["Session Norm", "Session"] if c in (f_perf.columns if f_perf is not None else [])), None)
+    if sess_col and f_perf is not None and not f_perf.empty:
+        counted = f_perf[f_perf["Outcome"].isin(["Win", "BE", "Loss"])].copy()
+        counted["__sess"] = counted[sess_col].apply(_clean_session_value)
+        sess_rows = []
+        for s, g in counted.groupby("__sess"):
+            if s is None:
+                continue
+            r = outcome_rates_from(g)
+            net_rr, _ = _rr_stats(g)
+            sess_rows.append({"session": s, "trades": len(g), "win_rate": r["win_rate"],
+                               "net_rr": round(net_rr, 2) if net_rr is not None else 0.0})
+        stats["by_session"] = sess_rows
+
+    # ── By instrument ─────────────────────────────────────────────────────────
+    if f_perf is not None and not f_perf.empty:
+        g = _ensure_instrument_column(f_perf.copy())
+        if "Instrument" in g.columns:
+            counted = g[g["Outcome"].isin(["Win", "BE", "Loss"])].copy()
+            counted["Instrument"] = counted["Instrument"].astype(str).str.strip()
+            counted = counted[counted["Instrument"].str.len() > 0]
+            inst_rows = []
+            for inst, sub in counted.groupby("Instrument"):
+                r = outcome_rates_from(sub)
+                net_rr, _ = _rr_stats(sub)
+                inst_rows.append({"instrument": _asset_label(inst), "trades": len(sub),
+                                   "win_rate": r["win_rate"],
+                                   "net_rr": round(net_rr, 2) if net_rr is not None else 0.0})
+            stats["by_instrument"] = inst_rows
+
+    # ── By entry model ────────────────────────────────────────────────────────
+    if f_perf is not None and not f_perf.empty:
+        f_em = _ensure_entry_models_list(f_perf.copy())
+        if "Entry Models List" in f_em.columns:
+            em = f_em[f_em["Entry Models List"].apply(lambda x: isinstance(x, (list, tuple)) and len(x) > 0)]
+            if not em.empty:
+                em = em.explode("Entry Models List", ignore_index=True)
+                em = em[em["Entry Models List"].astype(str).str.strip() != ""]
+                counted = em[em["Outcome"].isin(["Win", "BE", "Loss"])]
+                em_rows = []
+                for model, sub in counted.groupby("Entry Models List"):
+                    r = outcome_rates_from(sub)
+                    net_rr, _ = _rr_stats(sub)
+                    em_rows.append({"model": str(model), "trades": len(sub),
+                                    "win_rate": r["win_rate"],
+                                    "net_rr": round(net_rr, 2) if net_rr is not None else 0.0})
+                stats["by_entry_model"] = em_rows
+
+    # ── Psychology / discipline ───────────────────────────────────────────────
+    if df_all_safe is not None and not df_all_safe.empty:
+        result_col = next((c for c in ["Result", "result"] if c in df_all_safe.columns), None)
+        if result_col:
+            bbs = df_all_safe[df_all_safe[result_col].astype(str).str.strip() == "Bad Beat"]
+            stats["bad_beat_count"] = len(bbs)
+            stats["bad_beat_pct"] = round(len(bbs) / max(1, len(df_all_safe)) * 100, 1)
+
+        # early close impact
+        if "Result" in df_all_safe.columns:
+            ec = df_all_safe[df_all_safe["Result"].isin([
+                "Early Close (Ended up being a BE)", "Early Close (Ended up being a win)"])].copy()
+            if not ec.empty:
+                ec["__closed_mid"] = ec["Closed RR"].apply(_parse_closed_rr_mid)
+                ec["__targeted_mid"] = ec["Targeted RR"].apply(_parse_targeted_rr_mid)
+                be_g = ec[ec["Result"] == "Early Close (Ended up being a BE)"]
+                win_g = ec[ec["Result"] == "Early Close (Ended up being a win)"]
+                be_saved = float(be_g["__closed_mid"].sum()) if not be_g.empty else 0.0
+                win_left = float((win_g["__closed_mid"] - win_g["__targeted_mid"]).sum()) if not win_g.empty else 0.0
+                stats["early_close_net"] = round(be_saved + win_left, 2)
+                stats["early_close_be_saved"] = round(be_saved, 2)
+                stats["early_close_win_left"] = round(win_left, 2)
+
+        ms_col = next((c for c in ["Mental State", "Mental state", "mental_state"] if c in df_all_safe.columns), None)
+        if ms_col:
+            ms_stats = {}
+            for state in ["Good", "Okay", "Bad"]:
+                sub = df_all_safe[df_all_safe[ms_col].astype(str).str.strip() == state]
+                if not sub.empty:
+                    cnt = sub[sub["Outcome"].isin(["Win", "BE", "Loss"])]
+                    ms_stats[state] = {
+                        "trades": len(sub),
+                        "win_rate": round(cnt["Outcome"].eq("Win").sum() / max(1, len(cnt)) * 100, 1)
+                    }
+            stats["mental_state"] = ms_stats
+
+    # ── Asia overweight ───────────────────────────────────────────────────────
+    if "by_session" in stats:
+        total_sess = sum(s["trades"] for s in stats["by_session"])
+        for s in stats["by_session"]:
+            if s["session"] == "Asia":
+                stats["asia_pct"] = round(s["trades"] / max(1, total_sess) * 100, 1)
+
+    return stats
+
+
+def _build_ai_prompt(stats: dict) -> str:
+    lines = [
+        "You are analysing a trader's performance journal called Edge Analysis.",
+        "Based solely on the stats below, identify what is generating profit, what is draining profit, and actionable refinements.",
+        "",
+        "STATS:",
+    ]
+
+    if "overall_trades" in stats:
+        lines.append(f"- Overall: {stats['overall_trades']} trades, {stats['overall_win_rate']}% win rate, {stats['overall_net_rr']:+.2f}R net")
+
+    if "by_session" in stats and stats["by_session"]:
+        lines.append("\nSession breakdown:")
+        for s in sorted(stats["by_session"], key=lambda x: -x["win_rate"]):
+            lines.append(f"  • {s['session']}: {s['trades']} trades, {s['win_rate']}% WR, {s['net_rr']:+.2f}R net")
+
+    if "by_instrument" in stats and stats["by_instrument"]:
+        lines.append("\nInstrument breakdown:")
+        for i in sorted(stats["by_instrument"], key=lambda x: -x["win_rate"]):
+            lines.append(f"  • {i['instrument']}: {i['trades']} trades, {i['win_rate']}% WR, {i['net_rr']:+.2f}R net")
+
+    if "by_entry_model" in stats and stats["by_entry_model"]:
+        lines.append("\nEntry model breakdown:")
+        for m in sorted(stats["by_entry_model"], key=lambda x: -x["win_rate"]):
+            lines.append(f"  • {m['model']}: {m['trades']} trades, {m['win_rate']}% WR, {m['net_rr']:+.2f}R net")
+
+    if "mental_state" in stats:
+        lines.append("\nMental state win rates:")
+        for state, d in stats["mental_state"].items():
+            lines.append(f"  • {state}: {d['win_rate']}% WR ({d['trades']} trades)")
+
+    if "bad_beat_count" in stats:
+        lines.append(f"\nBad beats: {stats['bad_beat_count']} ({stats['bad_beat_pct']}% of trades)")
+
+    if "early_close_net" in stats:
+        lines.append(
+            f"\nEarly close net impact: {stats['early_close_net']:+.2f}R "
+            f"(saved {stats['early_close_be_saved']:+.2f}R on BE trades, "
+            f"left {stats['early_close_win_left']:+.2f}R on win trades)"
+        )
+
+    if "asia_pct" in stats:
+        lines.append(f"\nAsia session share: {stats['asia_pct']}% of all trades (alert threshold: 45%)")
+
+    lines += [
+        "",
+        "INSTRUCTIONS:",
+        "Respond with a JSON object with exactly three keys:",
+        "  'working': array of 3–5 objects with keys 'title' (string, ≤8 words) and 'detail' (string, 1–2 sentences, specific to the numbers above)",
+        "  'holding_back': array of 3–5 objects with keys 'title' and 'detail' (same format)",
+        "  'refinements': array of 3–5 objects with keys 'title' and 'action' (concrete, specific, 1–2 sentences)",
+        "Be data-specific. Reference actual numbers. No generic trading advice.",
+        "Output valid JSON only — no markdown, no preamble.",
+    ]
+    return "\n".join(lines)
+
+
+def _refinements_tab(f_perf: pd.DataFrame, df_all_safe: pd.DataFrame, styler):
+    st.markdown('<div class="section">', unsafe_allow_html=True)
+
+    st.markdown("""
+    <style>
+    .ref-col-header {
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        margin-bottom: 14px;
+        padding-bottom: 6px;
+        border-bottom: 2px solid #4800ff;
+        color: #4800ff;
+    }
+    .ref-card {
+        background: #ffffff;
+        border: 1px solid #e8e4f7;
+        border-radius: 8px;
+        padding: 14px 16px;
+        margin-bottom: 10px;
+    }
+    .ref-card-title {
+        font-size: 13px;
+        font-weight: 700;
+        color: #1a1a2e;
+        margin-bottom: 4px;
+    }
+    .ref-card-body {
+        font-size: 13px;
+        color: #4b5563;
+        line-height: 1.6;
+    }
+    .ref-working   { border-left: 4px solid #16a34a; }
+    .ref-holding   { border-left: 4px solid #ef4444; }
+    .ref-refine    { border-left: 4px solid #4800ff; }
+    .ref-loading {
+        background: #f0ebff;
+        border-radius: 8px;
+        padding: 20px;
+        text-align: center;
+        color: #4800ff;
+        font-size: 14px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    if f_perf is None or f_perf.empty:
+        st.info("No trades for current filters.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    stats = _build_refinements_stats(f_perf, df_all_safe)
+    prompt = _build_ai_prompt(stats)
+
+    cache_key = f"refinements_result_{hash(prompt)}"
+
+    if cache_key not in st.session_state:
+        placeholder = st.empty()
+        placeholder.markdown(
+            '<div class="ref-loading">🔍 Analysing your trading data…</div>',
+            unsafe_allow_html=True,
+        )
+        try:
+            import anthropic as _anthropic
+            client = _anthropic.Anthropic()
+            msg = client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=1200,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            raw = msg.content[0].text.strip()
+            # Strip any accidental markdown fences
+            raw = re.sub(r"^```[a-z]*\n?", "", raw)
+            raw = re.sub(r"\n?```$", "", raw)
+            import json
+            result = json.loads(raw)
+            st.session_state[cache_key] = result
+        except Exception as e:
+            st.session_state[cache_key] = {"error": str(e)}
+        placeholder.empty()
+
+    result = st.session_state.get(cache_key, {})
+
+    if "error" in result:
+        st.warning(f"AI analysis unavailable: {result['error']}")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    c_working, c_holding, c_refine = st.columns(3)
+
+    with c_working:
+        st.markdown('<div class="ref-col-header">✓ What\'s Working</div>', unsafe_allow_html=True)
+        for item in result.get("working", []):
+            st.markdown(
+                f'<div class="ref-card ref-working">'
+                f'<div class="ref-card-title">{item.get("title","")}</div>'
+                f'<div class="ref-card-body">{item.get("detail","")}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+    with c_holding:
+        st.markdown('<div class="ref-col-header">⚠ Holding the System Back</div>', unsafe_allow_html=True)
+        for item in result.get("holding_back", []):
+            st.markdown(
+                f'<div class="ref-card ref-holding">'
+                f'<div class="ref-card-title">{item.get("title","")}</div>'
+                f'<div class="ref-card-body">{item.get("detail","")}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+    with c_refine:
+        st.markdown('<div class="ref-col-header">→ Potential Refinements</div>', unsafe_allow_html=True)
+        for item in result.get("refinements", []):
+            st.markdown(
+                f'<div class="ref-card ref-refine">'
+                f'<div class="ref-card-title">{item.get("title","")}</div>'
+                f'<div class="ref-card-body">{item.get("action","")}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("🔄 Re-analyse", key="refinements_rerun"):
+        if cache_key in st.session_state:
+            del st.session_state[cache_key]
+        st.rerun()
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+
+
+# ── Salty: Execution Quality tab (Deviation Score) ───────────────────────────
+def _salty_execution_quality_tab(f: pd.DataFrame) -> None:
+    """Show deviation score analysis — available in Salty schema only."""
+    st.markdown('<div class="section">', unsafe_allow_html=True)
+    st.markdown("### Execution Quality (Deviation Score)")
+    st.caption("How far your actual entry deviated from your planned entry.")
+
+    dev_col = "Deviation Score" if "Deviation Score" in f.columns else None
+    if dev_col is None or f.empty:
+        _unavailable("Deviation Score")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    g = f.copy()
+    g["__dev_str"] = g[dev_col].astype(str).str.strip()
+    # Deviation scores: "1 = small deviation", "2 = moderate deviation", etc.
+    g["__dev_num"] = g["__dev_str"].str.extract(r"^(\d)").astype(float)
+    g = g[g["__dev_num"].notna()]
+
+    if g.empty:
+        st.info("No deviation score data recorded.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    rows = []
+    labels = {1: "Small", 2: "Moderate", 3: "Large"}
+    counted = g[g["Outcome"].isin(["Win", "BE", "Loss"])]
+    for score in sorted(g["__dev_num"].unique()):
+        sub = counted[counted["__dev_num"] == score]
+        if sub.empty:
+            continue
+        r = outcome_rates_from(sub)
+        net_rr, _ = _rr_stats(sub)
+        rows.append(dict(
+            Entry_Model=f"{int(score)} — {labels.get(int(score), str(int(score)))} deviation",
+            Trades=len(sub),
+            **{"Win %": r["win_rate"], "BE %": r["be_rate"], "Loss %": r["loss_rate"],
+               "Net PnL (R)": net_rr}
+        ))
+
+    if rows:
+        from edge_analysis.ui.components import render_entry_model_table as _ret
+        _ret(pd.DataFrame(rows), title="Win Rate by Deviation Score")
+        if rows[0]["Win %"] > rows[-1]["Win %"]:
+            _insight_box(
+                f"Lower deviation scores correlate with higher win rates — "
+                f"<b>small deviation ({rows[0]['Win %']:.1f}% WR)</b> vs "
+                f"<b>large deviation ({rows[-1]['Win %']:.1f}% WR)</b>. "
+                f"Precise entries near your planned level give your system its best chance.", "good")
+    else:
+        st.info("Not enough data for deviation score analysis.")
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# ── Salty early close (simplified — no Targeted RR) ──────────────────────────
+def _early_close_tab_salty(df: pd.DataFrame, styler):
+    """Simplified early close section for Salty schema (no Targeted RR column)."""
+    st.markdown('<div class="section">', unsafe_allow_html=True)
+    st.markdown("### Early Close Profitability")
+
+    if df is None or df.empty:
+        _unavailable("Early Close Analysis")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    # Salty has "Hit Full TP" (mapped from "Did price hit full TP without you?")
+    hit_col = next((c for c in ["Hit Full TP", "Did price hit full TP without you?"] if c in df.columns), None)
+    rr_col = "Closed RR" if "Closed RR" in df.columns else None
+
+    if hit_col is None or rr_col is None:
+        _unavailable("Early Close Analysis (requires Hit Full TP + Closed RR)")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    g = df.copy()
+    g["__rr"] = pd.to_numeric(g[rr_col], errors="coerce")
+    g = g[g["__rr"].notna()]
+
+    if g.empty:
+        st.info("No early close data with RR values.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    hit_yes = g[g[hit_col].astype(str).str.strip().str.upper().isin(["YES", "Y", "TRUE", "1"])]
+    hit_no  = g[~g.index.isin(hit_yes.index)]
+
+    n_hit   = len(hit_yes)
+    n_nohit = len(hit_no)
+    total   = len(g)
+
+    m1, m2, m3 = st.columns(3)
+    with m1:
+        st.markdown(
+            f"<div class='kpi'><div class='label'>Trades with Full TP Data</div>"
+            f"<div class='value' style='color:#4800ff'>{total}</div></div>",
+            unsafe_allow_html=True)
+    with m2:
+        pct = round(n_hit / max(1, total) * 100, 1)
+        st.markdown(
+            f"<div class='kpi'><div class='label'>Price Hit Full TP</div>"
+            f"<div class='value' style='color:#4800ff'>{n_hit}</div>"
+            f"<div class='muted'>{pct}% of trades</div></div>",
+            unsafe_allow_html=True)
+    with m3:
+        avg_rr_hit = float(hit_yes["__rr"].mean()) if n_hit > 0 else 0.0
+        avg_rr_no  = float(hit_no["__rr"].mean())  if n_nohit > 0 else 0.0
+        st.markdown(
+            f"<div class='kpi'><div class='label'>Avg RR — Hit TP vs Not</div>"
+            f"<div class='value' style='color:#4800ff'>{avg_rr_hit:+.2f}R / {avg_rr_no:+.2f}R</div>"
+            f"<div class='muted'>hit TP / did not hit TP</div></div>",
+            unsafe_allow_html=True)
+
+    if n_hit > 0:
+        _insight_box(
+            f"In <b>{n_hit}</b> of {total} trades, price continued to full TP after your exit. "
+            f"Avg RR when TP was hit: <b>{avg_rr_hit:+.2f}R</b>. "
+            f"Log 'Targeted RR' in your Notion template to unlock full early close analysis.", "warn")
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# ─────────────────────────── 7-TAB LAYOUT ────────────────────────────────────
+def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table):
+    f_perf = _prep_perf_df(f)
+    df_all_safe = df_all.copy() if df_all is not None else df_all
+
+    t_performance, t_setup, t_timing, t_psychology, t_externals, t_projections, t_refinements = st.tabs(
+        ["Performance", "Setup", "Timing", "Psychology", "Externals", "Projections", "Refinements"]
+    )
+
+    # ── Tab 1: Performance ────────────────────────────────────────────────────
+    with t_performance:
+        _growth_tab(f_perf, df_all_safe, styler)
+        st.divider()
+        if not _is_salty():
+            _account_comparison_tab(f_perf, styler)
+            st.divider()
+        _instruments_tab(f_perf, show_table)
+        st.divider()
+        if not _is_salty():
+            _early_close_tab(df_all_safe, styler)
+        else:
+            _early_close_tab_salty(df_all_safe, styler)
+
+    # ── Tab 2: Setup ──────────────────────────────────────────────────────────
+    with t_setup:
+        _entry_models_tab(f_perf, show_table)
+        st.divider()
+        _confluences_tab(f_perf, show_table)
+        st.divider()
+        _data_tab(df_all_safe, show_table)
+        if _is_salty():
+            st.divider()
+            _salty_execution_quality_tab(f_perf)
+
+    # ── Tab 3: Timing ─────────────────────────────────────────────────────────
+    with t_timing:
+        _hourly_expectancy_clock(df_all_safe)
+        st.divider()
+        _sessions_tab(f_perf, show_table)
+        st.divider()
+        _time_days_tab(f_perf, show_table)
+        st.divider()
+        _timeframes_tab(f_perf, show_table)
+
+    # ── Tab 4: Psychology ─────────────────────────────────────────────────────
+    with t_psychology:
+        _psychology_tab(f_perf, df_all_safe, styler)
+
+    # ── Tab 5: Externals ──────────────────────────────────────────────────────
+    with t_externals:
+        _conditions_tab(f_perf, show_table)
+
+    # ── Tab 6: Projections ────────────────────────────────────────────────────
+    with t_projections:
+        _projections_tab(df_all_safe, styler)
+
+    # ── Tab 7: Refinements ────────────────────────────────────────────────────
+    with t_refinements:
+        _refinements_tab(f_perf, df_all_safe, styler)
