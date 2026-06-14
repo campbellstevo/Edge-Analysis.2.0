@@ -76,6 +76,11 @@ def parse_closed_rr(x):
     if m:
         a = float(m.group(1)); b = float(m.group(2))
         return (a + b) / 2.0
+    # "+10 Plus" / "10 Plus" / "10+"  -> floor value (e.g. 10). Without this the
+    # biggest winners parse to NaN and drop out of all RR / PnL stats.
+    m_plus = re.search(r"([+-]?\d+(?:\.\d+)?)\s*(?:\+|plus\b)", s, re.I)
+    if m_plus:
+        return float(m_plus.group(1))
     try:
         return float(s.replace("+", ""))
     except Exception:

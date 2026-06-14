@@ -67,6 +67,10 @@ def parse_closed_rr(x):
     if m:
         a = float(m.group(1)); b = float(m.group(2))
         return (a + b) / 2.0
+    # "+10 Plus" / "10 Plus" / "10+" -> floor value (e.g. 10)
+    m_plus = re.search(r"([+-]?\d+(?:\.\d+)?)\s*(?:\+|plus\b)", s, re.I)
+    if m_plus:
+        return float(m_plus.group(1))
     s = s.replace('+', '')
     try: return float(s)
     except Exception: return np.nan
