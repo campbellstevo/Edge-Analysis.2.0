@@ -5,5 +5,5 @@ numpy
 altair
 python-dateutil
 requests
-notion-client
+notion-client==2.2.1
 streamlit-js-eval
