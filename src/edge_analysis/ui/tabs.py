@@ -2484,7 +2484,9 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
     base_avg_loss_rr = round(abs(losses[rr_col].mean()), 2) if len(losses) > 0 else 1.0
 
     # Derive avg trades/month from date column
-    date_col = next(
+    # Prefer the canonical, already-parsed "Date" column; fall back to any
+    # date/time-like raw column only if it is missing.
+    date_col = "Date" if "Date" in df_raw.columns else next(
         (c for c in df_raw.columns if any(k in c.lower() for k in ("date", "time"))),
         None
     )
