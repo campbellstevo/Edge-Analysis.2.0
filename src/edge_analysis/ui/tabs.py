@@ -2064,7 +2064,7 @@ def _conditions_tab(f: pd.DataFrame, show_table):
         x_min = min(chart_df["Expectancy"].min() - 0.35, -0.15)
         x_max = max(chart_df["Expectancy"].max() + 0.35,  0.15)
 
-        base = alt.Chart(chart_df).encode(
+        base = alt.Chart(alt.Data(values=_to_alt_values(chart_df))).encode(
             y=alt.Y(
                 "Condition:N",
                 sort=alt.EncodingSortField(field="SortKey", order="ascending"),
@@ -2121,7 +2121,7 @@ def _conditions_tab(f: pd.DataFrame, show_table):
             ),
         )
 
-        rule = alt.Chart(pd.DataFrame({"x": [0]})).mark_rule(
+        rule = alt.Chart(alt.Data(values=[{"x": 0}])).mark_rule(
             color="#cbd5e1", strokeWidth=1.5
         ).encode(x="x:Q")
 
@@ -3065,8 +3065,16 @@ def _refinements_tab(f_perf: pd.DataFrame, df_all_safe: pd.DataFrame, styler):
             unsafe_allow_html=True,
         )
         try:
+            import os as _os
+            try:
+                _key = st.secrets.get("ANTHROPIC_API_KEY")
+            except Exception:
+                _key = None
+            _key = _key or _os.environ.get("ANTHROPIC_API_KEY")
+            if not _key:
+                raise RuntimeError("no_api_key")
             import anthropic as _anthropic
-            client = _anthropic.Anthropic()
+            client = _anthropic.Anthropic(api_key=_key)
             msg = client.messages.create(
                 model="claude-sonnet-4-20250514",
                 max_tokens=1200,
@@ -3086,7 +3094,16 @@ def _refinements_tab(f_perf: pd.DataFrame, df_all_safe: pd.DataFrame, styler):
     result = st.session_state.get(cache_key, {})
 
     if "error" in result:
-        st.warning(f"AI analysis unavailable: {result['error']}")
+        _err = str(result.get("error", ""))
+        if _err == "no_api_key" or "api_key" in _err.lower() or "ANTHROPIC_API_KEY" in _err:
+            st.info(
+                "AI-powered refinements are turned off. Add an **ANTHROPIC_API_KEY** under "
+                "your Streamlit app **Settings → Secrets** to enable AI-generated insights here."
+            )
+        elif "anthropic" in _err.lower() and "module" in _err.lower():
+            st.info("AI refinements will be available after the next deploy — reboot the app to finish installing.")
+        else:
+            st.warning(f"AI analysis unavailable: {_err}")
         st.markdown("</div>", unsafe_allow_html=True)
         return
 
