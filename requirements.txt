@@ -1,9 +1,9 @@
-streamlit>=1.30
-pandas
-scipy
-numpy
-altair
-python-dateutil
-requests
+streamlit>=1.30,<2
+pandas>=2.0,<3
+scipy>=1.11,<2
+numpy>=1.26,<3
+altair>=5,<6
+python-dateutil>=2.8,<3
+requests>=2.31,<3
 notion-client==2.2.1
-streamlit-js-eval
+streamlit-js-eval>=0.1,<1

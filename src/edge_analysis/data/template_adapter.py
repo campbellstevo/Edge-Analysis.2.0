@@ -25,7 +25,7 @@ def _coerce(s: pd.Series, kind: str) -> pd.Series:
     if kind == "int":
         return pd.to_numeric(s.astype(str).str.replace(r"[^\d\-]", "", regex=True), errors="coerce").astype("Int64")
     if kind == "bool":
-        return s.astype(str).strip().str.lower().isin(["true","1","yes","y","✅"])
+        return s.astype(str).str.strip().str.lower().isin(["true","1","yes","y","✅"])
     return s
 
 def _normalize(val: str, rules: dict) -> str:

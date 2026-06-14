@@ -2524,16 +2524,16 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
     with c2:
         win_rate_input = st.slider(
             "Winning Trades %", min_value=10, max_value=90,
-            value=int(base_wr * 100), step=1, format="%d%%", key="proj_wr"
+            value=int(min(90, max(10, base_wr * 100))), step=1, format="%d%%", key="proj_wr"
         )
         avg_win_rr = st.number_input(
             "Avg Win RR", min_value=0.1, max_value=20.0,
-            value=float(base_avg_win_rr), step=0.1, format="%.2f", key="proj_win_rr"
+            value=float(min(20.0, max(0.1, base_avg_win_rr))), step=0.1, format="%.2f", key="proj_win_rr"
         )
     with c3:
         trades_per_month = st.number_input(
-            "Avg Trades per Month", min_value=1, max_value=200,
-            value=int(base_trades_per_month), step=1, key="proj_tpm"
+            "Avg Trades per Month", min_value=1, max_value=1000,
+            value=int(min(1000, max(1, base_trades_per_month))), step=1, key="proj_tpm"
         )
         total_months = st.slider(
             "Total Months", min_value=1, max_value=120,
