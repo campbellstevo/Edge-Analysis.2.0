@@ -3001,6 +3001,107 @@ def _build_ai_prompt(stats: dict) -> str:
     return "\n".join(lines)
 
 
+def _compute_refinements(stats: dict) -> dict:
+    """Derive working / holding-back / refinement insights directly from the
+    stats dict (no AI). Returns the same shape the renderer expects."""
+    working, holding, refine = [], [], []
+    MIN = 5
+
+    wr  = stats.get("overall_win_rate")
+    net = stats.get("overall_net_rr")
+    n   = stats.get("overall_trades", 0)
+
+    if net is not None and n:
+        if net > 0:
+            working.append({"title": f"System is net positive (+{net:.1f}R)",
+                            "detail": f"Across {n} completed trades at a {wr:.0f}% win rate. The edge is real \u2014 protect it with consistent risk."})
+        else:
+            holding.append({"title": f"Net result is negative ({net:.1f}R)",
+                            "detail": f"Over {n} trades at {wr:.0f}% win rate \u2014 the mix of win rate and average R isn't profitable yet."})
+
+    def _bw(rows):
+        elig = [r for r in (rows or []) if r.get("trades", 0) >= MIN]
+        if not elig:
+            return None, None
+        return max(elig, key=lambda r: r["net_rr"]), min(elig, key=lambda r: r["net_rr"])
+
+    b, w = _bw(stats.get("by_session"))
+    if b and b["net_rr"] > 0:
+        working.append({"title": f"{b['session']} is your strongest session",
+                        "detail": f"{b['net_rr']:+.1f}R over {b['trades']} trades ({b['win_rate']:.0f}% win rate)."})
+    if w and w is not b and w["net_rr"] < 0:
+        holding.append({"title": f"{w['session']} session is bleeding R",
+                        "detail": f"{w['net_rr']:+.1f}R over {w['trades']} trades ({w['win_rate']:.0f}% win rate)."})
+        refine.append({"title": f"Tighten or cut {w['session']} trades",
+                       "action": f"{w['session']} is net {w['net_rr']:+.1f}R. Either stop trading it or raise the bar there and re-measure."})
+
+    b, w = _bw(stats.get("by_instrument"))
+    if b and b["net_rr"] > 0:
+        working.append({"title": f"{b['instrument']} is carrying the edge",
+                        "detail": f"{b['net_rr']:+.1f}R over {b['trades']} trades ({b['win_rate']:.0f}% win rate)."})
+    if w and w is not b and w["net_rr"] < 0:
+        holding.append({"title": f"{w['instrument']} is a net drag",
+                        "detail": f"{w['net_rr']:+.1f}R over {w['trades']} trades ({w['win_rate']:.0f}% win rate)."})
+        refine.append({"title": f"Reconsider trading {w['instrument']}",
+                       "action": f"{w['instrument']} costs you {w['net_rr']:+.1f}R. Drop it or trade only A+ setups there."})
+
+    b, w = _bw(stats.get("by_entry_model"))
+    if b and b["net_rr"] > 0:
+        working.append({"title": f"'{b['model']}' is your best model",
+                        "detail": f"{b['net_rr']:+.1f}R over {b['trades']} trades ({b['win_rate']:.0f}% win rate)."})
+    if w and w is not b and w["net_rr"] < 0:
+        holding.append({"title": f"'{w['model']}' underperforms",
+                        "detail": f"{w['net_rr']:+.1f}R over {w['trades']} trades ({w['win_rate']:.0f}% win rate)."})
+        refine.append({"title": "Lean into your best model",
+                       "action": f"Shift size from '{w['model']}' ({w['net_rr']:+.1f}R) toward your higher-expectancy models."})
+
+    asia = stats.get("asia_pct")
+    if asia is not None and asia > ASIA_WARN_THRESHOLD:
+        holding.append({"title": f"Asia is overweight ({asia:.0f}% of trades)",
+                        "detail": f"Above the {ASIA_WARN_THRESHOLD:.0f}% threshold \u2014 typically a lower-quality session for this system."})
+        refine.append({"title": "Rebalance toward London / NY",
+                       "action": f"Asia is {asia:.0f}% of your trades. Cap it and redirect focus to your stronger sessions."})
+
+    ms = stats.get("mental_state", {})
+    if "Good" in ms:
+        good_wr = ms["Good"]["win_rate"]
+        for st_name in ("Okay", "Bad"):
+            d = ms.get(st_name)
+            if d and d["trades"] >= MIN and d["win_rate"] + 8 < good_wr:
+                gap = good_wr - d["win_rate"]
+                holding.append({"title": f"'{st_name}' mental state hurts you",
+                                "detail": f"{d['win_rate']:.0f}% win rate vs {good_wr:.0f}% when Good \u2014 a {gap:.0f}-point drop."})
+                refine.append({"title": f"Treat '{st_name}' as a no-trade signal",
+                               "action": f"Win rate falls {gap:.0f} points in a '{st_name}' state. Step away when you're not sharp."})
+
+    bbc = stats.get("bad_beat_count", 0); bbp = stats.get("bad_beat_pct")
+    if bbc and bbp is not None and bbp >= 3:
+        holding.append({"title": f"{bbc} bad beats ({bbp:.0f}% of trades)",
+                        "detail": "Stopped out then price ran to TP \u2014 emotionally costly even when it's not your fault."})
+        refine.append({"title": "Run the step-away protocol",
+                       "action": "After a bad beat, close the platform until the next session to avoid revenge trades."})
+
+    ecn = stats.get("early_close_net")
+    if ecn is not None:
+        if ecn >= 0:
+            working.append({"title": f"Early-close management nets +{ecn:.1f}R",
+                            "detail": "Your discretionary exits are adding R overall."})
+        else:
+            holding.append({"title": f"Early closing costs {ecn:.1f}R",
+                            "detail": "You leave more on winners than you save on break-evens."})
+            refine.append({"title": "Let winners run further",
+                           "action": f"Early closes net {ecn:.1f}R. Hold toward structure before managing the trade."})
+
+    if not working:
+        working.append({"title": "Keep logging trades", "detail": "Not enough completed trades yet to surface a clear strength."})
+    if not holding:
+        holding.append({"title": "No major leaks detected", "detail": "Nothing stands out as dragging the system down right now."})
+    if not refine:
+        refine.append({"title": "Maintain consistency", "action": "Keep risk and process steady, and re-check as more data builds."})
+
+    return {"working": working[:5], "holding_back": holding[:5], "refinements": refine[:5]}
+
+
 def _refinements_tab(f_perf: pd.DataFrame, df_all_safe: pd.DataFrame, styler):
     st.markdown('<div class="section">', unsafe_allow_html=True)
 
@@ -3054,58 +3155,7 @@ def _refinements_tab(f_perf: pd.DataFrame, df_all_safe: pd.DataFrame, styler):
         return
 
     stats = _build_refinements_stats(f_perf, df_all_safe)
-    prompt = _build_ai_prompt(stats)
-
-    cache_key = f"refinements_result_{hash(prompt)}"
-
-    if cache_key not in st.session_state:
-        placeholder = st.empty()
-        placeholder.markdown(
-            '<div class="ref-loading">🔍 Analysing your trading data…</div>',
-            unsafe_allow_html=True,
-        )
-        try:
-            import os as _os
-            try:
-                _key = st.secrets.get("ANTHROPIC_API_KEY")
-            except Exception:
-                _key = None
-            _key = _key or _os.environ.get("ANTHROPIC_API_KEY")
-            if not _key:
-                raise RuntimeError("no_api_key")
-            import anthropic as _anthropic
-            client = _anthropic.Anthropic(api_key=_key)
-            msg = client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=1200,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            raw = msg.content[0].text.strip()
-            # Strip any accidental markdown fences
-            raw = re.sub(r"^```[a-z]*\n?", "", raw)
-            raw = re.sub(r"\n?```$", "", raw)
-            import json
-            result = json.loads(raw)
-            st.session_state[cache_key] = result
-        except Exception as e:
-            st.session_state[cache_key] = {"error": str(e)}
-        placeholder.empty()
-
-    result = st.session_state.get(cache_key, {})
-
-    if "error" in result:
-        _err = str(result.get("error", ""))
-        if _err == "no_api_key" or "api_key" in _err.lower() or "ANTHROPIC_API_KEY" in _err:
-            st.info(
-                "AI-powered refinements are turned off. Add an **ANTHROPIC_API_KEY** under "
-                "your Streamlit app **Settings → Secrets** to enable AI-generated insights here."
-            )
-        elif "anthropic" in _err.lower() and "module" in _err.lower():
-            st.info("AI refinements will be available after the next deploy — reboot the app to finish installing.")
-        else:
-            st.warning(f"AI analysis unavailable: {_err}")
-        st.markdown("</div>", unsafe_allow_html=True)
-        return
+    result = _compute_refinements(stats)
 
     c_working, c_holding, c_refine = st.columns(3)
 
@@ -3143,9 +3193,7 @@ def _refinements_tab(f_perf: pd.DataFrame, df_all_safe: pd.DataFrame, styler):
             )
 
     st.markdown("<br>", unsafe_allow_html=True)
-    if st.button("🔄 Re-analyse", key="refinements_rerun"):
-        if cache_key in st.session_state:
-            del st.session_state[cache_key]
+    if st.button("🔄 Refresh", key="refinements_rerun"):
         st.rerun()
 
     st.markdown("</div>", unsafe_allow_html=True)
