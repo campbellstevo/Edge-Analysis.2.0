@@ -10,6 +10,7 @@ Helpers from tabs.py (_insight_box, _to_alt_values, _unavailable) are imported
 lazily to avoid a circular import.
 """
 from __future__ import annotations
+import re
 import numpy as np
 import pandas as pd
 import altair as alt
@@ -74,11 +75,23 @@ def _mae_mfe_section(df: pd.DataFrame, styler) -> None:
     avg_mae = float(g["__mae"].mean()) if pd.notna(g["__mae"]).any() else float("nan")
     avg_giveback = float((capwins["__mfe"] - capwins["__rr"]).clip(lower=0).mean()) if not capwins.empty else float("nan")
 
-    c1, c2, c3, c4 = st.columns(4)
-    with c1: _kpi("Avg MFE (favour)", f"{avg_mfe:.2f}R", "avg peak in your favour")
-    with c2: _kpi("Avg MAE (heat)", "—" if np.isnan(avg_mae) else f"{avg_mae:.2f}R", "avg dip before close")
-    with c3: _kpi("Capture efficiency", "—" if np.isnan(cap_eff) else f"{cap_eff:.0f}%", "of favour banked on wins")
-    with c4: _kpi("Avg give-back", "—" if np.isnan(avg_giveback) else f"{avg_giveback:.2f}R", "left on table per win")
+    # Prefer MT5's native computed columns when present (exact, not estimated)
+    _eff = _num(df, "MFE Efficiency %")
+    if _eff is not None:
+        cap_eff = float(_eff.mean())
+    _gb = _num(df, "Give-back after MFE (R)")
+    if _gb is not None:
+        avg_giveback = float(_gb.mean())
+    _tgt = _num(df, "Target Achieved %")
+    avg_tgt = float(_tgt.mean()) if _tgt is not None else float("nan")
+
+    cols = st.columns(5 if not np.isnan(avg_tgt) else 4)
+    with cols[0]: _kpi("Avg MFE (favour)", f"{avg_mfe:.2f}R", "avg peak in your favour")
+    with cols[1]: _kpi("Avg MAE (heat)", "—" if np.isnan(avg_mae) else f"{avg_mae:.2f}R", "avg dip before close")
+    with cols[2]: _kpi("Capture efficiency", "—" if np.isnan(cap_eff) else f"{cap_eff:.0f}%", "of favour banked on wins")
+    with cols[3]: _kpi("Avg give-back", "—" if np.isnan(avg_giveback) else f"{avg_giveback:.2f}R", "left on table per win")
+    if not np.isnan(avg_tgt):
+        with cols[4]: _kpi("Target achieved", f"{avg_tgt:.0f}%", "of planned target hit")
 
     plot = g.copy()
     plot["OutcomeC"] = _outcome(plot)
@@ -241,7 +254,8 @@ def _execution_section(df: pd.DataFrame, styler) -> None:
     dev = _num(df, "Deviation Score")
     planned = _num(df, "Planned R:R")
     rr = _num(df, "Closed RR")
-    has_pd = "Price Delivery" in df.columns
+    _pdcol = next((c for c in ["Price action delivery", "Price Delivery"] if c in df.columns), None)
+    has_pd = _pdcol is not None
     if dev is None and planned is None and not has_pd:
         t._unavailable("Execution Quality"); return
 
@@ -262,7 +276,7 @@ def _execution_section(df: pd.DataFrame, styler) -> None:
 
     if has_pd:
         g = df.copy()
-        g["__pd"] = g["Price Delivery"].astype(str).str.strip()
+        g["__pd"] = g[_pdcol].astype(str).str.strip()
         g = g[~g["__pd"].isin(["", "nan", "None"])]
         if rr is not None:
             g["__rr"] = pd.to_numeric(df["Closed RR"], errors="coerce")
@@ -294,17 +308,269 @@ def _execution_section(df: pd.DataFrame, styler) -> None:
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 def render_mt5_tab(f_perf: pd.DataFrame, df_all: pd.DataFrame, styler) -> None:
-    """Render all four MT5-only analytics sections."""
+    """Render all MT5-only analytics sections."""
     data = f_perf if (f_perf is not None and not f_perf.empty) else df_all
     if data is None or data.empty:
         st.info("No trades for current filters.")
         return
     st.markdown('<div class="section">', unsafe_allow_html=True)
-    _mae_mfe_section(data, styler)
-    st.divider()
+
+    st.markdown("## 📈 Performance & Money")
     _dollar_pnl_section(data, styler)
     st.divider()
+    _mae_mfe_section(data, styler)
+    st.divider()
+    _missed_runner_section(data, styler)
+
+    st.markdown("## 🧭 Edge Breakdown")
+    _direction_section(data, styler)
+    st.divider()
+    _conviction_section(data, styler)
+    st.divider()
+    _holdtime_section(data, styler)
+    st.divider()
+    _spread_section(data, styler)
+    st.divider()
     _timing_section(data, styler)
+
+    st.markdown("## 🎯 Discipline & Execution")
+    _discipline_section(data, styler)
+    st.divider()
+    _mistake_section(data, styler)
     st.divider()
     _execution_section(data, styler)
+
     st.markdown("</div>", unsafe_allow_html=True)
+
+
+# ============================================================================
+# Batch 1 additions — categorical breakdowns & behavioural analytics
+# ============================================================================
+
+def _explode_multi(df: pd.DataFrame, col: str) -> pd.DataFrame:
+    g = df.copy()
+    g["__tok"] = g[col].astype(str).apply(
+        lambda v: [t.strip() for t in re.split(r"[;,]", v)
+                   if t.strip() and t.strip().lower() not in ("nan", "none", "")]
+    )
+    g = g.explode("__tok")
+    return g[g["__tok"].notna() & (g["__tok"].astype(str).str.strip() != "")]
+
+
+def _cat_stats(df: pd.DataFrame, col: str, multi: bool = False, min_n: int = 1):
+    """Return DataFrame [Category, Trades, Win %, Avg R, Net R] grouped by col."""
+    if col not in df.columns:
+        return None
+    if multi:
+        g = _explode_multi(df, col)
+    else:
+        g = df.copy()
+        g["__tok"] = g[col].astype(str).str.strip()
+        g = g[~g["__tok"].str.lower().isin(["", "nan", "none"])]
+    if g.empty:
+        return None
+    g["__rr"] = pd.to_numeric(g.get("Closed RR"), errors="coerce")
+    g["__oc"] = g["Outcome"] if "Outcome" in g.columns else np.where(
+        g["__rr"] > 0, "Win", np.where(g["__rr"] < 0, "Loss", "BE"))
+    rows = []
+    for cat, sub in g.groupby("__tok"):
+        cnt = sub[pd.Series(sub["__oc"]).isin(["Win", "BE", "Loss"])]
+        n = len(cnt)
+        if n < min_n:
+            continue
+        wr = pd.Series(cnt["__oc"]).eq("Win").sum() / n * 100 if n else 0.0
+        avgr = sub["__rr"].mean()
+        rows.append({"Category": str(cat), "Trades": len(sub), "Win %": round(wr, 1),
+                     "Avg R": round(float(avgr), 2) if pd.notna(avgr) else 0.0,
+                     "Net R": round(float(sub["__rr"].sum()), 1) if sub["__rr"].notna().any() else 0.0})
+    return pd.DataFrame(rows) if rows else None
+
+
+def _expectancy_bar(rows, title: str, styler, sort=None, caption: str = "") -> None:
+    t = _t()
+    st.markdown(f"### {title}")
+    if caption:
+        st.caption(caption)
+    if rows is None or len(rows) == 0:
+        t._unavailable(title)
+        return
+    d = rows.copy()
+    d["Colour"] = d["Avg R"].apply(lambda x: "pos" if x >= 0 else "neg")
+    vals = t._to_alt_values(d)
+    bar = (
+        alt.Chart(alt.Data(values=vals)).mark_bar(height=22)
+        .encode(
+            x=alt.X("Avg R:Q", title="Avg R per trade"),
+            y=alt.Y("Category:N", sort=(sort if sort else "-x"), title=None),
+            color=alt.Color("Colour:N", legend=None,
+                            scale=alt.Scale(domain=["pos", "neg"], range=["#4800ff", "#fca5a5"])),
+            tooltip=["Category:N", "Trades:Q", "Win %:Q", "Avg R:Q", "Net R:Q"],
+        )
+        .properties(height=max(120, len(d) * 40))
+    )
+    rule = alt.Chart(alt.Data(values=[{"x": 0}])).mark_rule(color="#cbd5e1").encode(x="x:Q")
+    st.altair_chart(styler(alt.layer(bar, rule)), use_container_width=True)
+
+
+def _mistake_section(df: pd.DataFrame, styler) -> None:
+    t = _t()
+    st.markdown("### Mistake Leak Report")
+    st.caption("How often each mistake shows up and the average R it costs you versus clean trades.")
+    if "Mistake" not in df.columns:
+        t._unavailable("Mistake Leak Report"); return
+    g = df.copy()
+    g["__rr"] = pd.to_numeric(g.get("Closed RR"), errors="coerce")
+    g["__mk"] = g["Mistake"].astype(str)
+    clean = g[g["__mk"].str.strip().str.lower().isin(["", "nan", "none", "na"])]
+    baseline = float(clean["__rr"].mean()) if not clean.empty and clean["__rr"].notna().any() else float(g["__rr"].mean() or 0.0)
+
+    ex = _explode_multi(g, "Mistake")
+    ex = ex[~ex["__tok"].str.lower().eq("na")]
+    if ex.empty:
+        t._insight_box("No mistakes tagged yet — keep logging the <b>Mistake</b> field and this will fill in.", "good")
+        return
+    rows = []
+    for mk, sub in ex.groupby("__tok"):
+        avg = float(sub["__rr"].mean()) if sub["__rr"].notna().any() else 0.0
+        cost = (avg - baseline) * len(sub)  # R vs a clean trade, summed
+        rows.append({"Category": mk, "Trades": len(sub), "Win %": 0.0,
+                     "Avg R": round(avg, 2), "Net R": round(float(sub["__rr"].sum()), 1),
+                     "Cost vs clean (R)": round(cost, 1)})
+    rdf = pd.DataFrame(rows).sort_values("Cost vs clean (R)")
+    vals = t._to_alt_values(rdf.assign(Colour=rdf["Cost vs clean (R)"].apply(lambda x: "pos" if x >= 0 else "neg")))
+    bar = (alt.Chart(alt.Data(values=vals)).mark_bar(height=22)
+           .encode(x=alt.X("Cost vs clean (R):Q", title="R cost vs a clean trade (negative = costing you)"),
+                   y=alt.Y("Category:N", sort="x", title=None),
+                   color=alt.Color("Colour:N", legend=None,
+                                   scale=alt.Scale(domain=["pos", "neg"], range=["#94a3b8", "#ef4444"])),
+                   tooltip=["Category:N", "Trades:Q", "Avg R:Q", "Cost vs clean (R):Q"])
+           .properties(height=max(120, len(rdf) * 40)))
+    rule = alt.Chart(alt.Data(values=[{"x": 0}])).mark_rule(color="#cbd5e1").encode(x="x:Q")
+    st.altair_chart(styler(alt.layer(bar, rule)), use_container_width=True)
+    worst = rdf.iloc[0]
+    total_cost = float(rdf["Cost vs clean (R)"].clip(upper=0).sum())
+    st.caption(f"Clean-trade baseline: {baseline:+.2f}R avg.")
+    t._insight_box(
+        f"Your costliest leak is <b>{worst['Category']}</b> — {int(worst['Trades'])} trades at "
+        f"<b>{worst['Avg R']:+.2f}R</b> avg (vs {baseline:+.2f}R clean), ~<b>{worst['Cost vs clean (R)']:.0f}R</b> lost. "
+        f"All mistakes combined cost roughly <b>{total_cost:.0f}R</b>.", "bad")
+
+
+def _conviction_section(df: pd.DataFrame, styler) -> None:
+    rows = _cat_stats(df, "Conviction (1-5)")
+    order = ["1", "2", "3", "4", "5"]
+    if rows is not None:
+        rows = rows[rows["Category"].isin(order)]
+        rows = rows.assign(__o=rows["Category"].map(lambda v: order.index(v) if v in order else 9)).sort_values("__o").drop(columns="__o")
+    _expectancy_bar(rows, "Conviction Calibration", styler,
+                    sort=order, caption="Average R by your 1–5 conviction. If it doesn't rise with conviction, your read is miscalibrated.")
+    if rows is not None and len(rows) >= 2:
+        hi = rows[rows["Category"].isin(["4", "5"])]["Avg R"].mean()
+        lo = rows[rows["Category"].isin(["1", "2"])]["Avg R"].mean()
+        if pd.notna(hi) and pd.notna(lo):
+            if hi > lo:
+                _t()._insight_box(f"Calibrated ✓ — high-conviction (4–5) trades average <b>{hi:+.2f}R</b> vs <b>{lo:+.2f}R</b> for low (1–2).", "good")
+            else:
+                _t()._insight_box(f"Miscalibrated — high-conviction trades (<b>{hi:+.2f}R</b>) aren't beating low-conviction ones (<b>{lo:+.2f}R</b>). Your gut may be inverted.", "warn")
+
+
+def _discipline_section(df: pd.DataFrame, styler) -> None:
+    t = _t()
+    st.markdown("### Discipline Scorecard")
+    st.caption("What following your rules and taking only A+ setups is actually worth in R.")
+    g = df.copy()
+    g["__rr"] = pd.to_numeric(g.get("Closed RR"), errors="coerce")
+    g["__oc"] = g["Outcome"] if "Outcome" in g.columns else np.where(g["__rr"] > 0, "Win", np.where(g["__rr"] < 0, "Loss", "BE"))
+
+    def _two(mask_true, label_true, label_false):
+        out = []
+        for lab, sub in ((label_true, g[mask_true]), (label_false, g[~mask_true])):
+            cnt = sub[pd.Series(sub["__oc"]).isin(["Win", "BE", "Loss"])]
+            if cnt.empty:
+                continue
+            wr = pd.Series(cnt["__oc"]).eq("Win").sum() / len(cnt) * 100
+            out.append({"Category": lab, "Trades": len(sub), "Win %": round(wr, 1),
+                        "Avg R": round(float(sub["__rr"].mean()), 2) if sub["__rr"].notna().any() else 0.0,
+                        "Net R": round(float(sub["__rr"].sum()), 1)})
+        return pd.DataFrame(out) if out else None
+
+    did = False
+    if "Rules Followed?" in g.columns:
+        rf = g["Rules Followed?"].astype(str).str.strip().str.lower().isin(["true", "yes", "__yes__", "1"])
+        _expectancy_bar(_two(rf, "Rules followed", "Rules broken"), "Rules Followed vs Broken", styler,
+                        sort=["Rules followed", "Rules broken"]); did = True
+    if "A+ Setup?" in g.columns:
+        ap = g["A+ Setup?"].astype(str).str.strip().str.lower().eq("yes")
+        st.divider()
+        _expectancy_bar(_two(ap, "A+ setup", "Not A+"), "A+ Setups vs The Rest", styler,
+                        sort=["A+ setup", "Not A+"]); did = True
+    if not did:
+        t._unavailable("Discipline Scorecard")
+
+
+def _direction_section(df: pd.DataFrame, styler) -> None:
+    _expectancy_bar(_cat_stats(df, "Direction"), "Long vs Short", styler,
+                    sort=["Long", "Short"], caption="Expectancy, win rate and net R by trade direction.")
+
+
+def _holdtime_section(df: pd.DataFrame, styler) -> None:
+    t = _t()
+    hold = _num(df, "Hold Time (min)")
+    if hold is None:
+        return
+    g = df.copy(); g["__h"] = hold.values
+    g = g[pd.notna(g["__h"])]
+    if g.empty:
+        return
+    bins = [0, 15, 30, 60, 120, 240, 1e9]
+    labels = ["0–15m", "15–30m", "30–60m", "1–2h", "2–4h", "4h+"]
+    g["__cat"] = pd.cut(g["__h"], bins=bins, labels=labels, right=True, include_lowest=True).astype(str)
+    rows = _cat_stats(g, "__cat")
+    if rows is not None:
+        rows = rows.assign(__o=rows["Category"].map(lambda v: labels.index(v) if v in labels else 9)).sort_values("__o").drop(columns="__o")
+    _expectancy_bar(rows, "Hold-Time Window", styler, sort=labels,
+                    caption="Average R by how long trades were held — find your optimal hold window.")
+
+
+def _spread_section(df: pd.DataFrame, styler) -> None:
+    spread = _num(df, "Spread at Entry")
+    if spread is None:
+        return
+    g = df.copy(); g["__s"] = spread.values
+    g = g[pd.notna(g["__s"])]
+    if g.empty or g["__s"].nunique() < 2:
+        return
+    try:
+        g["__cat"] = pd.qcut(g["__s"], q=min(3, g["__s"].nunique()),
+                             labels=["Tight spread", "Normal spread", "Wide spread"][:min(3, g["__s"].nunique())], duplicates="drop").astype(str)
+    except Exception:
+        return
+    _expectancy_bar(_cat_stats(g, "__cat"), "Spread vs Outcome", styler,
+                    sort=["Tight spread", "Normal spread", "Wide spread"],
+                    caption="Does your edge degrade when spreads widen (news / Asia)? Grouped by entry spread.")
+
+
+def _missed_runner_section(df: pd.DataFrame, styler) -> None:
+    t = _t()
+    st.markdown("### Missed Runners")
+    st.caption("Trades where you exited and price then hit full TP without you — and the R it left behind.")
+    if "Hit Full TP Without You" not in df.columns:
+        t._unavailable("Missed Runners"); return
+    g = df.copy()
+    g["__hit"] = g["Hit Full TP Without You"].astype(str).str.strip().str.lower()
+    missed = g[g["__hit"] == "yes"]
+    total = len(g[g["__hit"].isin(["yes", "no"])])
+    n = len(missed)
+    pct = round(n / max(1, total) * 100, 1)
+    rr = pd.to_numeric(missed.get("Closed RR"), errors="coerce")
+    mfe = pd.to_numeric(missed.get("MFE (R)"), errors="coerce")
+    left = float((mfe - rr).clip(lower=0).sum()) if (mfe is not None and rr is not None and not missed.empty) else float("nan")
+    c1, c2, c3 = st.columns(3)
+    with c1: _kpi("Missed runners", f"{n}", f"{pct}% of trades", "#ef4444" if pct > 15 else PURPLE)
+    with c2: _kpi("R left behind", "—" if np.isnan(left) else f"{left:.0f}R", "captured-to-TP gap")
+    with c3:
+        avg_left = (left / n) if (n and not np.isnan(left)) else float("nan")
+        _kpi("Avg per miss", "—" if np.isnan(avg_left) else f"{avg_left:.1f}R", "left on each")
+    if n and not np.isnan(left) and pct > 12:
+        t._insight_box(f"You exited <b>{n}</b> trades ({pct}%) that then ran to full TP, leaving ~<b>{left:.0f}R</b> on the table. "
+                       f"Cross-check with the Exit Optimizer before tightening management.", "warn")

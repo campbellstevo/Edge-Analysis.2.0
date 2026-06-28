@@ -1108,6 +1108,17 @@ def render_dashboard(mobile: bool):
     _ACCT_FILTER_OPTS = ["All", "Live", "Demo", "FT", "Live and Demo"]
     acct_opts = _ACCT_FILTER_OPTS
 
+    # Trade Type options (MT5 schema only)
+    tot_opts = ["All"]
+    if "Type of Trade" in df.columns:
+        _tot = sorted({
+            t.strip()
+            for v in df["Type of Trade"].dropna().astype(str)
+            for t in re.split(r"[;,]", v) if t.strip()
+        })
+        if _tot:
+            tot_opts = ["All"] + _tot
+
     if "Date" in df.columns:
         min_date = df["Date"].min().date()
         max_date = df["Date"].max().date()
@@ -1116,8 +1127,8 @@ def render_dashboard(mobile: bool):
         min_date = max_date = _date.today()
 
     # Render filters (imported from filters module)
-    sel_inst, sel_em, sel_sess, date_range, sel_acct = render_filters(
-        mobile, inst_opts, em_opts, sess_opts, date_mode_options, min_date, max_date, acct_opts
+    sel_inst, sel_em, sel_sess, date_range, sel_acct, sel_tot = render_filters(
+        mobile, inst_opts, em_opts, sess_opts, date_mode_options, min_date, max_date, acct_opts, tot_opts
     )
 
     # Apply filters
@@ -1137,6 +1148,9 @@ def render_dashboard(mobile: bool):
             else:
                 _reverse = {v: k for k, v in _ACCT_MAP.items()}
                 mask &= (df["Account"] == _reverse.get(sel_acct, sel_acct))
+
+    if sel_tot != "All" and "Type of Trade" in df.columns:
+        mask &= df["Type of Trade"].astype(str).str.contains(re.escape(sel_tot), case=False, na=False)
 
     mask &= _apply_date_filter(df, date_range)
 

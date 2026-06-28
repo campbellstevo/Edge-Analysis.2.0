@@ -71,6 +71,7 @@ def render_filters(
     min_date: DateType,
     max_date: DateType,
     acct_opts: list | None = None,
+    tot_opts: list | None = None,
 ) -> Tuple[str, str, str, Optional[DateRange], str]:
     """
     Render filter controls for both desktop and mobile layouts.
@@ -95,6 +96,8 @@ def render_filters(
     """
     if acct_opts is None:
         acct_opts = ["All"]
+    if tot_opts is None:
+        tot_opts = ["All"]
 
     def _inst_label(v: str) -> str:
         return "GOLD" if v == "Gold" else v
@@ -180,6 +183,19 @@ def render_filters(
         )
         container = st.sidebar
 
+    # Trade Type filter (MT5 only; appears when more than one type is present)
+    sel_tot = "All"
+    if tot_opts and len(tot_opts) > 1:
+        _cur_tot = st.session_state.get("filters_tot_select", "All")
+        if _cur_tot not in tot_opts:
+            _cur_tot = "All"
+        sel_tot = container.selectbox(
+            "Trade Type",
+            tot_opts,
+            index=tot_opts.index(_cur_tot),
+            key="filters_tot_select",
+        )
+
     # Shared date range logic
     current_mode = st.session_state.get("filters_date_mode", "All")
     if current_mode not in date_mode_options:
@@ -200,4 +216,4 @@ def render_filters(
             key="filters_date_range",
         )
 
-    return sel_inst, sel_em, sel_sess, date_range, sel_acct
+    return sel_inst, sel_em, sel_sess, date_range, sel_acct, sel_tot
