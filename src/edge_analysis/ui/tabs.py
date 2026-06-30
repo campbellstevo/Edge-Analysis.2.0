@@ -3330,6 +3330,7 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table):
     _show_mt5 = _get_schema() == "mt5"
     if _show_mt5:
         _labels.append("MT5 ⚡")
+        _labels.append("Pro ⚡")
     _tab_objs = st.tabs(_labels)
     t_performance, t_setup, t_timing, t_psychology, t_externals, t_projections, t_refinements = _tab_objs[:7]
 
@@ -3389,3 +3390,6 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table):
         with _tab_objs[7]:
             from edge_analysis.ui.mt5_tabs import render_mt5_tab
             render_mt5_tab(f_perf, df_all_safe, styler)
+        with _tab_objs[8]:
+            from edge_analysis.ui.pro_tabs import render_pro_tab
+            render_pro_tab(f_perf, df_all_safe, styler)
