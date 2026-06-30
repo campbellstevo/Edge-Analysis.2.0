@@ -387,6 +387,8 @@ def _cat_stats(df: pd.DataFrame, col: str, multi: bool = False, min_n: int = 1):
 
 
 def _expectancy_bar(rows, title: str, styler, sort=None, caption: str = "") -> None:
+    """Clean horizontal expectancy bars: green/red by sign, with the value,
+    win-rate and trade count labelled on each bar."""
     t = _t()
     st.markdown(f"### {title}")
     if caption:
@@ -395,21 +397,48 @@ def _expectancy_bar(rows, title: str, styler, sort=None, caption: str = "") -> N
         t._unavailable(title)
         return
     d = rows.copy()
-    d["Colour"] = d["Avg R"].apply(lambda x: "pos" if x >= 0 else "neg")
+    d["AvgR"] = pd.to_numeric(d["Avg R"], errors="coerce").fillna(0.0)
+    d["Colour"] = d["AvgR"].apply(lambda x: "good" if x >= 0 else "bad")
+
+    def _label(r):
+        parts = [f"{r['AvgR']:+.2f}R"]
+        if "Win %" in d.columns and pd.notna(r.get("Win %")) and float(r.get("Win %") or 0) > 0:
+            parts.append(f"{float(r['Win %']):.0f}% win")
+        if "Trades" in d.columns and pd.notna(r.get("Trades")):
+            parts.append(f"{int(r['Trades'])} trades")
+        return "   ·   ".join(parts)
+    d["Label"] = d.apply(_label, axis=1)
+
+    lo = float(d["AvgR"].min()); hi = float(d["AvgR"].max())
+    span = max(hi - lo, 0.5)
+    dom = [min(lo, 0.0) - span * 0.30, max(hi, 0.0) + span * 0.55]
+    ysort = sort if sort else "-x"
     vals = t._to_alt_values(d)
-    bar = (
-        alt.Chart(alt.Data(values=vals)).mark_bar(height=22)
-        .encode(
-            x=alt.X("Avg R:Q", title="Avg R per trade"),
-            y=alt.Y("Category:N", sort=(sort if sort else "-x"), title=None),
-            color=alt.Color("Colour:N", legend=None,
-                            scale=alt.Scale(domain=["pos", "neg"], range=["#4800ff", "#fca5a5"])),
-            tooltip=["Category:N", "Trades:Q", "Win %:Q", "Avg R:Q", "Net R:Q"],
-        )
-        .properties(height=max(120, len(d) * 40))
+    base = alt.Chart(alt.Data(values=vals))
+
+    bars = base.mark_bar(size=26, cornerRadius=4).encode(
+        x=alt.X("AvgR:Q", title="Avg R per trade", scale=alt.Scale(domain=dom),
+                axis=alt.Axis(tickCount=5, format="+.1f", grid=True, gridColor="#eef0f5",
+                              labelColor="#94a3b8", titleColor="#94a3b8")),
+        y=alt.Y("Category:N", sort=ysort, title=None,
+                axis=alt.Axis(labelFontSize=13, labelColor="#0f172a", labelLimit=200,
+                              ticks=False, domain=False)),
+        color=alt.Color("Colour:N", legend=None,
+                        scale=alt.Scale(domain=["good", "bad"], range=["#16a34a", "#ef4444"])),
+        tooltip=["Category:N", "Trades:Q", "Win %:Q", "Avg R:Q", "Net R:Q"],
     )
-    rule = alt.Chart(alt.Data(values=[{"x": 0}])).mark_rule(color="#cbd5e1").encode(x="x:Q")
-    st.altair_chart(styler(alt.layer(bar, rule)), use_container_width=True)
+    text = base.mark_text(
+        fontSize=12, fontWeight="bold", color="#334155",
+        align=alt.expr(alt.expr.if_(alt.datum.AvgR >= 0, "left", "right")),
+        dx=alt.expr(alt.expr.if_(alt.datum.AvgR >= 0, 8, -8)),
+    ).encode(
+        x=alt.X("AvgR:Q", scale=alt.Scale(domain=dom)),
+        y=alt.Y("Category:N", sort=ysort),
+        text="Label:N",
+    )
+    rule = alt.Chart(alt.Data(values=[{"x": 0}])).mark_rule(color="#cbd5e1", strokeWidth=1.5).encode(x="x:Q")
+    chart = alt.layer(bars, rule, text).properties(height=max(90, len(d) * 56))
+    st.altair_chart(styler(chart), use_container_width=True)
 
 
 def _mistake_section(df: pd.DataFrame, styler) -> None:
@@ -437,16 +466,30 @@ def _mistake_section(df: pd.DataFrame, styler) -> None:
                      "Avg R": round(avg, 2), "Net R": round(float(sub["__rr"].sum()), 1),
                      "Cost vs clean (R)": round(cost, 1)})
     rdf = pd.DataFrame(rows).sort_values("Cost vs clean (R)")
-    vals = t._to_alt_values(rdf.assign(Colour=rdf["Cost vs clean (R)"].apply(lambda x: "pos" if x >= 0 else "neg")))
-    bar = (alt.Chart(alt.Data(values=vals)).mark_bar(height=22)
-           .encode(x=alt.X("Cost vs clean (R):Q", title="R cost vs a clean trade (negative = costing you)"),
-                   y=alt.Y("Category:N", sort="x", title=None),
+    rdf["Cost"] = pd.to_numeric(rdf["Cost vs clean (R)"], errors="coerce").fillna(0.0)
+    rdf["Colour"] = rdf["Cost"].apply(lambda x: "ok" if x >= 0 else "bad")
+    rdf["Label"] = rdf.apply(lambda r: f"{r['Cost']:+.0f}R   ·   {int(r['Trades'])} trades", axis=1)
+    lo = float(rdf["Cost"].min()); hi = float(rdf["Cost"].max())
+    span = max(hi - lo, 2.0)
+    dom = [min(lo, 0.0) - span * 0.30, max(hi, 0.0) + span * 0.40]
+    vals = t._to_alt_values(rdf)
+    base = alt.Chart(alt.Data(values=vals))
+    bar = (base.mark_bar(size=26, cornerRadius=4)
+           .encode(x=alt.X("Cost:Q", title="R cost vs a clean trade  (red = costing you)",
+                           scale=alt.Scale(domain=dom),
+                           axis=alt.Axis(tickCount=5, format="+.0f", grid=True, gridColor="#eef0f5",
+                                         labelColor="#94a3b8", titleColor="#94a3b8")),
+                   y=alt.Y("Category:N", sort="x", title=None,
+                           axis=alt.Axis(labelFontSize=13, labelColor="#0f172a", ticks=False, domain=False)),
                    color=alt.Color("Colour:N", legend=None,
-                                   scale=alt.Scale(domain=["pos", "neg"], range=["#94a3b8", "#ef4444"])),
-                   tooltip=["Category:N", "Trades:Q", "Avg R:Q", "Cost vs clean (R):Q"])
-           .properties(height=max(120, len(rdf) * 40)))
-    rule = alt.Chart(alt.Data(values=[{"x": 0}])).mark_rule(color="#cbd5e1").encode(x="x:Q")
-    st.altair_chart(styler(alt.layer(bar, rule)), use_container_width=True)
+                                   scale=alt.Scale(domain=["ok", "bad"], range=["#94a3b8", "#ef4444"])),
+                   tooltip=["Category:N", "Trades:Q", "Avg R:Q", "Cost vs clean (R):Q"]))
+    text = (base.mark_text(fontSize=12, fontWeight="bold", color="#334155",
+                           align=alt.expr(alt.expr.if_(alt.datum.Cost >= 0, "left", "right")),
+                           dx=alt.expr(alt.expr.if_(alt.datum.Cost >= 0, 8, -8)))
+            .encode(x=alt.X("Cost:Q", scale=alt.Scale(domain=dom)), y=alt.Y("Category:N", sort="x"), text="Label:N"))
+    rule = alt.Chart(alt.Data(values=[{"x": 0}])).mark_rule(color="#cbd5e1", strokeWidth=1.5).encode(x="x:Q")
+    st.altair_chart(styler(alt.layer(bar, rule, text).properties(height=max(110, len(rdf) * 56))), use_container_width=True)
     worst = rdf.iloc[0]
     total_cost = float(rdf["Cost vs clean (R)"].clip(upper=0).sum())
     st.caption(f"Clean-trade baseline: {baseline:+.2f}R avg.")
