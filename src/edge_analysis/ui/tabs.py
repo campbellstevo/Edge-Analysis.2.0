@@ -37,6 +37,18 @@ def _get_schema() -> str:
 def _is_salty() -> bool:
     return _get_schema() == "salty"
 
+
+_MT5_COLS = {"R Multiple", "MAE (R)", "MFE (R)", "Open Time", "Close Time",
+             "Lot Size", "Position ID", "MFE Efficiency %", "Spread at Entry"}
+
+def _df_is_mt5(df) -> bool:
+    """Detect the MT5 Trade Log straight from the dataframe columns.
+    Robust to Streamlit caching (which can skip the session_state schema flag)."""
+    try:
+        return len(set(df.columns) & _MT5_COLS) >= 3
+    except Exception:
+        return False
+
 def _unavailable(label: str) -> None:
     """Show a consistent 'not available for this schema' message."""
     st.markdown(
@@ -3327,7 +3339,7 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table):
     df_all_safe = df_all.copy() if df_all is not None else df_all
 
     _labels = ["Performance", "Setup", "Timing", "Psychology", "Externals", "Projections", "Refinements"]
-    _show_mt5 = _get_schema() == "mt5"
+    _show_mt5 = _get_schema() == "mt5" or _df_is_mt5(df_all_safe)
     if _show_mt5:
         _labels.append("MT5 ⚡")
         _labels.append("Pro ⚡")
