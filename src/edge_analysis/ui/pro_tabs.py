@@ -125,8 +125,8 @@ def _monte_carlo(df, styler) -> None:
 
     with st.expander("Simulation settings"):
         c1, c2, c3 = st.columns(3)
-        with c1: risk = st.slider("Risk % per trade", 0.25, 5.0, 1.0, 0.25, key="pro_mc_risk")
-        with c2: n_tr = st.slider("Trades to project", 50, 1000, 300, 50, key="pro_mc_n")
+        with c1: risk = st.number_input("Risk % per trade", min_value=0.25, max_value=5.0, value=1.0, step=0.25, key="pro_mc_risk")
+        with c2: n_tr = st.number_input("Trades to project", min_value=50, max_value=1000, value=300, step=50, key="pro_mc_n")
         with c3: start = st.number_input("Start balance ($)", min_value=1000, max_value=1_000_000, value=10000, step=1000, key="pro_mc_bal")
 
     N = 2000
@@ -265,7 +265,7 @@ def _a_game(df, styler) -> None:
 def _heatmap_hour_day(df, styler) -> None:
     t = _t()
     st.markdown("### When You Trade Best")
-    st.caption("Average R per trade by hour of day (Melbourne time) and weekday. Greener = stronger expectancy.")
+    st.caption("Your best and worst trading windows — average R per trade by weekday and hour (Melbourne time), minimum 2 trades.")
     g = df.copy()
     g["__rr"] = pd.to_numeric(g.get("Closed RR"), errors="coerce")
     hour = _num(df, "Hour (Melb)")
@@ -284,24 +284,20 @@ def _heatmap_hour_day(df, styler) -> None:
     agg = g.groupby(["__day", "__hr"]).agg(AvgR=("__rr", "mean"), Trades=("__rr", "size")).reset_index()
     agg = agg.rename(columns={"__day": "Day", "__hr": "Hour"})
     agg["AvgR"] = agg["AvgR"].round(2)
-    days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-    vals = t._to_alt_values(agg)
-    heat = (alt.Chart(alt.Data(values=vals)).mark_rect(stroke="#ffffff", strokeWidth=2)
-            .encode(x=alt.X("Hour:O", title=None,
-                            axis=alt.Axis(labelAngle=0, ticks=False, domain=False, labelColor="#64748b")),
-                    y=alt.Y("Day:O", sort=days, title=None,
-                            axis=alt.Axis(ticks=False, domain=False, labelColor="#64748b")),
-                    color=alt.Color("AvgR:Q", title="Avg R", scale=alt.Scale(scheme="redyellowgreen", domainMid=0)),
-                    tooltip=["Day:O", "Hour:O", "AvgR:Q", "Trades:Q"])
-            .properties(height=240))
-    st.altair_chart(styler(heat), use_container_width=True)
+    agg2 = agg[agg["Trades"] >= 2].copy()
+    if agg2.empty:
+        agg2 = agg.copy()
+    agg2["Window"] = agg2["Day"].astype(str) + "  ·  " + agg2["Hour"].map(lambda h: f"{int(h):02d}:00")
+    agg2 = agg2.sort_values("AvgR", ascending=False)
+    show = agg2 if len(agg2) <= 10 else pd.concat([agg2.head(5), agg2.tail(5)])
+    t._rank_dots(show, "Window", "AvgR")
 
 
 # ── 7. Symbol × Session edge matrix ───────────────────────────────────────────
 def _symbol_session_matrix(df, styler) -> None:
     t = _t()
     st.markdown("### Where Your Edge Lives")
-    st.caption("Average R per trade by instrument and session — where your edge actually lives.")
+    st.caption("Average R per trade by instrument and session — your strongest and weakest combinations, minimum 2 trades.")
     g = df.copy()
     g["__rr"] = pd.to_numeric(g.get("Closed RR"), errors="coerce")
     sym = next((c for c in ["Instrument", "Pair", "Symbol"] if c in g.columns), None)
@@ -317,16 +313,13 @@ def _symbol_session_matrix(df, styler) -> None:
     agg = g.groupby(["__sym", "__sess"]).agg(AvgR=("__rr", "mean"), Trades=("__rr", "size")).reset_index()
     agg = agg.rename(columns={"__sym": "Symbol", "__sess": "Session"})
     agg["AvgR"] = agg["AvgR"].round(2)
-    vals = t._to_alt_values(agg)
-    heat = (alt.Chart(alt.Data(values=vals)).mark_rect(stroke="#ffffff", strokeWidth=2)
-            .encode(x=alt.X("Session:O", title=None,
-                            axis=alt.Axis(labelAngle=0, ticks=False, domain=False, labelColor="#64748b")),
-                    y=alt.Y("Symbol:O", title=None,
-                            axis=alt.Axis(ticks=False, domain=False, labelColor="#64748b")),
-                    color=alt.Color("AvgR:Q", title="Avg R", scale=alt.Scale(scheme="redyellowgreen", domainMid=0)),
-                    tooltip=["Symbol:O", "Session:O", "AvgR:Q", "Trades:Q"])
-            .properties(height=max(160, agg["Symbol"].nunique() * 38)))
-    st.altair_chart(styler(heat), use_container_width=True)
+    agg2 = agg[agg["Trades"] >= 2].copy()
+    if agg2.empty:
+        agg2 = agg.copy()
+    agg2["Combo"] = agg2["Symbol"].astype(str) + "  ·  " + agg2["Session"].astype(str)
+    agg2 = agg2.sort_values("AvgR", ascending=False)
+    show = agg2 if len(agg2) <= 10 else pd.concat([agg2.head(5), agg2.tail(5)])
+    t._rank_dots(show, "Combo", "AvgR")
 
 
 # ── 8. Cost drag ──────────────────────────────────────────────────────────────

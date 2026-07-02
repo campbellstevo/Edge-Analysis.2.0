@@ -50,16 +50,8 @@ def _df_is_mt5(df) -> bool:
         return False
 
 def _unavailable(label: str) -> None:
-    """Show a consistent 'not available for this schema' message."""
-    st.markdown(
-        f'''<div style="background:#f8f8ff;border-left:4px solid #c4b5fd;border-radius:6px;
-padding:12px 16px;font-size:13px;color:#6b7280;margin:8px 0;">
-<b>{label}</b> — data not available for this Notion template.
-This section requires columns that are not present in the connected database.
-</div>''',
-        unsafe_allow_html=True,
-    )
-
+    """Quiet note when a section has no data for this template."""
+    st.caption(f"{label}: not enough data in this journal yet.")
 
 
 def _insight_box(body: str, kind: str = "info") -> None:
@@ -623,6 +615,10 @@ def _account_comparison_tab(f: pd.DataFrame, styler):
     g = g[~g["__Account"].isin(["", "nan", "NaN", "None"])]
     if g.empty:
         st.info("No account values present.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+    if g["__Account"].nunique() <= 1:
+        st.caption("Only one account in this slice — nothing to compare.")
         st.markdown("</div>", unsafe_allow_html=True)
         return
 
@@ -1234,21 +1230,24 @@ def _psych_3sl_compliance(df: pd.DataFrame, styler) -> None:
             breaks_df["Date"] = breaks_df["Date"].astype(str)
             breaks_df["Extra trades"] = (breaks_df["n"] - 1).astype(int)
             st.markdown("#### One-trade rule breaks by session")
-            cv2 = _to_alt_values(breaks_df[["Date", "Session", "Extra trades"]])
-            if cv2:
-                bar2 = (alt.Chart(alt.Data(values=cv2))
-                        .mark_bar(opacity=0.8, cornerRadiusTopLeft=3, cornerRadiusTopRight=3)
-                        .encode(
-                            x=alt.X("Date:N", axis=alt.Axis(labelAngle=-45, labelOverlap=False, title=None)),
-                            y=alt.Y("Extra trades:Q", axis=alt.Axis(title="Extra trades beyond 1")),
-                            color=alt.Color("Session:N",
-                                            scale=alt.Scale(domain=["Asia", "London", "New York"],
-                                                            range=["#4800ff", "#7c3aed", "#a78bfa"]),
-                                            legend=alt.Legend(title=None, orient="top")),
-                            tooltip=[alt.Tooltip("Date:N"), alt.Tooltip("Session:N"),
-                                     alt.Tooltip("Extra trades:Q")])
-                        .properties(height=200))
-                st.altair_chart(styler(bar2), use_container_width=True)
+            _rb = breaks_df[["Date", "Session", "Extra trades"]].head(10)
+            rows_html = "".join(
+                f"<div style='display:flex;justify-content:space-between;gap:12px;"
+                f"padding:9px 16px;border-bottom:1px solid #f1f5f9;font-size:13px;color:#334155;'>"
+                f"<span>{d}</span><span style='color:#64748b;'>{sess}</span>"
+                f"<span style='font-weight:700;color:#ef4444;'>+{int(x)} extra</span></div>"
+                for d, sess, x in _rb.itertuples(index=False, name=None)
+            )
+            more = len(breaks_df) - len(_rb)
+            if more > 0:
+                rows_html += (f"<div style='padding:9px 16px;font-size:12px;color:#94a3b8;'>"
+                              f"… and {more} more</div>")
+            st.markdown(
+                "<div style='background:#fff;border:1px solid rgba(0,0,0,0.06);"
+                "border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,0.04);"
+                "overflow:hidden;margin:4px 0 10px;'>" + rows_html + "</div>",
+                unsafe_allow_html=True,
+            )
         except Exception:
             pass
 
@@ -1647,14 +1646,25 @@ def _hourly_expectancy_clock(df_raw: pd.DataFrame) -> None:
         df["_hour"] = df[dt_col].apply(_parse_hour)
     elif time_col:
         df["_hour"] = df[time_col].apply(_parse_hour)
+    elif "Hour (Melb)" in df.columns:
+        df["_hour"] = pd.to_numeric(df["Hour (Melb)"], errors="coerce")
+    elif "Open Time" in df.columns:
+        df["_hour"] = pd.to_datetime(df["Open Time"], errors="coerce").dt.hour
+    elif "Date" in df.columns and pd.to_datetime(df["Date"], errors="coerce").dt.hour.fillna(0).nunique() > 1:
+        df["_hour"] = pd.to_datetime(df["Date"], errors="coerce").dt.hour
     else:
-        st.info("No entry time column found — hourly clock unavailable.")
+        st.caption("Hourly clock: no entry-time data in this journal yet.")
         return
 
-    df["_outcome"] = df["Result"].apply(
-        lambda r: "win" if str(r).strip() in WIN_RESULTS
-        else ("loss" if str(r).strip() in LOSS_RESULTS else "be")
-    ) if "Result" in df.columns else "be"
+    if "Result" in df.columns:
+        df["_outcome"] = df["Result"].apply(
+            lambda r: "win" if str(r).strip() in WIN_RESULTS
+            else ("loss" if str(r).strip() in LOSS_RESULTS else "be"))
+    elif "Outcome" in df.columns:
+        df["_outcome"] = df["Outcome"].astype(str).str.lower().map(
+            lambda v: v if v in ("win", "loss", "be") else "be")
+    else:
+        df["_outcome"] = "be"
 
     df["_rr"] = pd.to_numeric(df["Closed RR"], errors="coerce") if "Closed RR" in df.columns else float("nan")
 
@@ -2118,157 +2128,52 @@ def _conditions_tab(f: pd.DataFrame, show_table):
         rr = grp["__rr"].dropna()
         return float(rr.mean()) if len(rr) > 0 else float("nan")
 
-    def _build_chart(rows_data, title, subtitle):
-        """Render a ranked horizontal bar chart using Altair."""
-        chart_df = (
-            pd.DataFrame(rows_data)
-            .sort_values("Expectancy", ascending=False)
-            .reset_index(drop=True)
-        )
-        chart_df["Colour"]  = chart_df["Expectancy"].apply(
-            lambda x: "positive" if x >= 0 else "negative"
-        )
-        chart_df["Label"]   = chart_df["Expectancy"].apply(lambda x: f"{x:+.2f}R")
-        chart_df["SortKey"] = range(len(chart_df))
+    from edge_analysis.ui.mt5_tabs import _tiles
 
-        x_min = min(chart_df["Expectancy"].min() - 0.35, -0.15)
-        x_max = max(chart_df["Expectancy"].max() + 0.35,  0.15)
-
-        base = alt.Chart(alt.Data(values=_to_alt_values(chart_df))).encode(
-            y=alt.Y(
-                "Condition:N",
-                sort=alt.EncodingSortField(field="SortKey", order="ascending"),
-                axis=alt.Axis(
-                    labelFontSize=12, labelColor="#0f172a",
-                    ticks=False, domain=False, labelLimit=220,
-                ),
-            ),
-            x=alt.X(
-                "Expectancy:Q",
-                scale=alt.Scale(domain=[x_min, x_max]),
-                axis=alt.Axis(
-                    labelFontSize=10, labelColor="#94a3b8",
-                    format="+.2f", title="Expectancy (R)",
-                    titleColor="#94a3b8", titleFontSize=10,
-                    grid=True, gridColor="#e2e8f0",
-                ),
-            ),
-            color=alt.Color(
-                "Colour:N",
-                scale=alt.Scale(
-                    domain=["positive", "negative"],
-                    range=["#4800ff", "#fca5a5"],
-                ),
-                legend=alt.Legend(
-                    title=None,
-                    labelFontSize=10,
-                    symbolType="square",
-                    values=["positive", "negative"],
-                    labelExpr="datum.value === 'positive' ? 'Positive' : 'Negative'",
-                ),
-            ),
-        )
-
-        pts = base.mark_circle(size=150, opacity=0.9, stroke="#ffffff", strokeWidth=2).encode(
-            color=alt.Color(
-                "Colour:N",
-                scale=alt.Scale(domain=["positive", "negative"],
-                                range=["#16a34a", "#ef4444"]),
-                legend=None,
-            ),
-        )
-
-        text = base.mark_text(
-            align=alt.expr(alt.expr.if_(alt.datum.Expectancy >= 0, "left", "right")),
-            dx=alt.expr(alt.expr.if_(alt.datum.Expectancy >= 0, 12, -12)),
-            fontSize=12, fontWeight="bold", color="#334155",
-        ).encode(text="Label:N")
-
-        rule = alt.Chart(alt.Data(values=[{"x": 0}])).mark_rule(
-            color="#cbd5e1", strokeDash=[4, 4], strokeWidth=1.5
-        ).encode(x=alt.X("x:Q", title=None))
-
-        chart = (rule + pts + text).properties(
-            title=alt.TitleParams(
-                text=title, subtitle=subtitle,
-                fontSize=13, subtitleFontSize=10,
-                color="#0f172a", subtitleColor="#94a3b8",
-                anchor="start",
-            ),
-            height=max(150, len(chart_df) * 40),
-        ).configure_view(
-            strokeWidth=0, fill="#ffffff"
-        ).configure_axis(
-            domainColor="#e2e8f0"
-        )
-        st.altair_chart(chart, use_container_width=True)
-
-    # ── Individual per-TF expectancy ──────────────────────────────────────────
-    ind_rows = []
+    tf_titles = {
+        "Conditions ETF": "Entry timeframe (ETF)",
+        "Conditions MTF": "Middle timeframe (MTF)",
+        "Conditions HTF": "Higher timeframe (HTF)",
+    }
+    st.caption(
+        "Average R per trade under each market condition you logged. "
+        "Green = a condition worth trading. Red = a condition to avoid."
+    )
+    all_rows = []
     for col in present_cols:
-        label = tf_labels.get(col, col)
-        col_data = counted.copy()
-        col_data["__cond"] = col_data[col].fillna("N/A")
-        for cond_val, group in col_data.groupby("__cond"):
-            exp = _expectancy(group)
-            if not pd.isna(exp):
-                ind_rows.append({
-                    "Condition": f"{label}  ·  {cond_val}",
-                    "Expectancy": exp,
-                })
+        col_data = counted[counted[col].notna()].copy()
+        if col_data.empty:
+            continue
+        rows = []
+        for cond_val, group in col_data.groupby(col):
+            rr = group["__rr"].dropna()
+            if rr.empty:
+                continue
+            wins = group[group["Outcome"] == "Win"]
+            rows.append({
+                "Category": str(cond_val), "Trades": len(group),
+                "Win %": round(len(wins) / len(group) * 100, 1),
+                "Avg R": round(float(rr.mean()), 2),
+                "Net R": round(float(rr.sum()), 1),
+            })
+            all_rows.append({"Condition": f"{tf_labels.get(col, col)} · {cond_val}",
+                             "Expectancy": float(rr.mean())})
+        if rows:
+            rows = sorted(rows, key=lambda r: r["Trades"], reverse=True)[:4]
+            rows = sorted(rows, key=lambda r: r["Avg R"], reverse=True)
+            st.markdown(f"#### {tf_titles.get(col, col)}")
+            _tiles(pd.DataFrame(rows))
+            st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
 
-    if ind_rows:
-        _build_chart(
-            ind_rows,
-            title="Condition Expectancy",
-            subtitle="Average R per trade · ranked best → worst",
-        )
-        best_ind  = max(ind_rows, key=lambda x: x["Expectancy"])
-        worst_ind = min(ind_rows, key=lambda x: x["Expectancy"])
+    if all_rows:
+        best_ind = max(all_rows, key=lambda x: x["Expectancy"])
+        worst_ind = min(all_rows, key=lambda x: x["Expectancy"])
         _insight_box(
             f"Best condition: <b>{best_ind['Condition']}</b> "
-            f"(<b>{best_ind['Expectancy']:+.2f}R</b> expectancy). "
+            f"(<b>{best_ind['Expectancy']:+.2f}R</b> per trade). "
             f"Worst: <b>{worst_ind['Condition']}</b> "
             f"(<b>{worst_ind['Expectancy']:+.2f}R</b>)."
         )
-
-    # ── Combo alignment chart ─────────────────────────────────────────────────
-    if len(present_cols) > 1:
-        st.divider()
-        combo_data = counted.copy()
-        for col in present_cols:
-            combo_data[col] = combo_data[col].fillna("N/A")
-        combo_rows = []
-        for key, group in combo_data.groupby(present_cols):
-            if not isinstance(key, tuple):
-                key = (key,)
-            if len(group) < 2:
-                continue
-            exp = _expectancy(group)
-            if pd.isna(exp):
-                continue
-            short = " · ".join(
-                "T" if str(v).startswith("Trend") else
-                ("R" if str(v).startswith("Rang") else str(v)[:1])
-                for v in key
-            )
-            combo_rows.append({"Condition": short, "Expectancy": exp})
-
-        if combo_rows:
-            _build_chart(
-                combo_rows,
-                title="Alignment Combinations",
-                subtitle="ETF · MTF · HTF    T = Trending    R = Ranging    (min 2 trades)",
-            )
-            best_c  = max(combo_rows, key=lambda x: x["Expectancy"])
-            worst_c = min(combo_rows, key=lambda x: x["Expectancy"])
-            _insight_box(
-                f"Best alignment: <b>{best_c['Condition']}</b> "
-                f"(<b>{best_c['Expectancy']:+.2f}R</b>). "
-                f"Avoid <b>{worst_c['Condition']}</b> "
-                f"(<b>{worst_c['Expectancy']:+.2f}R</b>).",
-                "good" if best_c["Expectancy"] > 0 else "warn",
-            )
 
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -2583,14 +2488,14 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
                 "Initial Balance ($)", min_value=100, max_value=10_000_000,
                 value=10_000, step=500, key="proj_balance"
             )
-            risk_pct = st.slider(
+            risk_pct = st.number_input(
                 "Risk % per Trade", min_value=0.25, max_value=10.0,
-                value=1.0, step=0.25, format="%.2f%%", key="proj_risk"
+                value=1.0, step=0.25, key="proj_risk"
             )
         with c2:
-            win_rate_input = st.slider(
+            win_rate_input = st.number_input(
                 "Winning Trades %", min_value=10, max_value=90,
-                value=int(min(90, max(10, base_wr * 100))), step=1, format="%d%%", key="proj_wr"
+                value=int(min(90, max(10, base_wr * 100))), step=1, key="proj_wr"
             )
             avg_win_rr = st.number_input(
                 "Avg Win RR", min_value=0.1, max_value=20.0,
@@ -2601,7 +2506,7 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
                 "Avg Trades per Month", min_value=1, max_value=1000,
                 value=int(min(1000, max(1, base_trades_per_month))), step=1, key="proj_tpm"
             )
-            total_months = st.slider(
+            total_months = st.number_input(
                 "Total Months", min_value=1, max_value=120,
                 value=24, step=1, key="proj_months"
             )
@@ -3257,7 +3162,7 @@ def _refinements_tab(f_perf: pd.DataFrame, df_all_safe: pd.DataFrame, styler):
             )
 
     st.markdown("<br>", unsafe_allow_html=True)
-    if st.button("🔄 Refresh", key="refinements_rerun"):
+    if st.button("Refresh", key="refinements_rerun"):
         st.rerun()
 
     st.markdown("</div>", unsafe_allow_html=True)

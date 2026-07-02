@@ -931,6 +931,16 @@ def inject_theme():
         border-color: #e5e7eb !important;
     }}
 
+    /* Hidden JS helper components must take no space (white strips fix) */
+    iframe[title="streamlit_js_eval.streamlit_js_eval"] {{ display: none !important; }}
+    div[data-testid="stElementContainer"]:has(> iframe[title="streamlit_js_eval.streamlit_js_eval"]) {{
+      display: none !important; height: 0 !important; margin: 0 !important;
+    }}
+    div[data-testid="stCustomComponentV1"] {{ background: transparent !important; }}
+
+    /* Sidebar rhythm */
+    [data-testid="stSidebar"] div[data-testid="stVerticalBlock"] {{ gap: 0.6rem !important; }}
+
     /* Page chrome: no decoration strip, transparent header, no footer/badge */
     [data-testid="stDecoration"] {{ display: none !important; }}
     [data-testid="stHeader"] {{ background: transparent !important; }}

@@ -149,11 +149,6 @@ def render_filters(
             )
         container = flt
     else:
-        st.sidebar.markdown(
-            "<div style='font-size:12px;font-weight:700;letter-spacing:0.12em;"
-            "text-transform:uppercase;color:#4800ff;margin:18px 0 4px;'>Filters</div>",
-            unsafe_allow_html=True,
-        )
         sel_inst = st.sidebar.selectbox(
             "Instrument",
             inst_opts,
