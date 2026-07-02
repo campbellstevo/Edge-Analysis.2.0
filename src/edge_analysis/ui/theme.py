@@ -932,6 +932,13 @@ def inject_theme():
         border-color: #e5e7eb !important;
     }}
 
+    /* No copy-link icons on heading hover */
+    [data-testid="stHeaderActionElements"] {{ display: none !important; }}
+    h1 > a, h2 > a, h3 > a, h4 > a {{ display: none !important; }}
+
+    /* Tab underline: only under the tabs, not the full page width */
+    .stTabs [data-baseweb="tab-border"] {{ display: none !important; }}
+
     </style>
     """, unsafe_allow_html=True)
 

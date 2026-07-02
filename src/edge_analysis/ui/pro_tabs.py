@@ -56,9 +56,7 @@ def _exit_optimizer(df, styler) -> None:
     cur = alt.Chart(alt.Data(values=[{"y": actual_exp}])).mark_rule(color="#94a3b8", strokeDash=[4, 4]).encode(y=alt.Y("y:Q", title=None))
     best_data = alt.Chart(alt.Data(values=[{"bx": float(best["Target"]), "by": float(best["Expectancy"])}]))
     best_pt = best_data.mark_point(filled=True, size=220, color="#16a34a", stroke="#fff", strokeWidth=2.5).encode(x=alt.X("bx:Q", title=None), y=alt.Y("by:Q", title=None))
-    best_lab = best_data.mark_text(dy=-16, fontSize=13, fontWeight="bold", color="#16a34a",
-                                   text=f"Best: +{best['Target']:.1f}R → {best['Expectancy']:+.2f}R/trade").encode(x=alt.X("bx:Q", title=None), y=alt.Y("by:Q", title=None))
-    st.altair_chart(styler(alt.layer(line, cur, best_pt, best_lab)), use_container_width=True)
+    st.altair_chart(styler(alt.layer(line, cur, best_pt)), use_container_width=True)
     c1, c2, c3 = st.columns(3)
     with c1: _kpi("Your actual expectancy", f"{actual_exp:+.2f}R", f"{actual_total:+.0f}R total")
     with c2: _kpi("Best fixed target", f"+{best['Target']:.1f}R", f"{best['Expectancy']:+.2f}R / trade")
@@ -103,9 +101,7 @@ def _mae_stop_optimizer(df, styler) -> None:
     rec_surv = float(rdf.loc[rdf["Stop (R)"] == rec, "Winners surviving %"].iloc[0]) if (rdf["Stop (R)"] == rec).any() else 100.0
     rec_data = alt.Chart(alt.Data(values=[{"bx": rec, "by": rec_surv}]))
     rec_pt = rec_data.mark_point(filled=True, size=220, color="#16a34a", stroke="#fff", strokeWidth=2.5).encode(x=alt.X("bx:Q", title=None), y=alt.Y("by:Q", title=None))
-    rec_lab = rec_data.mark_text(dy=18, fontSize=13, fontWeight="bold", color="#16a34a",
-                                 text=f"Suggested: −{rec:.1f}R keeps {rec_surv:.0f}% of winners").encode(x=alt.X("bx:Q", title=None), y=alt.Y("by:Q", title=None))
-    st.altair_chart(styler(alt.layer(area, line, rec_pt, rec_lab).properties(height=260)), use_container_width=True)
+    st.altair_chart(styler(alt.layer(area, line, rec_pt).properties(height=260)), use_container_width=True)
     med = float(mag.median()); p90 = float(mag.quantile(0.9))
     c1, c2, c3 = st.columns(3)
     with c1: _kpi("Median winner MAE", f"−{med:.2f}R", "typical heat on a winner")
@@ -127,10 +123,11 @@ def _monte_carlo(df, styler) -> None:
     if len(r) < 20:
         t._insight_box("Need ~20+ completed trades for a reliable Monte Carlo.", "warn"); return
 
-    c1, c2, c3 = st.columns(3)
-    with c1: risk = st.slider("Risk % per trade", 0.25, 5.0, 1.0, 0.25, key="pro_mc_risk")
-    with c2: n_tr = st.slider("Trades to project", 50, 1000, 300, 50, key="pro_mc_n")
-    with c3: start = st.number_input("Start balance ($)", min_value=1000, max_value=1_000_000, value=10000, step=1000, key="pro_mc_bal")
+    with st.expander("Simulation settings"):
+        c1, c2, c3 = st.columns(3)
+        with c1: risk = st.slider("Risk % per trade", 0.25, 5.0, 1.0, 0.25, key="pro_mc_risk")
+        with c2: n_tr = st.slider("Trades to project", 50, 1000, 300, 50, key="pro_mc_n")
+        with c3: start = st.number_input("Start balance ($)", min_value=1000, max_value=1_000_000, value=10000, step=1000, key="pro_mc_bal")
 
     N = 2000
     rng = np.random.default_rng(7)
@@ -267,8 +264,8 @@ def _a_game(df, styler) -> None:
 # ── 6. Hour × Day expectancy heatmap ──────────────────────────────────────────
 def _heatmap_hour_day(df, styler) -> None:
     t = _t()
-    st.markdown("### When You Trade Best — Hour × Day")
-    st.caption("Average R per trade by hour of day and weekday. Greener = stronger expectancy.")
+    st.markdown("### When You Trade Best")
+    st.caption("Average R per trade by hour of day (Melbourne time) and weekday. Greener = stronger expectancy.")
     g = df.copy()
     g["__rr"] = pd.to_numeric(g.get("Closed RR"), errors="coerce")
     hour = _num(df, "Hour (Melb)")
@@ -289,9 +286,11 @@ def _heatmap_hour_day(df, styler) -> None:
     agg["AvgR"] = agg["AvgR"].round(2)
     days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
     vals = t._to_alt_values(agg)
-    heat = (alt.Chart(alt.Data(values=vals)).mark_rect()
-            .encode(x=alt.X("Hour:O", title="Hour (Melb)"),
-                    y=alt.Y("Day:O", sort=days, title=None),
+    heat = (alt.Chart(alt.Data(values=vals)).mark_rect(stroke="#ffffff", strokeWidth=2)
+            .encode(x=alt.X("Hour:O", title=None,
+                            axis=alt.Axis(labelAngle=0, ticks=False, domain=False, labelColor="#64748b")),
+                    y=alt.Y("Day:O", sort=days, title=None,
+                            axis=alt.Axis(ticks=False, domain=False, labelColor="#64748b")),
                     color=alt.Color("AvgR:Q", title="Avg R", scale=alt.Scale(scheme="redyellowgreen", domainMid=0)),
                     tooltip=["Day:O", "Hour:O", "AvgR:Q", "Trades:Q"])
             .properties(height=240))
@@ -301,7 +300,7 @@ def _heatmap_hour_day(df, styler) -> None:
 # ── 7. Symbol × Session edge matrix ───────────────────────────────────────────
 def _symbol_session_matrix(df, styler) -> None:
     t = _t()
-    st.markdown("### Symbol × Session Edge Matrix")
+    st.markdown("### Where Your Edge Lives")
     st.caption("Average R per trade by instrument and session — where your edge actually lives.")
     g = df.copy()
     g["__rr"] = pd.to_numeric(g.get("Closed RR"), errors="coerce")
@@ -319,9 +318,11 @@ def _symbol_session_matrix(df, styler) -> None:
     agg = agg.rename(columns={"__sym": "Symbol", "__sess": "Session"})
     agg["AvgR"] = agg["AvgR"].round(2)
     vals = t._to_alt_values(agg)
-    heat = (alt.Chart(alt.Data(values=vals)).mark_rect()
-            .encode(x=alt.X("Session:O", title=None),
-                    y=alt.Y("Symbol:O", title=None),
+    heat = (alt.Chart(alt.Data(values=vals)).mark_rect(stroke="#ffffff", strokeWidth=2)
+            .encode(x=alt.X("Session:O", title=None,
+                            axis=alt.Axis(labelAngle=0, ticks=False, domain=False, labelColor="#64748b")),
+                    y=alt.Y("Symbol:O", title=None,
+                            axis=alt.Axis(ticks=False, domain=False, labelColor="#64748b")),
                     color=alt.Color("AvgR:Q", title="Avg R", scale=alt.Scale(scheme="redyellowgreen", domainMid=0)),
                     tooltip=["Symbol:O", "Session:O", "AvgR:Q", "Trades:Q"])
             .properties(height=max(160, agg["Symbol"].nunique() * 38)))

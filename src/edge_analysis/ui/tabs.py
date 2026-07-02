@@ -2525,34 +2525,35 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
     )
 
     # ── Inputs ────────────────────────────────────────────────────────────────
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        starting_balance = st.number_input(
-            "Initial Balance ($)", min_value=100, max_value=10_000_000,
-            value=10_000, step=500, key="proj_balance"
-        )
-        risk_pct = st.slider(
-            "Risk % per Trade", min_value=0.25, max_value=10.0,
-            value=1.0, step=0.25, format="%.2f%%", key="proj_risk"
-        )
-    with c2:
-        win_rate_input = st.slider(
-            "Winning Trades %", min_value=10, max_value=90,
-            value=int(min(90, max(10, base_wr * 100))), step=1, format="%d%%", key="proj_wr"
-        )
-        avg_win_rr = st.number_input(
-            "Avg Win RR", min_value=0.1, max_value=20.0,
-            value=float(min(20.0, max(0.1, base_avg_win_rr))), step=0.1, format="%.2f", key="proj_win_rr"
-        )
-    with c3:
-        trades_per_month = st.number_input(
-            "Avg Trades per Month", min_value=1, max_value=1000,
-            value=int(min(1000, max(1, base_trades_per_month))), step=1, key="proj_tpm"
-        )
-        total_months = st.slider(
-            "Total Months", min_value=1, max_value=120,
-            value=24, step=1, key="proj_months"
-        )
+    with st.expander("Projection settings"):
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            starting_balance = st.number_input(
+                "Initial Balance ($)", min_value=100, max_value=10_000_000,
+                value=10_000, step=500, key="proj_balance"
+            )
+            risk_pct = st.slider(
+                "Risk % per Trade", min_value=0.25, max_value=10.0,
+                value=1.0, step=0.25, format="%.2f%%", key="proj_risk"
+            )
+        with c2:
+            win_rate_input = st.slider(
+                "Winning Trades %", min_value=10, max_value=90,
+                value=int(min(90, max(10, base_wr * 100))), step=1, format="%d%%", key="proj_wr"
+            )
+            avg_win_rr = st.number_input(
+                "Avg Win RR", min_value=0.1, max_value=20.0,
+                value=float(min(20.0, max(0.1, base_avg_win_rr))), step=0.1, format="%.2f", key="proj_win_rr"
+            )
+        with c3:
+            trades_per_month = st.number_input(
+                "Avg Trades per Month", min_value=1, max_value=1000,
+                value=int(min(1000, max(1, base_trades_per_month))), step=1, key="proj_tpm"
+            )
+            total_months = st.slider(
+                "Total Months", min_value=1, max_value=120,
+                value=24, step=1, key="proj_months"
+            )
 
     # ── Run simulation ────────────────────────────────────────────────────────
     N_PATHS      = 500
