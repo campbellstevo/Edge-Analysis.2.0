@@ -3319,18 +3319,151 @@ def _early_close_tab_salty(df: pd.DataFrame, styler):
 
     st.markdown("</div>", unsafe_allow_html=True)
 
+def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
+    """Monthly profit target, month-by-month track record, weekly/monthly records."""
+    st.markdown("### Monthly Target")
+    if df_raw is None or df_raw.empty or "Date" not in df_raw.columns:
+        _unavailable("Targets")
+        return
+    g = df_raw.copy()
+    g["__dt"] = pd.to_datetime(g["Date"], errors="coerce")
+    g = g[g["__dt"].notna()]
+    rr_col = next((c for c in ["Closed RR", "RR", "Closed R"] if c in g.columns), None)
+    if rr_col is None or g.empty:
+        _unavailable("Targets")
+        return
+    g["__rr"] = pd.to_numeric(g[rr_col], errors="coerce")
+    g = g[g["__rr"].notna()]
+    if g.empty:
+        _unavailable("Targets")
+        return
+    usd = pd.to_numeric(g.get("PnL"), errors="coerce") if "PnL" in g.columns else None
+    has_usd = usd is not None and usd.notna().any()
+    if has_usd:
+        g["__usd"] = usd
+
+    st.caption("Set your target and risk — everything below updates from your live journal.")
+    target_pct = _slider_row(
+        "Monthly target", lambda v: f"{v:.0f}%",
+        lambda: st.slider("Monthly target", min_value=1, max_value=20, value=5, step=1,
+                          key="tgt_pct", label_visibility="collapsed"))
+    risk_pct = _slider_row(
+        "Risk per trade", lambda v: f"{v:.2f}%",
+        lambda: st.slider("Risk per trade", min_value=0.25, max_value=5.0, value=1.0, step=0.25,
+                          key="tgt_risk", label_visibility="collapsed"))
+
+    need_r = float(target_pct) / float(risk_pct)
+    now = pd.Timestamp.now()
+    cur = g[(g["__dt"].dt.year == now.year) & (g["__dt"].dt.month == now.month)]
+    cur_r = float(cur["__rr"].sum()) if not cur.empty else 0.0
+    prog = max(0.0, min(100.0, cur_r / need_r * 100.0)) if need_r > 0 else 0.0
+    pc = "#16a34a" if cur_r >= need_r else ("#4800ff" if cur_r >= 0 else "#ef4444")
+    st.markdown(
+        f"<div style='background:#fff;border:1px solid rgba(0,0,0,0.06);border-radius:16px;"
+        f"padding:18px 22px;box-shadow:0 2px 12px rgba(0,0,0,0.05);margin:10px 0 4px;'>"
+        f"<div style='display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;'>"
+        f"<div><div style='font-size:12px;font-weight:600;letter-spacing:0.08em;color:#94a3b8;'>"
+        f"{now.strftime('%B %Y').upper()}</div>"
+        f"<div style='font-size:30px;font-weight:800;color:{pc};'>{cur_r:+.1f}R"
+        f"<span style='font-size:15px;color:#64748b;font-weight:600;'> / {need_r:.0f}R target</span></div></div>"
+        f"<div style='font-size:13px;color:#64748b;'>{target_pct:.0f}% at {risk_pct:.2f}% risk = "
+        f"<b>{need_r:.0f}R</b> · {len(cur)} trades this month</div></div>"
+        f"<div style='height:10px;border-radius:5px;background:#eef0f5;margin-top:12px;overflow:hidden;'>"
+        f"<div style='width:{prog:.1f}%;height:10px;background:{pc};border-radius:5px;'></div></div>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+    exp = float(g["__rr"].mean())
+    if exp > 0:
+        left_r = max(0.0, need_r - cur_r)
+        n_need = int(np.ceil(left_r / exp)) if left_r > 0 else 0
+        msg = ("Target reached — protect it: cut size or stop for the month."
+               if left_r <= 0 else
+               f"At your <b>{exp:+.2f}R</b> per-trade expectancy, the remaining <b>{left_r:.1f}R</b> "
+               f"needs roughly <b>{n_need}</b> more trades.")
+        _insight_box(msg, "good" if left_r <= 0 else "info")
+
+    st.markdown("### Track Record")
+    st.caption("Net R per calendar month" + (" · dollars from MT5 where available." if has_usd else "."))
+    mg = g.set_index("__dt").sort_index()
+    monthly = mg["__rr"].resample("MS").sum().to_frame("r")
+    monthly["n"] = mg["__rr"].resample("MS").size()
+    if has_usd:
+        monthly["usd"] = mg["__usd"].resample("MS").sum()
+    monthly = monthly[monthly["n"] > 0].tail(12)
+    cards = []
+    for ts, row in monthly.iterrows():
+        col = "#16a34a" if row["r"] >= 0 else "#ef4444"
+        hit = row["r"] >= need_r
+        badge = ("<span style='font-size:10px;font-weight:700;color:#16a34a;background:#e8f7ee;"
+                 "border-radius:999px;padding:2px 8px;margin-left:6px;'>TARGET</span>" if hit else "")
+        usd_s = (f"<div style='font-size:12px;color:#64748b;'>{'-' if row['usd'] < 0 else ''}"
+                 f"${abs(row['usd']):,.0f}</div>") if has_usd and pd.notna(row.get("usd")) else ""
+        cards.append(
+            f"<div style='background:#fff;border:1px solid rgba(0,0,0,0.06);border-radius:12px;"
+            f"padding:12px 14px;box-shadow:0 2px 10px rgba(0,0,0,0.04);'>"
+            f"<div style='font-size:12px;font-weight:600;color:#64748b;'>{ts.strftime('%b %Y')}{badge}</div>"
+            f"<div style='font-size:22px;font-weight:800;color:{col};'>{row['r']:+.1f}R</div>"
+            f"{usd_s}<div style='font-size:11px;color:#94a3b8;'>{int(row['n'])} trades</div></div>"
+        )
+    if cards:
+        st.markdown(
+            "<div style='display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));"
+            "gap:12px;margin:6px 0 4px;'>" + "".join(cards) + "</div>",
+            unsafe_allow_html=True,
+        )
+        hits = int((monthly["r"] >= need_r).sum())
+        pos = int((monthly["r"] > 0).sum())
+        _insight_box(
+            f"<b>{pos}</b> of your last <b>{len(monthly)}</b> months were positive; "
+            f"<b>{hits}</b> hit the {target_pct:.0f}% target pace ({need_r:.0f}R).",
+            "good" if pos >= len(monthly) / 2 else "warn")
+
+    st.markdown("### Records")
+    weekly = mg["__rr"].resample("W-MON", label="left", closed="left").sum()
+    wk_n = mg["__rr"].resample("W-MON", label="left", closed="left").size()
+    weekly = weekly[wk_n > 0]
+    rows = []
+    if not weekly.empty:
+        bw, ww = weekly.idxmax(), weekly.idxmin()
+        rows.append(("BEST WEEK", f"{weekly.max():+.1f}R", f"w/c {bw.strftime('%d %b %Y')}", "#16a34a"))
+        rows.append(("WORST WEEK", f"{weekly.min():+.1f}R", f"w/c {ww.strftime('%d %b %Y')}", "#ef4444"))
+    if not monthly.empty:
+        bm, wm = monthly["r"].idxmax(), monthly["r"].idxmin()
+        rows.append(("BEST MONTH", f"{monthly['r'].max():+.1f}R", bm.strftime("%b %Y"), "#16a34a"))
+        rows.append(("WORST MONTH", f"{monthly['r'].min():+.1f}R", wm.strftime("%b %Y"), "#ef4444"))
+    if rows:
+        rec = "".join(
+            f"<div style='flex:1;min-width:150px;background:#fff;border:1px solid rgba(0,0,0,0.06);"
+            f"border-radius:12px;padding:12px 14px;box-shadow:0 2px 10px rgba(0,0,0,0.04);'>"
+            f"<div style='font-size:11px;font-weight:600;letter-spacing:0.06em;color:#94a3b8;'>{lab}</div>"
+            f"<div style='font-size:22px;font-weight:800;color:{col};'>{val}</div>"
+            f"<div style='font-size:12px;color:#64748b;'>{sub}</div></div>"
+            for lab, val, sub, col in rows)
+        st.markdown(f"<div style='display:flex;gap:12px;flex-wrap:wrap;margin:6px 0;'>{rec}</div>",
+                    unsafe_allow_html=True)
+    if not weekly.empty:
+        worst_w = float(weekly.min())
+        cap = max(1.0, round((float(target_pct) / float(risk_pct)) / 4.0))
+        _insight_box(
+            f"Recommendation: cap any single week at <b>-{cap:.0f}R</b> "
+            f"(a quarter of your monthly target). Your worst week so far is <b>{worst_w:+.1f}R</b> — "
+            f"one bad week should never cost more than a quarter of the month.",
+            "warn" if worst_w < -cap else "info")
+
+
 # ─────────────────────────── 7-TAB LAYOUT ────────────────────────────────────
 def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table):
     f_perf = _prep_perf_df(f)
     df_all_safe = df_all.copy() if df_all is not None else df_all
 
-    _labels = ["Performance", "Setup", "Timing", "Psychology", "Externals", "Projections", "Refinements"]
+    _labels = ["Performance", "Setup", "Timing", "Psychology", "Externals", "Targets", "Projections", "Refinements"]
     _show_mt5 = _get_schema() == "mt5" or _df_is_mt5(df_all_safe)
     if _show_mt5:
         _labels.append("MT5")
         _labels.append("Pro")
     _tab_objs = st.tabs(_labels)
-    t_performance, t_setup, t_timing, t_psychology, t_externals, t_projections, t_refinements = _tab_objs[:7]
+    t_performance, t_setup, t_timing, t_psychology, t_externals, t_targets, t_projections, t_refinements = _tab_objs[:8]
 
     # ── Tab 1: Performance ────────────────────────────────────────────────────
     with t_performance:
@@ -3375,6 +3508,10 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table):
     with t_externals:
         _conditions_tab(f_perf, show_table)
 
+    # ── Targets tab ───────────────────────────────────────────────────────────
+    with t_targets:
+        _targets_tab(df_all_safe, styler)
+
     # ── Tab 6: Projections ────────────────────────────────────────────────────
     with t_projections:
         _projections_tab(df_all_safe, styler)
@@ -3385,9 +3522,9 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table):
 
     # Tab 8: MT5 analytics (only when the MT5 Trade Log is connected)
     if _show_mt5:
-        with _tab_objs[7]:
+        with _tab_objs[8]:
             from edge_analysis.ui.mt5_tabs import render_mt5_tab
             render_mt5_tab(f_perf, df_all_safe, styler)
-        with _tab_objs[8]:
+        with _tab_objs[9]:
             from edge_analysis.ui.pro_tabs import render_pro_tab
             render_pro_tab(f_perf, df_all_safe, styler)
