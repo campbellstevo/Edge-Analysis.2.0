@@ -922,6 +922,13 @@ def inject_theme():
     /* Dividers: soft and quiet */
     hr {{ border: none !important; border-top: 1px solid #f1f5f9 !important; margin: 26px 0 !important; }}
 
+    /* Content width: don't stretch across huge monitors */
+    section.main div.block-container,
+    [data-testid="stMainBlockContainer"] {{
+        max-width: 1200px !important;
+        margin: 0 auto !important;
+    }}
+
     /* Tight vertical rhythm for settings rows inside expanders */
     div[data-testid="stExpander"] div[data-testid="stVerticalBlock"] {{
         gap: 0.4rem !important;

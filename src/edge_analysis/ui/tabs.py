@@ -2499,42 +2499,41 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
     )
 
     # ── Inputs ────────────────────────────────────────────────────────────────
-    with st.expander("Projection settings"):
-        starting_balance = _slider_row(
-            "Starting balance", lambda v: f"${v:,.0f}",
-            lambda: st.slider("Starting balance", min_value=1_000, max_value=200_000,
-                              value=10_000, step=1_000, key="proj_balance",
-                              label_visibility="collapsed"))
-        risk_pct = _slider_row(
-            "Risk per trade", lambda v: f"{v:.2f}%",
-            lambda: st.slider("Risk per trade", min_value=0.25, max_value=10.0,
-                              value=1.0, step=0.25, key="proj_risk",
-                              label_visibility="collapsed"))
-        win_rate_input = _slider_row(
-            "Winning trades", lambda v: f"{v}%",
-            lambda: st.slider("Winning trades", min_value=10, max_value=90,
-                              value=int(min(90, max(10, base_wr * 100))), step=1,
-                              key="proj_wr", label_visibility="collapsed"))
-        be_rate_input = _slider_row(
-            "Break-even trades", lambda v: f"{v}%",
-            lambda: st.slider("Break-even trades", min_value=0, max_value=60,
-                              value=int(min(60, max(0, round(base_be * 100)))), step=1,
-                              key="proj_be", label_visibility="collapsed"))
-        avg_win_rr = _slider_row(
-            "Average win", lambda v: f"{v:.1f}R",
-            lambda: st.slider("Average win", min_value=0.1, max_value=15.0,
-                              value=float(min(15.0, max(0.1, base_avg_win_rr))), step=0.1,
-                              key="proj_win_rr", label_visibility="collapsed"))
-        trades_per_month = _slider_row(
-            "Trades per month", lambda v: f"{v}",
-            lambda: st.slider("Trades per month", min_value=1, max_value=200,
-                              value=int(min(200, max(1, base_trades_per_month))), step=1,
-                              key="proj_tpm", label_visibility="collapsed"))
-        total_months = _slider_row(
-            "Months to project", lambda v: f"{v} mo",
-            lambda: st.slider("Months to project", min_value=1, max_value=120,
-                              value=24, step=1, key="proj_months",
-                              label_visibility="collapsed"))
+    starting_balance = _slider_row(
+        "Starting balance", lambda v: f"${v:,.0f}",
+        lambda: st.slider("Starting balance", min_value=1_000, max_value=200_000,
+                          value=10_000, step=1_000, key="proj_balance",
+                          label_visibility="collapsed"))
+    risk_pct = _slider_row(
+        "Risk per trade", lambda v: f"{v:.2f}%",
+        lambda: st.slider("Risk per trade", min_value=0.25, max_value=10.0,
+                          value=1.0, step=0.25, key="proj_risk",
+                          label_visibility="collapsed"))
+    win_rate_input = _slider_row(
+        "Winning trades", lambda v: f"{v}%",
+        lambda: st.slider("Winning trades", min_value=10, max_value=90,
+                          value=int(min(90, max(10, base_wr * 100))), step=1,
+                          key="proj_wr", label_visibility="collapsed"))
+    be_rate_input = _slider_row(
+        "Break-even trades", lambda v: f"{v}%",
+        lambda: st.slider("Break-even trades", min_value=0, max_value=60,
+                          value=int(min(60, max(0, round(base_be * 100)))), step=1,
+                          key="proj_be", label_visibility="collapsed"))
+    avg_win_rr = _slider_row(
+        "Average win", lambda v: f"{v:.1f}R",
+        lambda: st.slider("Average win", min_value=0.1, max_value=15.0,
+                          value=float(min(15.0, max(0.1, base_avg_win_rr))), step=0.1,
+                          key="proj_win_rr", label_visibility="collapsed"))
+    trades_per_month = _slider_row(
+        "Trades per month", lambda v: f"{v}",
+        lambda: st.slider("Trades per month", min_value=1, max_value=200,
+                          value=int(min(200, max(1, base_trades_per_month))), step=1,
+                          key="proj_tpm", label_visibility="collapsed"))
+    total_months = _slider_row(
+        "Months to project", lambda v: f"{v} mo",
+        lambda: st.slider("Months to project", min_value=1, max_value=120,
+                          value=24, step=1, key="proj_months",
+                          label_visibility="collapsed"))
 
     # ── Run simulation ────────────────────────────────────────────────────────
     N_PATHS      = 500
