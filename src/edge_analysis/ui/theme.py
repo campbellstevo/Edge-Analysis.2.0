@@ -802,49 +802,10 @@ def inject_theme():
 
 
     /* ══════════════════════════════════════════════════════════════════════ */
-    /* SLIDER — track, thumb, value label                                     */
-    /* ══════════════════════════════════════════════════════════════════════ */
-
-    /* Thumb — purple circle */
+    /* SLIDER — default Streamlit track (already purple via primaryColor);
+       just a soft ring on the thumb. Tick labels + value bubble hidden elsewhere. */
     [data-testid="stSlider"] [role="slider"] {{
-        background-color: {PURPLE_HEX} !important;
-        border-color: {PURPLE_HEX} !important;
-        box-shadow: 0 0 0 3px rgba(72,0,255,0.15) !important;
-    }}
-
-    /* Track container — slim grey pill */
-    [data-testid="stSlider"] [data-baseweb="slider"] > div:not([role]) {{
-        background: #e5e7eb !important;
-        height: 4px !important;
-        border-radius: 2px !important;
-        align-self: center !important;
-    }}
-    /* Filled portion — purple */
-    [data-testid="stSlider"] [data-baseweb="slider"] > div:not([role]) > div:first-child {{
-        background: {PURPLE_HEX} !important;
-        height: 4px !important;
-        border-radius: 2px !important;
-    }}
-    /* aria-hidden fallback */
-    [data-testid="stSlider"] [data-baseweb="slider"] [aria-hidden="true"] {{
-        background: #e5e7eb !important;
-        height: 4px !important;
-        border-radius: 2px !important;
-        align-self: center !important;
-    }}
-    [data-testid="stSlider"] [data-baseweb="slider"] [aria-hidden="true"] > div:first-child {{
-        background: {PURPLE_HEX} !important;
-        height: 4px !important;
-        border-radius: 2px !important;
-    }}
-
-    /* Value label — purple text */
-    [data-testid="stSlider"] [data-baseweb="slider"] [role="slider"] + div,
-    [data-testid="stSlider"] [data-baseweb="slider"] [role="slider"] ~ div[class] {{
-        color: {PURPLE_HEX} !important;
-    }}
-    [data-testid="stSlider"] div[data-testid] {{
-        color: {PURPLE_HEX} !important;
+        box-shadow: 0 0 0 3px rgba(72,0,255,0.12) !important;
     }}
 
     /* ══════════════════════════════════════════════════════════════════════ */
@@ -904,8 +865,7 @@ def inject_theme():
     /* INPUT CARD BOXES — white bg, purple border, white input field          */
     /* ══════════════════════════════════════════════════════════════════════ */
 
-    div[data-testid="stNumberInput"],
-    div[data-testid="stSlider"] {{
+    div[data-testid="stNumberInput"] {{
         background: #ffffff !important;
         border: 1px solid #e8e0ff !important;
         border-radius: 12px !important;
@@ -913,8 +873,13 @@ def inject_theme():
         margin-bottom: 8px !important;
         overflow: hidden !important;
     }}
-    div[data-testid="stNumberInput"] label,
-    div[data-testid="stSlider"] label {{
+    div[data-testid="stSlider"] {{
+        background: transparent !important;
+        border: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }}
+    div[data-testid="stNumberInput"] label {{
         color: #0f172a !important;
         font-weight: 600 !important;
         font-size: 13px !important;
@@ -956,6 +921,11 @@ def inject_theme():
 
     /* Dividers: soft and quiet */
     hr {{ border: none !important; border-top: 1px solid #f1f5f9 !important; margin: 26px 0 !important; }}
+
+    /* Tight vertical rhythm for settings rows inside expanders */
+    div[data-testid="stExpander"] div[data-testid="stVerticalBlock"] {{
+        gap: 0.4rem !important;
+    }}
 
     /* Expanders styled like cards (no hollow outline look) */
     div[data-testid="stExpander"] > details {{
