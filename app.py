@@ -1425,13 +1425,6 @@ def main() -> None:
             index=0 if st.session_state.get(SessionKeys.NAV_PAGE) == PageNames.DASHBOARD else 1,
             key=SessionKeys.NAV_PAGE,
         )
-        current_layout = st.session_state.get(SessionKeys.LAYOUT, "Desktop Layout")
-        st.sidebar.selectbox(
-            "Layout",
-            ["Desktop Layout", "Mobile Layout"],
-            index=0 if current_layout == "Desktop Layout" else 1,
-            key=SessionKeys.LAYOUT,
-        )
         _render_phone_link_sidebar()
     else:
         _inject_mobile_css(layout_mode)
