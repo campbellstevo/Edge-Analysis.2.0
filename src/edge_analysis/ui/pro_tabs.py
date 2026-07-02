@@ -124,10 +124,21 @@ def _monte_carlo(df, styler) -> None:
         t._insight_box("Need ~20+ completed trades for a reliable Monte Carlo.", "warn"); return
 
     with st.expander("Simulation settings"):
-        c1, c2, c3 = st.columns(3)
-        with c1: risk = st.number_input("Risk % per trade", min_value=0.25, max_value=5.0, value=1.0, step=0.25, key="pro_mc_risk")
-        with c2: n_tr = st.number_input("Trades to project", min_value=50, max_value=1000, value=300, step=50, key="pro_mc_n")
-        with c3: start = st.number_input("Start balance ($)", min_value=1000, max_value=1_000_000, value=10000, step=1000, key="pro_mc_bal")
+        risk = t._slider_row(
+            "Risk per trade", lambda v: f"{v:.2f}%",
+            lambda: st.slider("Risk per trade", min_value=0.25, max_value=5.0,
+                              value=1.0, step=0.25, key="pro_mc_risk",
+                              label_visibility="collapsed"))
+        n_tr = t._slider_row(
+            "Trades to project", lambda v: f"{v}",
+            lambda: st.slider("Trades to project", min_value=50, max_value=1000,
+                              value=300, step=50, key="pro_mc_n",
+                              label_visibility="collapsed"))
+        start = t._slider_row(
+            "Starting balance", lambda v: f"${v:,.0f}",
+            lambda: st.slider("Starting balance", min_value=1_000, max_value=200_000,
+                              value=10_000, step=1_000, key="pro_mc_bal",
+                              label_visibility="collapsed"))
 
     N = 2000
     rng = np.random.default_rng(7)

@@ -950,6 +950,10 @@ def inject_theme():
     [data-testid="stBottom"] {{ background: transparent !important; }}
     .viewerBadge_container__r5tak, [class*="viewerBadge"] {{ display: none !important; }}
 
+    /* Sliders: clean track only — no min/max labels, no value bubble */
+    [data-testid="stSliderTickBarMin"], [data-testid="stSliderTickBarMax"] {{ display: none !important; }}
+    [data-testid="stSliderThumbValue"] {{ display: none !important; }}
+
     /* Dividers: soft and quiet */
     hr {{ border: none !important; border-top: 1px solid #f1f5f9 !important; margin: 26px 0 !important; }}
 

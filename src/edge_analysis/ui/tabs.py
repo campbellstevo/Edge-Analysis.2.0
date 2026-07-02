@@ -2040,6 +2040,21 @@ def _parse_rr_value(v):
     return None
 
 
+def _slider_row(label: str, fmt, make_widget):
+    """One clean settings row: label left, bare slider middle, bold value right."""
+    c1, c2, c3 = st.columns([2.6, 5.4, 1.6], vertical_alignment="center")
+    with c1:
+        st.markdown(f"<div style='font-size:13px;color:#64748b;'>{label}</div>",
+                    unsafe_allow_html=True)
+    with c2:
+        val = make_widget()
+    with c3:
+        st.markdown(f"<div style='font-size:14px;font-weight:700;color:#4800ff;"
+                    f"text-align:right;white-space:nowrap;'>{fmt(val)}</div>",
+                    unsafe_allow_html=True)
+    return val
+
+
 def _rank_dots(rows, cat_col, val_col, fmt="+.2f", suffix="R") -> None:
     """House-style ranked dot chart: dashed zero rule, green/red dots, bold labels."""
     d = pd.DataFrame(rows).copy()
@@ -2447,7 +2462,10 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
         st.warning("No Win/Loss trades with Closed RR found — add more complete trades to use this tab.")
         return
 
-    base_wr          = round(len(wins) / total, 4)
+    n_be = int((df[outcome_col] == "BE").sum())
+    total_incl_be = total + n_be
+    base_wr          = round(len(wins) / max(1, total_incl_be), 4)
+    base_be          = round(n_be / max(1, total_incl_be), 4)
     base_avg_win_rr  = round(wins[rr_col].mean(), 2)  if len(wins)   > 0 else 1.5
     base_avg_loss_rr = round(abs(losses[rr_col].mean()), 2) if len(losses) > 0 else 1.0
 
@@ -2474,53 +2492,62 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
     # ── Header ───────────────────────────────────────────────────────────────
     st.markdown("### Monte Carlo Projections")
     st.caption(
-        f"Auto-filled from **{total} completed trades** — "
-        f"Win rate: **{base_wr:.1%}** · Avg win RR: **{base_avg_win_rr}** · "
-        f"Avg loss RR: **{base_avg_loss_rr}** · "
+        f"Auto-filled from **{total_incl_be} completed trades** — "
+        f"Win rate: **{base_wr:.1%}** · Break-even: **{base_be:.1%}** · "
+        f"Avg win RR: **{base_avg_win_rr}** · Avg loss RR: **{base_avg_loss_rr}** · "
         f"Est. trades/month: **{base_trades_per_month}**"
     )
 
     # ── Inputs ────────────────────────────────────────────────────────────────
     with st.expander("Projection settings"):
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            starting_balance = st.number_input(
-                "Initial Balance ($)", min_value=100, max_value=10_000_000,
-                value=10_000, step=500, key="proj_balance"
-            )
-            risk_pct = st.number_input(
-                "Risk % per Trade", min_value=0.25, max_value=10.0,
-                value=1.0, step=0.25, key="proj_risk"
-            )
-        with c2:
-            win_rate_input = st.number_input(
-                "Winning Trades %", min_value=10, max_value=90,
-                value=int(min(90, max(10, base_wr * 100))), step=1, key="proj_wr"
-            )
-            avg_win_rr = st.number_input(
-                "Avg Win RR", min_value=0.1, max_value=20.0,
-                value=float(min(20.0, max(0.1, base_avg_win_rr))), step=0.1, format="%.2f", key="proj_win_rr"
-            )
-        with c3:
-            trades_per_month = st.number_input(
-                "Avg Trades per Month", min_value=1, max_value=1000,
-                value=int(min(1000, max(1, base_trades_per_month))), step=1, key="proj_tpm"
-            )
-            total_months = st.number_input(
-                "Total Months", min_value=1, max_value=120,
-                value=24, step=1, key="proj_months"
-            )
+        starting_balance = _slider_row(
+            "Starting balance", lambda v: f"${v:,.0f}",
+            lambda: st.slider("Starting balance", min_value=1_000, max_value=200_000,
+                              value=10_000, step=1_000, key="proj_balance",
+                              label_visibility="collapsed"))
+        risk_pct = _slider_row(
+            "Risk per trade", lambda v: f"{v:.2f}%",
+            lambda: st.slider("Risk per trade", min_value=0.25, max_value=10.0,
+                              value=1.0, step=0.25, key="proj_risk",
+                              label_visibility="collapsed"))
+        win_rate_input = _slider_row(
+            "Winning trades", lambda v: f"{v}%",
+            lambda: st.slider("Winning trades", min_value=10, max_value=90,
+                              value=int(min(90, max(10, base_wr * 100))), step=1,
+                              key="proj_wr", label_visibility="collapsed"))
+        be_rate_input = _slider_row(
+            "Break-even trades", lambda v: f"{v}%",
+            lambda: st.slider("Break-even trades", min_value=0, max_value=60,
+                              value=int(min(60, max(0, round(base_be * 100)))), step=1,
+                              key="proj_be", label_visibility="collapsed"))
+        avg_win_rr = _slider_row(
+            "Average win", lambda v: f"{v:.1f}R",
+            lambda: st.slider("Average win", min_value=0.1, max_value=15.0,
+                              value=float(min(15.0, max(0.1, base_avg_win_rr))), step=0.1,
+                              key="proj_win_rr", label_visibility="collapsed"))
+        trades_per_month = _slider_row(
+            "Trades per month", lambda v: f"{v}",
+            lambda: st.slider("Trades per month", min_value=1, max_value=200,
+                              value=int(min(200, max(1, base_trades_per_month))), step=1,
+                              key="proj_tpm", label_visibility="collapsed"))
+        total_months = _slider_row(
+            "Months to project", lambda v: f"{v} mo",
+            lambda: st.slider("Months to project", min_value=1, max_value=120,
+                              value=24, step=1, key="proj_months",
+                              label_visibility="collapsed"))
 
     # ── Run simulation ────────────────────────────────────────────────────────
     N_PATHS      = 500
     wr_frac      = win_rate_input / 100.0
+    be_frac      = min(be_rate_input / 100.0, max(0.0, 1.0 - wr_frac))
     total_trades = int(trades_per_month) * int(total_months)
     loss_rr      = base_avg_loss_rr  # always from real data
 
     rng         = np.random.default_rng(42)
     draws       = rng.random((N_PATHS, total_trades))
     is_win      = draws < wr_frac
-    rr_matrix   = np.where(is_win, avg_win_rr, -loss_rr)
+    is_be       = (~is_win) & (draws < wr_frac + be_frac)
+    rr_matrix   = np.where(is_win, avg_win_rr, np.where(is_be, 0.0, -loss_rr))
     pct_change  = rr_matrix * (risk_pct / 100.0)
     growth      = np.cumprod(1 + pct_change, axis=1)
     equity_paths = starting_balance * growth
