@@ -1349,14 +1349,16 @@ def main() -> None:
     if SessionKeys.NAV_TARGET in st.session_state:
         st.session_state[SessionKeys.NAV_PAGE] = st.session_state.pop(SessionKeys.NAV_TARGET)
 
-    # Auto-switch to mobile layout on small screens (once per session,
-    # unless the visitor explicitly asked for a layout in the URL)
+    # Auto-switch to mobile layout on phones (once per session, unless the
+    # visitor explicitly asked for a layout in the URL). Detection uses the
+    # user agent: window.innerWidth is useless here because the JS helper runs
+    # inside a 0-width iframe.
     if not st.session_state.get("ea_layout_autoset") and not _get_query_param("layout"):
-        _w = _js_eval("window.innerWidth", key="ea_width")
-        if _w is not None:
+        _ua = _js_eval("navigator.userAgent || ''", key="ea_ua")
+        if _ua is not None:
             st.session_state["ea_layout_autoset"] = True
             try:
-                if float(_w) < 820 and st.session_state.get(SessionKeys.LAYOUT) != "Mobile Layout":
+                if re.search(r"Mobi|Android|iPhone|iPad", str(_ua)) and                         st.session_state.get(SessionKeys.LAYOUT) != "Mobile Layout":
                     st.session_state[SessionKeys.LAYOUT] = "Mobile Layout"
                     _st_rerun()
             except Exception:
