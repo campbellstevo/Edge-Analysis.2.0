@@ -9,6 +9,7 @@ if _SRC.exists():
     sys.path.insert(0, str(_SRC))
 
 import os
+import json
 import base64
 import secrets
 import requests
@@ -670,6 +671,7 @@ def render_connect_page(mobile: bool):
                     SessionKeys.OAUTH_CALLBACK,
                 ]:
                     st.session_state.pop(key, None)
+                _clear_device_auth()
                 st.info("Disconnected.")
             st.markdown('</div>', unsafe_allow_html=True)
 
@@ -934,6 +936,69 @@ def _render_login_page():
         """,
         unsafe_allow_html=True,
     )
+    with st.expander("On your phone and it opens the Notion app instead?"):
+        st.markdown(
+            "The Notion app on your phone can grab the sign-in page before your "
+            "browser finishes. If that happens:\n\n"
+            "1. Open this site in a **private / incognito tab** (private tabs never "
+            "switch to apps) and sign in there — **you only need to do this once**, "
+            "this device stays signed in afterwards.\n"
+            "2. Or, if you're signed in on a computer, open the sidebar there and "
+            "scan the QR under *Use on your phone*."
+        )
+
+
+# ----------------------- Device-persistent login ------------------------------
+_DEVICE_AUTH_KEY = "ea_auth"
+
+
+def _js_eval(expr: str, key: str):
+    """Run JS in the visitor's browser via streamlit-js-eval. Returns None while
+    the component round-trip is pending, or on any failure."""
+    try:
+        from streamlit_js_eval import streamlit_js_eval
+        return streamlit_js_eval(js_expressions=expr, key=key)
+    except Exception:
+        return None
+
+
+def _sync_device_auth() -> None:
+    """Persist the current login to this device's browser storage, so the next
+    visit to the plain URL logs in automatically (critical on phones, where the
+    Notion app can hijack the OAuth consent page)."""
+    token = (
+        st.session_state.get(SessionKeys.USER_TOKEN)
+        or st.session_state.get(SessionKeys.OAUTH_TOKEN)
+    )
+    if not token:
+        return
+    payload = json.dumps({"t": token, "d": st.session_state.get(SessionKeys.DB_ID) or ""})
+    _js_eval(f"localStorage.setItem({json.dumps(_DEVICE_AUTH_KEY)}, {json.dumps(payload)})",
+             key="ea_auth_save")
+
+
+def _restore_device_auth() -> bool:
+    """Try to log in from browser storage. Returns True if login completed."""
+    saved = _js_eval(f"localStorage.getItem({json.dumps(_DEVICE_AUTH_KEY)}) || ''",
+                     key="ea_auth_load")
+    if not saved:
+        return False
+    try:
+        rec = json.loads(saved)
+    except Exception:
+        return False
+    if not (isinstance(rec, dict) and rec.get("t")):
+        return False
+    _complete_login_with_token(rec["t"])
+    dbid = str(rec.get("d") or "")
+    if dbid and _validate_dbid(dbid.replace("-", "")):
+        st.session_state[SessionKeys.DB_ID] = dbid
+        st.session_state[SessionKeys.NAV_TARGET] = PageNames.DASHBOARD
+    return True
+
+
+def _clear_device_auth() -> None:
+    _js_eval(f"localStorage.removeItem({json.dumps(_DEVICE_AUTH_KEY)})", key="ea_auth_clear")
 
 
 def _require_notion_login():
@@ -958,6 +1023,11 @@ def _require_notion_login():
         if url_db and _validate_dbid(url_db.replace("-", "")):
             st.session_state[SessionKeys.DB_ID] = url_db
             st.session_state[SessionKeys.NAV_TARGET] = PageNames.DASHBOARD
+        return
+
+    # Login saved on this device (set after any previous successful login).
+    if _restore_device_auth():
+        _st_rerun()
         return
 
     _render_login_page()
@@ -1270,6 +1340,9 @@ def main() -> None:
     # Require login
     _require_notion_login()
 
+    # Remember this login on the device (phones especially)
+    _sync_device_auth()
+
     # Initialize session state from query params
     if SessionKeys.LAYOUT not in st.session_state:
         st.session_state[SessionKeys.LAYOUT] = (
@@ -1286,6 +1359,19 @@ def main() -> None:
     # Handle navigation target (from button clicks)
     if SessionKeys.NAV_TARGET in st.session_state:
         st.session_state[SessionKeys.NAV_PAGE] = st.session_state.pop(SessionKeys.NAV_TARGET)
+
+    # Auto-switch to mobile layout on small screens (once per session,
+    # unless the visitor explicitly asked for a layout in the URL)
+    if not st.session_state.get("ea_layout_autoset") and not _get_query_param("layout"):
+        _w = _js_eval("window.innerWidth", key="ea_width")
+        if _w is not None:
+            st.session_state["ea_layout_autoset"] = True
+            try:
+                if float(_w) < 820 and st.session_state.get(SessionKeys.LAYOUT) != "Mobile Layout":
+                    st.session_state[SessionKeys.LAYOUT] = "Mobile Layout"
+                    _st_rerun()
+            except Exception:
+                pass
 
     # Determine layout mode
     layout_choice_ss = st.session_state.get(SessionKeys.LAYOUT, "Desktop Layout")
