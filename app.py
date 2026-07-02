@@ -1370,7 +1370,6 @@ def main() -> None:
 
     # Desktop sidebar controls
     if layout_mode == "desktop":
-        st.sidebar.markdown("## Settings")
         st.sidebar.selectbox(
             "Page",
             [PageNames.DASHBOARD, PageNames.CONNECT],

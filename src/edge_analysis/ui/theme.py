@@ -673,12 +673,11 @@ def inject_theme():
     }}
     
     .section {{
-      background: var(--card);
-      border-radius: 16px;
-      padding: 16px 18px;
-      border: 1px solid rgba(0,0,0,0.06);
-      margin-bottom: 16px;
-      box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+      background: transparent;
+      border: none;
+      padding: 0;
+      margin: 0;
+      box-shadow: none;
     }}
     
     .kpi-grid {{
@@ -930,6 +929,42 @@ def inject_theme():
         background: #ffffff !important;
         color: #0f172a !important;
         border-color: #e5e7eb !important;
+    }}
+
+    /* Page chrome: no decoration strip, transparent header, no footer/badge */
+    [data-testid="stDecoration"] {{ display: none !important; }}
+    [data-testid="stHeader"] {{ background: transparent !important; }}
+    [data-testid="stStatusWidget"] {{ visibility: hidden !important; }}
+    #MainMenu {{ visibility: hidden !important; }}
+    footer {{ visibility: hidden !important; height: 0 !important; }}
+    [data-testid="stBottom"] {{ background: transparent !important; }}
+    .viewerBadge_container__r5tak, [class*="viewerBadge"] {{ display: none !important; }}
+
+    /* Dividers: soft and quiet */
+    hr {{ border: none !important; border-top: 1px solid #f1f5f9 !important; margin: 26px 0 !important; }}
+
+    /* Expanders styled like cards (no hollow outline look) */
+    div[data-testid="stExpander"] > details {{
+      background: #ffffff !important;
+      border: 1px solid rgba(0,0,0,0.06) !important;
+      border-radius: 12px !important;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.04) !important;
+    }}
+    div[data-testid="stExpander"] summary {{
+      font-weight: 600 !important;
+      color: #334155 !important;
+    }}
+
+    /* Sidebar: cleaner separation and tighter rhythm */
+    [data-testid="stSidebar"] {{
+      border-right: 1px solid rgba(0,0,0,0.06);
+    }}
+    [data-testid="stSidebar"] .stSelectbox label p {{
+      font-size: 12px !important;
+      font-weight: 600 !important;
+      color: #64748b !important;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
     }}
 
     /* No copy-link icons on heading hover */

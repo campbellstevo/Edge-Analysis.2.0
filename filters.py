@@ -32,7 +32,7 @@ class SessionKeys:
 class PageNames:
     """Navigation page names (replicated from the main app)."""
     DASHBOARD = "Dashboard"
-    CONNECT = "Connect Notion"
+    CONNECT = "Change Template"
 
 
 # Type alias for date range selection
@@ -103,59 +103,57 @@ def render_filters(
         return "GOLD" if v == "Gold" else v
 
     if mobile:
-        st.markdown("### Navigation")
-        st.selectbox(
-            "Page",
-            [PageNames.DASHBOARD, PageNames.CONNECT],
-            index=0 if st.session_state.get(SessionKeys.NAV_PAGE) == PageNames.DASHBOARD else 1,
-            key=SessionKeys.NAV_PAGE,
-        )
-        st.selectbox(
-            "Layout",
-            ["Desktop Layout", "Mobile Layout"],
-            index=1 if st.session_state.get(SessionKeys.LAYOUT) == "Mobile Layout" else 0,
-            key=SessionKeys.LAYOUT,
-        )
-        st.markdown("### Filters")
-        c1, c2 = st.columns(2, gap="small")
-        with c1:
-            sel_inst = st.selectbox(
-                "Instrument",
-                inst_opts,
-                index=inst_opts.index(st.session_state.get("filters_inst_select", "All"))
-                if st.session_state.get("filters_inst_select", "All") in inst_opts
-                else 0,
-                format_func=_inst_label,
-                key="filters_inst_select",
+        flt = st.expander("Filters")
+        with flt:
+            c1, c2 = st.columns(2, gap="small")
+            with c1:
+                sel_inst = st.selectbox(
+                    "Instrument",
+                    inst_opts,
+                    index=inst_opts.index(st.session_state.get("filters_inst_select", "All"))
+                    if st.session_state.get("filters_inst_select", "All") in inst_opts
+                    else 0,
+                    format_func=_inst_label,
+                    key="filters_inst_select",
+                )
+                sel_em = st.selectbox(
+                    "Entry Model",
+                    em_opts,
+                    index=em_opts.index(st.session_state.get("filters_em_select", "All"))
+                    if st.session_state.get("filters_em_select", "All") in em_opts
+                    else 0,
+                    key="filters_em_select",
+                )
+            with c2:
+                sel_sess = st.selectbox(
+                    "Session",
+                    sess_opts,
+                    index=sess_opts.index(st.session_state.get("filters_sess_select", "All"))
+                    if st.session_state.get("filters_sess_select", "All") in sess_opts
+                    else 0,
+                    key="filters_sess_select",
+                )
+                sel_acct = st.selectbox(
+                    "Account",
+                    acct_opts,
+                    index=acct_opts.index(st.session_state.get("filters_acct_select", "All"))
+                    if st.session_state.get("filters_acct_select", "All") in acct_opts
+                    else 0,
+                    key="filters_acct_select",
+                )
+            st.selectbox(
+                "Page",
+                [PageNames.DASHBOARD, PageNames.CONNECT],
+                index=0 if st.session_state.get(SessionKeys.NAV_PAGE) == PageNames.DASHBOARD else 1,
+                key=SessionKeys.NAV_PAGE,
             )
-        with c2:
-            sel_sess = st.selectbox(
-                "Session",
-                sess_opts,
-                index=sess_opts.index(st.session_state.get("filters_sess_select", "All"))
-                if st.session_state.get("filters_sess_select", "All") in sess_opts
-                else 0,
-                key="filters_sess_select",
-            )
-        sel_em = st.selectbox(
-            "Entry Model",
-            em_opts,
-            index=em_opts.index(st.session_state.get("filters_em_select", "All"))
-            if st.session_state.get("filters_em_select", "All") in em_opts
-            else 0,
-            key="filters_em_select",
-        )
-        sel_acct = st.selectbox(
-            "Account",
-            acct_opts,
-            index=acct_opts.index(st.session_state.get("filters_acct_select", "All"))
-            if st.session_state.get("filters_acct_select", "All") in acct_opts
-            else 0,
-            key="filters_acct_select",
-        )
-        container = st
+        container = flt
     else:
-        st.sidebar.markdown("### Filters")
+        st.sidebar.markdown(
+            "<div style='font-size:12px;font-weight:700;letter-spacing:0.12em;"
+            "text-transform:uppercase;color:#4800ff;margin:18px 0 4px;'>Filters</div>",
+            unsafe_allow_html=True,
+        )
         sel_inst = st.sidebar.selectbox(
             "Instrument",
             inst_opts,

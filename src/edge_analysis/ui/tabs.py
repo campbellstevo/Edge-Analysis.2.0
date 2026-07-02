@@ -1495,6 +1495,9 @@ def _entry_models_tab(f: pd.DataFrame, show_table):
                              "Net PnL (R)": net_rr, "Expectancy (R)": ex_rr}))
     if rates:
         df_em = pd.DataFrame(rates).sort_values("Win %", ascending=False)
+        st.markdown("### Entry Model Expectancy")
+        st.caption("Average R per trade by entry model — ranked best → worst.")
+        _rank_dots(df_em, "Entry_Model", "Expectancy (R)")
         render_entry_model_table(df_em, title="Entry Model Performance")
         if not df_em.empty:
             best_em = df_em.iloc[0]
@@ -1823,6 +1826,9 @@ def _sessions_tab(f: pd.DataFrame, show_table):
                               **{"Win %": r["win_rate"], "BE %": r["be_rate"], "Loss %": r["loss_rate"],
                                  "Net PnL (R)": net_rr, "Expectancy (R)": ex_rr}))
         df_rates = pd.DataFrame(rates).sort_values("Win %", ascending=False)
+        st.markdown("### Session Expectancy")
+        st.caption("Average R per trade by session.")
+        _rank_dots(df_rates, "Session", "Expectancy (R)")
         render_session_performance_table(df_rates, title="Session Performance")
         if not df_rates.empty:
             best = df_rates.iloc[0]
@@ -1907,6 +1913,14 @@ def _time_days_tab(f: pd.DataFrame, show_table):
 
     perf = (df_days.groupby("__Day").apply(_agg_day).reset_index()
             .rename(columns={"__Day": "Day"}))
+    st.markdown("### Day-of-Week Expectancy")
+    from edge_analysis.ui.mt5_tabs import _line_metric
+    from edge_analysis.ui.theme import get_chart_styler
+    _line_rows = perf.copy()
+    _line_rows["Avg R"] = pd.to_numeric(_line_rows.get("Expectancy (R)"), errors="coerce")
+    _line_rows["Category"] = _line_rows["Day"].astype(str).str[:3]
+    _line_metric(_line_rows, "", get_chart_styler(), value="Avg R",
+                 x_order=["Mon", "Tue", "Wed", "Thu", "Fri"], x_title="")
     render_day_performance_table(perf.sort_values("Day"), title="Day Performance (Mon–Fri)")
     if not perf.empty and "Win %" in perf.columns:
         best_day = perf.loc[perf["Win %"].idxmax()]
@@ -2016,6 +2030,50 @@ def _parse_rr_value(v):
     return None
 
 
+def _rank_dots(rows, cat_col, val_col, fmt="+.2f", suffix="R") -> None:
+    """House-style ranked dot chart: dashed zero rule, green/red dots, bold labels."""
+    d = pd.DataFrame(rows).copy()
+    d["__v"] = pd.to_numeric(d[val_col], errors="coerce")
+    d = d[d["__v"].notna()].sort_values("__v", ascending=False).reset_index(drop=True)
+    if d.empty:
+        return
+    d["__cat"] = d[cat_col].astype(str)
+    d["__c"] = d["__v"].apply(lambda x: "good" if x >= 0 else "bad")
+    d["__lab"] = d["__v"].apply(lambda v: f"{v:{fmt}}{suffix}")
+    d["__ord"] = range(len(d))
+    lo = min(float(d["__v"].min()), 0.0); hi = max(float(d["__v"].max()), 0.0)
+    span = max(hi - lo, 0.4)
+    dom = [lo - span * 0.30, hi + span * 0.45]
+    tip = [alt.Tooltip("__cat:N", title=" "), alt.Tooltip("__v:Q", title=val_col, format=fmt)]
+    if "Trades" in d.columns:
+        tip.append(alt.Tooltip("Trades:Q"))
+    if "Win %" in d.columns:
+        tip.append(alt.Tooltip("Win %:Q"))
+    base = alt.Chart(alt.Data(values=_to_alt_values(d))).encode(
+        y=alt.Y("__cat:N", sort=alt.EncodingSortField(field="__ord", order="ascending"),
+                title=None,
+                axis=alt.Axis(labelFontSize=13, labelColor="#0f172a", ticks=False,
+                              domain=False, labelLimit=200)),
+        x=alt.X("__v:Q", title=None, scale=alt.Scale(domain=dom),
+                axis=alt.Axis(format="+.1f", grid=True, gridColor="#eef0f5",
+                              labelColor="#94a3b8", tickCount=5)),
+    )
+    pts = base.mark_circle(size=150, opacity=0.9, stroke="#ffffff", strokeWidth=2).encode(
+        color=alt.Color("__c:N", legend=None,
+                        scale=alt.Scale(domain=["good", "bad"], range=["#16a34a", "#ef4444"])),
+        tooltip=tip)
+    text = base.mark_text(
+        align=alt.expr(alt.expr.if_(alt.datum.__v >= 0, "left", "right")),
+        dx=alt.expr(alt.expr.if_(alt.datum.__v >= 0, 12, -12)),
+        fontSize=12, fontWeight="bold", color="#334155").encode(text="__lab:N")
+    rule = (alt.Chart(alt.Data(values=[{"x": 0}]))
+            .mark_rule(color="#cbd5e1", strokeDash=[4, 4], strokeWidth=1.5)
+            .encode(x=alt.X("x:Q", title=None)))
+    from edge_analysis.ui.theme import get_chart_styler
+    st.altair_chart(get_chart_styler()(alt.layer(rule, pts, text).properties(
+        height=max(140, len(d) * 40))), use_container_width=True)
+
+
 def _conditions_tab(f: pd.DataFrame, show_table):
     st.markdown('<div class="section">', unsafe_allow_html=True)
     st.markdown("### Conditions")
@@ -2111,40 +2169,33 @@ def _conditions_tab(f: pd.DataFrame, show_table):
             ),
         )
 
-        bars = base.mark_bar(
-            cornerRadiusTopRight=3, cornerRadiusBottomRight=3,
-            cornerRadiusTopLeft=3, cornerRadiusBottomLeft=3,
-            height=22,
-        )
-
-        text = base.mark_text(
-            align=alt.expr(alt.expr.if_(alt.datum.Expectancy >= 0, "left", "right")),
-            dx=alt.expr(alt.expr.if_(alt.datum.Expectancy >= 0, 6, -6)),
-            fontSize=11, fontWeight="bold",
-        ).encode(
-            text="Label:N",
+        pts = base.mark_circle(size=150, opacity=0.9, stroke="#ffffff", strokeWidth=2).encode(
             color=alt.Color(
                 "Colour:N",
-                scale=alt.Scale(
-                    domain=["positive", "negative"],
-                    range=["#4800ff", "#ef4444"],
-                ),
+                scale=alt.Scale(domain=["positive", "negative"],
+                                range=["#16a34a", "#ef4444"]),
                 legend=None,
             ),
         )
 
-        rule = alt.Chart(alt.Data(values=[{"x": 0}])).mark_rule(
-            color="#cbd5e1", strokeWidth=1.5
-        ).encode(x="x:Q")
+        text = base.mark_text(
+            align=alt.expr(alt.expr.if_(alt.datum.Expectancy >= 0, "left", "right")),
+            dx=alt.expr(alt.expr.if_(alt.datum.Expectancy >= 0, 12, -12)),
+            fontSize=12, fontWeight="bold", color="#334155",
+        ).encode(text="Label:N")
 
-        chart = (bars + text + rule).properties(
+        rule = alt.Chart(alt.Data(values=[{"x": 0}])).mark_rule(
+            color="#cbd5e1", strokeDash=[4, 4], strokeWidth=1.5
+        ).encode(x=alt.X("x:Q", title=None))
+
+        chart = (rule + pts + text).properties(
             title=alt.TitleParams(
                 text=title, subtitle=subtitle,
                 fontSize=13, subtitleFontSize=10,
                 color="#0f172a", subtitleColor="#94a3b8",
                 anchor="start",
             ),
-            height=max(160, len(chart_df) * 46),
+            height=max(150, len(chart_df) * 40),
         ).configure_view(
             strokeWidth=0, fill="#ffffff"
         ).configure_axis(
