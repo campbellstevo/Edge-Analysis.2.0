@@ -972,9 +972,15 @@ def _sync_device_auth() -> None:
     )
     if not token:
         return
-    payload = json.dumps({"t": token, "d": st.session_state.get(SessionKeys.DB_ID) or ""})
-    _js_eval(f"localStorage.setItem({json.dumps(_DEVICE_AUTH_KEY)}, {json.dumps(payload)})",
-             key="ea_auth_save")
+    dbid = st.session_state.get(SessionKeys.DB_ID) or ""
+    js = (
+        "(function(){var o={};try{o=JSON.parse(localStorage.getItem("
+        + json.dumps(_DEVICE_AUTH_KEY)
+        + ")||'{}')}catch(e){};var v={t:" + json.dumps(token)
+        + ",d:" + json.dumps(dbid) + "||o.d||''};localStorage.setItem("
+        + json.dumps(_DEVICE_AUTH_KEY) + ",JSON.stringify(v));return true;})()"
+    )
+    _js_eval(js, key="ea_auth_save")
 
 
 def _restore_device_auth() -> bool:
@@ -995,6 +1001,34 @@ def _restore_device_auth() -> bool:
         st.session_state[SessionKeys.DB_ID] = dbid
         st.session_state[SessionKeys.NAV_TARGET] = PageNames.DASHBOARD
     return True
+
+
+def _recover_db_from_device() -> None:
+    """After login, if no template/database is attached (e.g. the server-side
+    store was wiped by a redeploy), recover it from this device's storage and
+    heal the server store."""
+    if st.session_state.get(SessionKeys.DB_ID):
+        return
+    saved = _js_eval(f"localStorage.getItem({json.dumps(_DEVICE_AUTH_KEY)}) || ''",
+                     key="ea_db_recover")
+    if not saved:
+        return
+    try:
+        rec = json.loads(saved)
+    except Exception:
+        return
+    dbid = str((rec or {}).get("d") or "")
+    if not (dbid and _validate_dbid(dbid.replace("-", ""))):
+        return
+    st.session_state[SessionKeys.DB_ID] = dbid
+    uid = st.session_state.get(SessionKeys.USER_ID)
+    if uid:
+        try:
+            set_user_db(uid, dbid)
+        except Exception:
+            pass
+    st.session_state[SessionKeys.NAV_TARGET] = PageNames.DASHBOARD
+    _st_rerun()
 
 
 def _clear_device_auth() -> None:
@@ -1339,6 +1373,9 @@ def main() -> None:
     """Main application entry point."""
     # Require login
     _require_notion_login()
+
+    # Recover the template choice from this device if the server forgot it
+    _recover_db_from_device()
 
     # Remember this login on the device (phones especially)
     _sync_device_auth()
