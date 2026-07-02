@@ -54,7 +54,11 @@ def _exit_optimizer(df, styler) -> None:
                     y=alt.Y("Expectancy:Q", title="Expectancy (R / trade)"),
                     tooltip=["Target:Q", "Expectancy:Q", "Total R:Q"]).properties(height=280))
     cur = alt.Chart(alt.Data(values=[{"y": actual_exp}])).mark_rule(color="#94a3b8", strokeDash=[4, 4]).encode(y="y:Q")
-    st.altair_chart(styler(alt.layer(line, cur)), use_container_width=True)
+    best_data = alt.Chart(alt.Data(values=[{"bx": float(best["Target"]), "by": float(best["Expectancy"])}]))
+    best_pt = best_data.mark_point(filled=True, size=220, color="#16a34a", stroke="#fff", strokeWidth=2.5).encode(x="bx:Q", y="by:Q")
+    best_lab = best_data.mark_text(dy=-16, fontSize=13, fontWeight="bold", color="#16a34a",
+                                   text=f"Best: +{best['Target']:.1f}R → {best['Expectancy']:+.2f}R/trade").encode(x="bx:Q", y="by:Q")
+    st.altair_chart(styler(alt.layer(line, cur, best_pt, best_lab)), use_container_width=True)
     c1, c2, c3 = st.columns(3)
     with c1: _kpi("Your actual expectancy", f"{actual_exp:+.2f}R", f"{actual_total:+.0f}R total")
     with c2: _kpi("Best fixed target", f"+{best['Target']:.1f}R", f"{best['Expectancy']:+.2f}R / trade")
@@ -96,7 +100,12 @@ def _mae_stop_optimizer(df, styler) -> None:
     line = (alt.Chart(alt.Data(values=vals)).mark_line(color=PURPLE, strokeWidth=2)
             .encode(x="Stop (R):Q", y=alt.Y("Winners surviving %:Q", scale=alt.Scale(domain=[0, 100])),
                     tooltip=["Stop (R):Q", "Winners surviving %:Q"]))
-    st.altair_chart(styler(alt.layer(area, line).properties(height=260)), use_container_width=True)
+    rec_surv = float(rdf.loc[rdf["Stop (R)"] == rec, "Winners surviving %"].iloc[0]) if (rdf["Stop (R)"] == rec).any() else 100.0
+    rec_data = alt.Chart(alt.Data(values=[{"bx": rec, "by": rec_surv}]))
+    rec_pt = rec_data.mark_point(filled=True, size=220, color="#16a34a", stroke="#fff", strokeWidth=2.5).encode(x="bx:Q", y="by:Q")
+    rec_lab = rec_data.mark_text(dy=18, fontSize=13, fontWeight="bold", color="#16a34a",
+                                 text=f"Suggested: −{rec:.1f}R keeps {rec_surv:.0f}% of winners").encode(x="bx:Q", y="by:Q")
+    st.altair_chart(styler(alt.layer(area, line, rec_pt, rec_lab).properties(height=260)), use_container_width=True)
     med = float(mag.median()); p90 = float(mag.quantile(0.9))
     c1, c2, c3 = st.columns(3)
     with c1: _kpi("Median winner MAE", f"−{med:.2f}R", "typical heat on a winner")
@@ -188,9 +197,11 @@ def _tilt(df, styler) -> None:
                      "Net R": round(float(sub["__rr"].sum()), 1)})
     if not rows:
         t._unavailable("Tilt / Post-Loss Behaviour"); return
-    from edge_analysis.ui.mt5_tabs import _expectancy_bar
-    _expectancy_bar(pd.DataFrame(rows), "Expectancy by prior-trade outcome", styler,
-                    sort=["After a Win", "After a BE", "After a Loss"])
+    from edge_analysis.ui.mt5_tabs import _line_metric
+    order = [c for c in ["After a Win", "After a BE", "After a Loss"] if c in {r["Category"] for r in rows}]
+    _line_metric(pd.DataFrame(rows), "", styler, value="Win %", x_order=order,
+                 x_title="", baseline=50.0, fmt=".0f", suffix="%",
+                 caption="Win rate by prior-trade outcome. A slope falling to the right = tilt after losses.")
     after_loss = next((r for r in rows if r["Category"] == "After a Loss"), None)
     after_win = next((r for r in rows if r["Category"] == "After a Win"), None)
     if after_loss and after_win:

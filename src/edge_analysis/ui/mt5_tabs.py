@@ -47,6 +47,77 @@ def _outcome(g: pd.DataFrame, rr_col: str = "__rr") -> pd.Series:
     return np.where(g[rr_col] > 0, "Win", np.where(g[rr_col] < 0, "Loss", "BE"))
 
 
+# ── Approved house-style helpers ──────────────────────────────────────────────
+def _tiles(rows, styler=None) -> None:
+    """Comparison stat tiles — one card per category. Replaces 2-3 category bars."""
+    if rows is None or len(rows) == 0:
+        return
+    d = rows.reset_index(drop=True)
+    cols = st.columns(len(d))
+    for col, (_, r) in zip(cols, d.iterrows()):
+        avg = float(pd.to_numeric(pd.Series([r.get("Avg R")]), errors="coerce").fillna(0.0).iloc[0])
+        c = "#16a34a" if avg >= 0 else "#ef4444"
+        wr = float(pd.to_numeric(pd.Series([r.get("Win %")]), errors="coerce").fillna(0.0).iloc[0])
+        wr = max(0.0, min(100.0, wr))
+        net = r.get("Net R")
+        net_s = f" · {float(net):+.1f}R net" if net is not None and pd.notna(net) else ""
+        trades = int(r.get("Trades", 0) or 0)
+        cat = str(r.get("Category", ""))
+        with col:
+            st.markdown(
+                f"<div style='background:#fff;border:1px solid rgba(0,0,0,0.06);border-radius:12px;"
+                f"padding:14px 16px;box-shadow:0 2px 10px rgba(0,0,0,0.04);'>"
+                f"<div style='font-size:13px;color:#64748b;font-weight:600;'>{cat} · {trades} trades</div>"
+                f"<div style='font-size:34px;font-weight:800;line-height:1.15;color:{c};margin:6px 0 2px;'>{avg:+.2f}R</div>"
+                f"<div style='font-size:13px;color:#64748b;'>{wr:.0f}% win{net_s}</div>"
+                f"<div style='height:6px;border-radius:3px;margin-top:10px;"
+                f"background:linear-gradient(90deg,{c} {wr:.0f}%, #e5e7eb {wr:.0f}%);'></div>"
+                f"</div>", unsafe_allow_html=True)
+
+
+def _line_metric(rows, title, styler, value="Avg R", x_order=None, x_title="",
+                 caption="", baseline=0.0, fmt="+.2f", suffix="R") -> None:
+    """Line chart for an ordered sequence (conviction, hold-time, hour, tilt).
+    Points coloured green/red vs a baseline; value labelled above each point."""
+    t = _t()
+    if title:
+        st.markdown(f"### {title}")
+    if caption:
+        st.caption(caption)
+    if rows is None or len(rows) == 0:
+        if title:
+            t._unavailable(title)
+        return
+    d = rows.copy()
+    d["__v"] = pd.to_numeric(d[value], errors="coerce")
+    d = d[d["__v"].notna()]
+    if d.empty:
+        return
+    d["__sign"] = d["__v"].apply(lambda x: "good" if x >= baseline else "bad")
+    d["__lab"] = d["__v"].apply(lambda v: f"{v:{fmt}}{suffix}")
+    tip = [alt.Tooltip("Category:N", title=" ")]
+    for c in ("Trades", "Win %", "Avg R"):
+        if c in d.columns:
+            tip.append(alt.Tooltip(f"{c}:Q"))
+    vals = t._to_alt_values(d)
+    xenc = alt.X("Category:N", sort=(x_order if x_order else None), title=x_title,
+                 axis=alt.Axis(labelAngle=0, labelFontSize=12, labelColor="#0f172a", labelLimit=140))
+    base = alt.Chart(alt.Data(values=vals))
+    rule = (alt.Chart(alt.Data(values=[{"y": baseline}]))
+            .mark_rule(color="#cbd5e1", strokeDash=[4, 4]).encode(y="y:Q"))
+    line = base.mark_line(color="#4800ff", strokeWidth=2.5, interpolate="monotone").encode(
+        x=xenc, y=alt.Y("__v:Q", title=value,
+                        axis=alt.Axis(labelColor="#94a3b8", titleColor="#94a3b8", grid=True, gridColor="#eef0f5")))
+    pts = base.mark_point(filled=True, size=120, stroke="#fff", strokeWidth=2).encode(
+        x=xenc, y="__v:Q",
+        color=alt.Color("__sign:N", legend=None,
+                        scale=alt.Scale(domain=["good", "bad"], range=["#16a34a", "#ef4444"])),
+        tooltip=tip)
+    text = base.mark_text(dy=-15, fontSize=12, fontWeight="bold", color="#334155").encode(
+        x=xenc, y="__v:Q", text="__lab:N")
+    st.altair_chart(styler(alt.layer(rule, line, pts, text).properties(height=300)), use_container_width=True)
+
+
 # ── 1. MAE / MFE efficiency ───────────────────────────────────────────────────
 def _mae_mfe_section(df: pd.DataFrame, styler) -> None:
     t = _t()
@@ -100,10 +171,12 @@ def _mae_mfe_section(df: pd.DataFrame, styler) -> None:
     if vals:
         hi = float(max(1.0, plot["MFE_R"].max()))
         scatter = (
-            alt.Chart(alt.Data(values=vals)).mark_circle(size=60, opacity=0.55)
+            alt.Chart(alt.Data(values=vals)).mark_circle(size=80, opacity=0.6, stroke="#fff", strokeWidth=1)
             .encode(
-                x=alt.X("MFE_R:Q", title="MFE — favourable move available (R)"),
-                y=alt.Y("Captured_R:Q", title="Captured (R)"),
+                x=alt.X("MFE_R:Q", title="MFE — favourable move available (R)",
+                        axis=alt.Axis(grid=True, gridColor="#eef0f5", labelColor="#94a3b8", titleColor="#94a3b8")),
+                y=alt.Y("Captured_R:Q", title="Captured (R)",
+                        axis=alt.Axis(grid=True, gridColor="#eef0f5", labelColor="#94a3b8", titleColor="#94a3b8")),
                 color=alt.Color("OutcomeC:N", title=None,
                                 scale=alt.Scale(domain=["Win", "BE", "Loss"],
                                                 range=["#16a34a", "#9ca3af", "#ef4444"])),
@@ -214,14 +287,10 @@ def _timing_section(df: pd.DataFrame, styler) -> None:
         gh["__hr"] = gh["__hr"].astype(int)
         tbl = _winrate_table(gh, "__hr").rename(columns={"__hr": "Hour"}).sort_values("Hour")
         if not tbl.empty:
-            vals = t._to_alt_values(tbl)
-            bar = (alt.Chart(alt.Data(values=vals)).mark_bar(color=PURPLE, opacity=0.85)
-                   .encode(x=alt.X("Hour:O", title="Hour of day"),
-                           y=alt.Y("Win %:Q", title="Win %"),
-                           tooltip=["Hour:O", "Trades:Q", "Win %:Q", "Avg R:Q"])
-                   .properties(height=240))
-            st.markdown("**By hour of day**")
-            st.altair_chart(styler(bar), use_container_width=True)
+            tbl["Category"] = tbl["Hour"].map(lambda h: f"{int(h):02d}")
+            st.markdown("**By hour of day** — win %, dashed line = 50/50")
+            _line_metric(tbl, "", styler, value="Win %", x_order=list(tbl["Category"]),
+                         x_title="Hour of day (Melb)", baseline=50.0, fmt=".0f", suffix="%")
             best = tbl.loc[tbl["Win %"].idxmax()]; worst = tbl.loc[tbl["Win %"].idxmin()]
             t._insight_box(
                 f"Best hour: <b>{int(best['Hour']):02d}:00</b> ({best['Win %']:.0f}% over {int(best['Trades'])} trades). "
@@ -232,18 +301,14 @@ def _timing_section(df: pd.DataFrame, styler) -> None:
         gd = g[g[dur_col].astype(str).str.strip().ne("") & g[dur_col].notna()].copy()
         if not gd.empty:
             order = ["0-30m", "30m-1h", "1h-2h", "2h-3h", "3h-4h", "4h-5h", "5h-6h", "6h-7h", "7h-8h", "8h+"]
-            tbl = _winrate_table(gd, dur_col).rename(columns={dur_col: "Duration"})
-            tbl["__o"] = tbl["Duration"].map(lambda v: order.index(v) if v in order else 99)
+            tbl = _winrate_table(gd, dur_col).rename(columns={dur_col: "Category"})
+            tbl["__o"] = tbl["Category"].map(lambda v: order.index(v) if v in order else 99)
             tbl = tbl.sort_values("__o").drop(columns="__o")
             if not tbl.empty:
-                vals = t._to_alt_values(tbl)
-                bar = (alt.Chart(alt.Data(values=vals)).mark_bar(color="#0ea5e9", opacity=0.85)
-                       .encode(x=alt.X("Duration:N", sort=order, title="Hold time"),
-                               y=alt.Y("Win %:Q", title="Win %"),
-                               tooltip=["Duration:N", "Trades:Q", "Win %:Q", "Avg R:Q"])
-                       .properties(height=240))
-                st.markdown("**By trade duration**")
-                st.altair_chart(styler(bar), use_container_width=True)
+                st.markdown("**By trade duration** — average R")
+                _line_metric(tbl, "", styler, value="Avg R",
+                             x_order=[o for o in order if o in set(tbl["Category"])],
+                             x_title="Hold time")
 
 
 # ── 4. Execution quality ──────────────────────────────────────────────────────
@@ -291,19 +356,15 @@ def _execution_section(df: pd.DataFrame, styler) -> None:
             if cnt.empty:
                 continue
             wr = cnt["__oc"].eq("Win").sum() / len(cnt) * 100.0
-            rows.append({"Price Delivery": grade, "Trades": len(sub), "Win %": round(wr, 1)})
+            srr = pd.to_numeric(sub.get("__rr"), errors="coerce") if "__rr" in sub.columns else None
+            avgr = float(srr.mean()) if srr is not None and srr.notna().any() else 0.0
+            netr = float(srr.sum()) if srr is not None and srr.notna().any() else None
+            rows.append({"Category": grade, "Trades": len(sub), "Win %": round(wr, 1),
+                         "Avg R": round(avgr, 2),
+                         "Net R": round(netr, 1) if netr is not None else None})
         if rows:
-            vals = t._to_alt_values(pd.DataFrame(rows))
-            bar = (alt.Chart(alt.Data(values=vals)).mark_bar(opacity=0.85)
-                   .encode(x=alt.X("Price Delivery:N", sort=["Good", "Average", "Poor"], title=None),
-                           y=alt.Y("Win %:Q", title="Win %"),
-                           color=alt.Color("Price Delivery:N", legend=None,
-                                           scale=alt.Scale(domain=["Good", "Average", "Poor"],
-                                                           range=["#16a34a", "#f59e0b", "#ef4444"])),
-                           tooltip=["Price Delivery:N", "Trades:Q", "Win %:Q"])
-                   .properties(height=240))
-            st.markdown("**Win rate by price-delivery grade**")
-            st.altair_chart(styler(bar), use_container_width=True)
+            st.markdown("**By price-delivery grade**")
+            _tiles(pd.DataFrame(rows))
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
@@ -386,61 +447,6 @@ def _cat_stats(df: pd.DataFrame, col: str, multi: bool = False, min_n: int = 1):
     return pd.DataFrame(rows) if rows else None
 
 
-def _expectancy_bar(rows, title: str, styler, sort=None, caption: str = "") -> None:
-    """Clean horizontal expectancy bars: green/red by sign, with the value,
-    win-rate and trade count labelled on each bar."""
-    t = _t()
-    st.markdown(f"### {title}")
-    if caption:
-        st.caption(caption)
-    if rows is None or len(rows) == 0:
-        t._unavailable(title)
-        return
-    d = rows.copy()
-    d["AvgR"] = pd.to_numeric(d["Avg R"], errors="coerce").fillna(0.0)
-    d["Colour"] = d["AvgR"].apply(lambda x: "good" if x >= 0 else "bad")
-
-    def _label(r):
-        parts = [f"{r['AvgR']:+.2f}R"]
-        if "Win %" in d.columns and pd.notna(r.get("Win %")) and float(r.get("Win %") or 0) > 0:
-            parts.append(f"{float(r['Win %']):.0f}% win")
-        if "Trades" in d.columns and pd.notna(r.get("Trades")):
-            parts.append(f"{int(r['Trades'])} trades")
-        return "   ·   ".join(parts)
-    d["Label"] = d.apply(_label, axis=1)
-
-    lo = float(d["AvgR"].min()); hi = float(d["AvgR"].max())
-    span = max(hi - lo, 0.5)
-    dom = [min(lo, 0.0) - span * 0.30, max(hi, 0.0) + span * 0.55]
-    ysort = sort if sort else "-x"
-    vals = t._to_alt_values(d)
-    base = alt.Chart(alt.Data(values=vals))
-
-    bars = base.mark_bar(size=26, cornerRadius=4).encode(
-        x=alt.X("AvgR:Q", title="Avg R per trade", scale=alt.Scale(domain=dom),
-                axis=alt.Axis(tickCount=5, format="+.1f", grid=True, gridColor="#eef0f5",
-                              labelColor="#94a3b8", titleColor="#94a3b8")),
-        y=alt.Y("Category:N", sort=ysort, title=None,
-                axis=alt.Axis(labelFontSize=13, labelColor="#0f172a", labelLimit=200,
-                              ticks=False, domain=False)),
-        color=alt.Color("Colour:N", legend=None,
-                        scale=alt.Scale(domain=["good", "bad"], range=["#16a34a", "#ef4444"])),
-        tooltip=["Category:N", "Trades:Q", "Win %:Q", "Avg R:Q", "Net R:Q"],
-    )
-    text = base.mark_text(
-        fontSize=12, fontWeight="bold", color="#334155",
-        align=alt.expr(alt.expr.if_(alt.datum.AvgR >= 0, "left", "right")),
-        dx=alt.expr(alt.expr.if_(alt.datum.AvgR >= 0, 8, -8)),
-    ).encode(
-        x=alt.X("AvgR:Q", scale=alt.Scale(domain=dom)),
-        y=alt.Y("Category:N", sort=ysort),
-        text="Label:N",
-    )
-    rule = alt.Chart(alt.Data(values=[{"x": 0}])).mark_rule(color="#cbd5e1", strokeWidth=1.5).encode(x="x:Q")
-    chart = alt.layer(bars, rule, text).properties(height=max(90, len(d) * 56))
-    st.altair_chart(styler(chart), use_container_width=True)
-
-
 def _mistake_section(df: pd.DataFrame, styler) -> None:
     t = _t()
     st.markdown("### Mistake Leak Report")
@@ -467,29 +473,38 @@ def _mistake_section(df: pd.DataFrame, styler) -> None:
                      "Cost vs clean (R)": round(cost, 1)})
     rdf = pd.DataFrame(rows).sort_values("Cost vs clean (R)")
     rdf["Cost"] = pd.to_numeric(rdf["Cost vs clean (R)"], errors="coerce").fillna(0.0)
+    rdf["Freq"] = pd.to_numeric(rdf["Trades"], errors="coerce").fillna(0).astype(int)
+    rdf["AvgR"] = pd.to_numeric(rdf["Avg R"], errors="coerce").fillna(0.0)
+    rdf["CostSize"] = rdf["Cost"].abs().clip(lower=0.2)
     rdf["Colour"] = rdf["Cost"].apply(lambda x: "ok" if x >= 0 else "bad")
-    rdf["Label"] = rdf.apply(lambda r: f"{r['Cost']:+.0f}R   ·   {int(r['Trades'])} trades", axis=1)
-    lo = float(rdf["Cost"].min()); hi = float(rdf["Cost"].max())
-    span = max(hi - lo, 2.0)
-    dom = [min(lo, 0.0) - span * 0.30, max(hi, 0.0) + span * 0.40]
-    vals = t._to_alt_values(rdf)
+    rdf["Label"] = rdf.apply(lambda r: f"{r['Category']}  ({r['Cost']:+.0f}R)", axis=1)
+    x_hi = float(rdf["Freq"].max()) * 1.3 + 1
+    y_lo = min(float(rdf["AvgR"].min()), 0.0); y_hi = max(float(rdf["AvgR"].max()), 0.0)
+    y_span = max(y_hi - y_lo, 0.5)
+    vals = t._to_alt_values(rdf[["Category", "Freq", "AvgR", "Cost", "CostSize", "Colour", "Label"]])
     base = alt.Chart(alt.Data(values=vals))
-    bar = (base.mark_bar(size=26, cornerRadius=4)
-           .encode(x=alt.X("Cost:Q", title="R cost vs a clean trade  (red = costing you)",
-                           scale=alt.Scale(domain=dom),
-                           axis=alt.Axis(tickCount=5, format="+.0f", grid=True, gridColor="#eef0f5",
-                                         labelColor="#94a3b8", titleColor="#94a3b8")),
-                   y=alt.Y("Category:N", sort="x", title=None,
-                           axis=alt.Axis(labelFontSize=13, labelColor="#0f172a", ticks=False, domain=False)),
-                   color=alt.Color("Colour:N", legend=None,
-                                   scale=alt.Scale(domain=["ok", "bad"], range=["#94a3b8", "#ef4444"])),
-                   tooltip=["Category:N", "Trades:Q", "Avg R:Q", "Cost vs clean (R):Q"]))
-    text = (base.mark_text(fontSize=12, fontWeight="bold", color="#334155",
-                           align=alt.expr(alt.expr.if_(alt.datum.Cost >= 0, "left", "right")),
-                           dx=alt.expr(alt.expr.if_(alt.datum.Cost >= 0, 8, -8)))
-            .encode(x=alt.X("Cost:Q", scale=alt.Scale(domain=dom)), y=alt.Y("Category:N", sort="x"), text="Label:N"))
-    rule = alt.Chart(alt.Data(values=[{"x": 0}])).mark_rule(color="#cbd5e1", strokeWidth=1.5).encode(x="x:Q")
-    st.altair_chart(styler(alt.layer(bar, rule, text).properties(height=max(110, len(rdf) * 56))), use_container_width=True)
+    rule = (alt.Chart(alt.Data(values=[{"y": 0}]))
+            .mark_rule(color="#cbd5e1", strokeDash=[4, 4]).encode(y="y:Q"))
+    bubbles = base.mark_circle(opacity=0.75, stroke="#fff", strokeWidth=1.5).encode(
+        x=alt.X("Freq:Q", title="How often it happens (trades)",
+                scale=alt.Scale(domain=[0, x_hi]),
+                axis=alt.Axis(tickMinStep=1, grid=True, gridColor="#eef0f5",
+                              labelColor="#94a3b8", titleColor="#94a3b8")),
+        y=alt.Y("AvgR:Q", title="Avg R when it happens",
+                scale=alt.Scale(domain=[y_lo - y_span * 0.35, y_hi + y_span * 0.35]),
+                axis=alt.Axis(format="+.1f", grid=True, gridColor="#eef0f5",
+                              labelColor="#94a3b8", titleColor="#94a3b8")),
+        size=alt.Size("CostSize:Q", legend=None, scale=alt.Scale(range=[250, 2500])),
+        color=alt.Color("Colour:N", legend=None,
+                        scale=alt.Scale(domain=["ok", "bad"], range=["#9ca3af", "#ef4444"])),
+        tooltip=[alt.Tooltip("Category:N", title="Mistake"),
+                 alt.Tooltip("Freq:Q", title="Trades"),
+                 alt.Tooltip("AvgR:Q", title="Avg R", format="+.2f"),
+                 alt.Tooltip("Cost:Q", title="R cost vs clean", format="+.1f")])
+    text = base.mark_text(dy=-22, fontSize=12, fontWeight="bold", color="#334155").encode(
+        x="Freq:Q", y="AvgR:Q", text="Label:N")
+    st.altair_chart(styler(alt.layer(rule, bubbles, text).properties(height=340)), use_container_width=True)
+    st.caption("Bigger bubble = more total R lost. Bottom-right = frequent AND costly — fix those first.")
     worst = rdf.iloc[0]
     total_cost = float(rdf["Cost vs clean (R)"].clip(upper=0).sum())
     st.caption(f"Clean-trade baseline: {baseline:+.2f}R avg.")
@@ -505,8 +520,9 @@ def _conviction_section(df: pd.DataFrame, styler) -> None:
     if rows is not None:
         rows = rows[rows["Category"].isin(order)]
         rows = rows.assign(__o=rows["Category"].map(lambda v: order.index(v) if v in order else 9)).sort_values("__o").drop(columns="__o")
-    _expectancy_bar(rows, "Conviction Calibration", styler,
-                    sort=order, caption="Average R by your 1–5 conviction. If it doesn't rise with conviction, your read is miscalibrated.")
+    _line_metric(rows, "Conviction Calibration", styler, value="Avg R", x_order=order,
+                 x_title="Conviction (1 = low, 5 = high)",
+                 caption="Average R by your 1–5 conviction. A rising line = your read is calibrated.")
     if rows is not None and len(rows) >= 2:
         hi = rows[rows["Category"].isin(["4", "5"])]["Avg R"].mean()
         lo = rows[rows["Category"].isin(["1", "2"])]["Avg R"].mean()
@@ -540,20 +556,45 @@ def _discipline_section(df: pd.DataFrame, styler) -> None:
     did = False
     if "Rules Followed?" in g.columns:
         rf = g["Rules Followed?"].astype(str).str.strip().str.lower().isin(["true", "yes", "__yes__", "1"])
-        _expectancy_bar(_two(rf, "Rules followed", "Rules broken"), "Rules Followed vs Broken", styler,
-                        sort=["Rules followed", "Rules broken"]); did = True
+        rows = _two(rf, "Rules followed", "Rules broken")
+        if rows is not None:
+            st.markdown("#### Rules Followed vs Broken")
+            _tiles(rows); did = True
     if "A+ Setup?" in g.columns:
         ap = g["A+ Setup?"].astype(str).str.strip().str.lower().eq("yes")
-        st.divider()
-        _expectancy_bar(_two(ap, "A+ setup", "Not A+"), "A+ Setups vs The Rest", styler,
-                        sort=["A+ setup", "Not A+"]); did = True
+        rows = _two(ap, "A+ setup", "Not A+")
+        if rows is not None:
+            if did:
+                st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
+            st.markdown("#### A+ Setups vs The Rest")
+            _tiles(rows); did = True
     if not did:
         t._unavailable("Discipline Scorecard")
+        return
+    both = []
+    if "Rules Followed?" in g.columns:
+        r = _two(rf, "Rules followed", "Rules broken")
+        if r is not None and len(r) == 2:
+            both.append(("breaking your rules", float(r.iloc[0]["Avg R"]) - float(r.iloc[1]["Avg R"])))
+    if "A+ Setup?" in g.columns:
+        r = _two(ap, "A+ setup", "Not A+")
+        if r is not None and len(r) == 2:
+            both.append(("taking non-A+ setups", float(r.iloc[0]["Avg R"]) - float(r.iloc[1]["Avg R"])))
+    worst = max(both, key=lambda x: x[1]) if both else None
+    if worst and worst[1] > 0:
+        t._insight_box(f"Discipline pays: <b>{worst[1]:+.2f}R</b> per trade is the gap you give up by {worst[0]}.", "warn")
 
 
 def _direction_section(df: pd.DataFrame, styler) -> None:
-    _expectancy_bar(_cat_stats(df, "Direction"), "Long vs Short", styler,
-                    sort=["Long", "Short"], caption="Expectancy, win rate and net R by trade direction.")
+    t = _t()
+    st.markdown("### Long vs Short")
+    st.caption("Expectancy, win rate and net R by trade direction.")
+    rows = _cat_stats(df, "Direction")
+    if rows is None or len(rows) == 0:
+        t._unavailable("Long vs Short"); return
+    order = ["Long", "Short"]
+    rows = rows.assign(__o=rows["Category"].map(lambda v: order.index(v) if v in order else 9)).sort_values("__o").drop(columns="__o")
+    _tiles(rows)
 
 
 def _holdtime_section(df: pd.DataFrame, styler) -> None:
@@ -571,26 +612,50 @@ def _holdtime_section(df: pd.DataFrame, styler) -> None:
     rows = _cat_stats(g, "__cat")
     if rows is not None:
         rows = rows.assign(__o=rows["Category"].map(lambda v: labels.index(v) if v in labels else 9)).sort_values("__o").drop(columns="__o")
-    _expectancy_bar(rows, "Hold-Time Window", styler, sort=labels,
-                    caption="Average R by how long trades were held — find your optimal hold window.")
+    _line_metric(rows, "Hold-Time Window", styler, value="Avg R", x_order=labels,
+                 x_title="Hold time",
+                 caption="Average R by how long trades were held — find your optimal hold window.")
 
 
 def _spread_section(df: pd.DataFrame, styler) -> None:
+    t = _t()
     spread = _num(df, "Spread at Entry")
-    if spread is None:
+    rr = _num(df, "Closed RR")
+    if spread is None or rr is None:
         return
-    g = df.copy(); g["__s"] = spread.values
-    g = g[pd.notna(g["__s"])]
-    if g.empty or g["__s"].nunique() < 2:
+    g = df.copy(); g["Spread"] = spread.values; g["R"] = rr.values
+    g = g[pd.notna(g["Spread"]) & pd.notna(g["R"])]
+    if len(g) < 5 or g["Spread"].nunique() < 2:
         return
-    try:
-        g["__cat"] = pd.qcut(g["__s"], q=min(3, g["__s"].nunique()),
-                             labels=["Tight spread", "Normal spread", "Wide spread"][:min(3, g["__s"].nunique())], duplicates="drop").astype(str)
-    except Exception:
-        return
-    _expectancy_bar(_cat_stats(g, "__cat"), "Spread vs Outcome", styler,
-                    sort=["Tight spread", "Normal spread", "Wide spread"],
-                    caption="Does your edge degrade when spreads widen (news / Asia)? Grouped by entry spread.")
+    st.markdown("### Spread vs Outcome")
+    st.caption("Each dot is a trade: entry spread vs realised R. The purple trend line shows whether "
+               "wide spreads (news / Asia) are eating your edge.")
+    g["OutcomeC"] = _outcome(g, "R")
+    slope, intercept = np.polyfit(g["Spread"].astype(float), g["R"].astype(float), 1)
+    xs = [float(g["Spread"].min()), float(g["Spread"].max())]
+    reg_vals = [{"Spread": x, "R": float(slope * x + intercept)} for x in xs]
+    vals = t._to_alt_values(g[["Spread", "R", "OutcomeC"]])
+    rule = (alt.Chart(alt.Data(values=[{"y": 0}]))
+            .mark_rule(color="#cbd5e1", strokeDash=[4, 4]).encode(y="y:Q"))
+    pts = alt.Chart(alt.Data(values=vals)).mark_circle(size=80, opacity=0.55, stroke="#fff", strokeWidth=1).encode(
+        x=alt.X("Spread:Q", title="Spread at entry",
+                axis=alt.Axis(grid=True, gridColor="#eef0f5", labelColor="#94a3b8", titleColor="#94a3b8")),
+        y=alt.Y("R:Q", title="Realised R",
+                axis=alt.Axis(format="+.0f", grid=True, gridColor="#eef0f5", labelColor="#94a3b8", titleColor="#94a3b8")),
+        color=alt.Color("OutcomeC:N", legend=None,
+                        scale=alt.Scale(domain=["Win", "BE", "Loss"],
+                                        range=["#16a34a", "#9ca3af", "#ef4444"])),
+        tooltip=[alt.Tooltip("Spread:Q", title="Spread", format=".1f"),
+                 alt.Tooltip("R:Q", title="Realised R", format="+.2f"),
+                 alt.Tooltip("OutcomeC:N", title="Outcome")])
+    reg = (alt.Chart(alt.Data(values=reg_vals))
+           .mark_line(color=PURPLE, strokeWidth=2.5).encode(x="Spread:Q", y="R:Q"))
+    st.altair_chart(styler(alt.layer(rule, pts, reg).properties(height=300)), use_container_width=True)
+    if slope < -0.05:
+        t._insight_box(f"Edge degrades as spread widens (≈<b>{slope:+.2f}R</b> per point of spread). "
+                       f"Consider standing down when spreads blow out.", "warn")
+    else:
+        t._insight_box("No meaningful spread penalty — your edge holds up when spreads widen.", "good")
 
 
 def _missed_runner_section(df: pd.DataFrame, styler) -> None:
