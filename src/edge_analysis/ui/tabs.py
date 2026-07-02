@@ -498,6 +498,7 @@ def _growth_tab(f: pd.DataFrame, df_all: pd.DataFrame, styler):
         eq_df.columns = ["Bucket", "PnLBucket"]
         axis_fmt = "%b %Y"
 
+    eq_df = eq_df[eq_df["Bucket"].notna()]
     eq_df["CumPnL"] = eq_df["PnLBucket"].fillna(0).cumsum()
 
     def _x_enc(fmt, ang=-45):
@@ -569,7 +570,7 @@ def _growth_tab(f: pd.DataFrame, df_all: pd.DataFrame, styler):
     latest_wr = float(pd.DataFrame(wr_vals)["Win %"].dropna().iloc[-1]) if wr_vals else float("nan")
     latest_eq = float(pd.DataFrame(pnl_vals)["CumPnL"].dropna().iloc[-1]) if pnl_vals else float("nan")
     st.markdown(
-        f"<div class='muted'>Latest Win %: <b>{latest_wr:.2f}%</b> &nbsp;|&nbsp; "
+        f"<div class='muted'>Latest Win %: <b>{latest_wr:.0f}%</b> &nbsp;|&nbsp; "
         f"Cumulative PnL: <b>{latest_eq:,.2f} R</b></div>",
         unsafe_allow_html=True)
 

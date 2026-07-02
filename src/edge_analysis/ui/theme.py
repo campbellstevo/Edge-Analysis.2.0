@@ -667,7 +667,7 @@ def inject_theme():
       margin: 2px 0 8px 0;
     }}
     .header-logo-img {{
-      width: clamp(520px, 40vw, 1100px);
+      width: clamp(240px, 22vw, 380px);
       height: auto;
       display: block;
     }}
@@ -908,7 +908,10 @@ def inject_theme():
 
     /* Page chrome: no decoration strip, transparent header, no footer/badge */
     [data-testid="stDecoration"] {{ display: none !important; }}
-    [data-testid="stHeader"] {{ background: transparent !important; }}
+    [data-testid="stHeader"] {{ background: #f6f7fb !important; }}
+    [data-testid="stSidebar"] > div:first-child {{ padding-top: 1.5rem !important; }}
+    section.main div[data-testid="stVerticalBlock"],
+    [data-testid="stMain"] div[data-testid="stVerticalBlock"] {{ gap: 0.75rem !important; }}
     [data-testid="stStatusWidget"] {{ visibility: hidden !important; }}
     #MainMenu {{ visibility: hidden !important; }}
     footer {{ visibility: hidden !important; height: 0 !important; }}
@@ -1031,7 +1034,7 @@ def inject_header(_theme_ignored: str = "light"):
     if logo_path and logo_path.exists():
         st.markdown(
             f"""
-            <div style="display:flex; justify-content:center; margin: 1rem 0;">
+            <div style="display:flex; justify-content:center; margin: 0.25rem 0 0.5rem;">
                 {_img_tag_from_file(logo_path)}
             </div>
             """,

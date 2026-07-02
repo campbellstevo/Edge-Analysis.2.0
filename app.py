@@ -1285,9 +1285,9 @@ def render_dashboard(mobile: bool):
     st.markdown('<div class="kpi-grid">', unsafe_allow_html=True)
     for label, value in [
         ("TOTAL TRADES", stats["total"]),
-        ("WIN %", f"{stats['win_rate']:.2f}%"),
-        ("BE %", f"{stats['be_rate']:.2f}%"),
-        ("LOSS %", f"{stats['loss_rate']:.2f}%"),
+        ("WIN %", f"{stats['win_rate']:.0f}%"),
+        ("BE %", f"{stats['be_rate']:.0f}%"),
+        ("LOSS %", f"{stats['loss_rate']:.0f}%"),
         ("AVG CLOSED RR (WINS ONLY)", f"{avg_rr_wins:.2f}"),
         ("TOTAL PNL (FROM RR)", f"{total_pnl_rr:,.2f}"),
     ]:

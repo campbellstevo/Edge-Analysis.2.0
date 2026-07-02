@@ -159,7 +159,11 @@ def _mae_mfe_section(df: pd.DataFrame, styler) -> None:
     # Prefer MT5's native computed columns when present (exact, not estimated)
     _eff = _num(df, "MFE Efficiency %")
     if _eff is not None:
-        cap_eff = float(_eff.mean())
+        _m = float(_eff.mean())
+        if 0.0 <= _m <= 100.0:
+            cap_eff = _m
+    if not np.isnan(cap_eff):
+        cap_eff = float(min(max(cap_eff, 0.0), 100.0))
     _gb = _num(df, "Give-back after MFE (R)")
     if _gb is not None:
         avg_giveback = float(_gb.mean())
@@ -234,10 +238,10 @@ def _dollar_pnl_section(df: pd.DataFrame, styler) -> None:
     if swap is not None: costs += float(pd.to_numeric(g.get("Swap"), errors="coerce").fillna(0).sum())
 
     c1, c2, c3, c4 = st.columns(4)
-    with c1: _kpi("Net P&L", f"${net:,.0f}", f"over {len(g)} trades", "#16a34a" if net >= 0 else "#ef4444")
-    with c2: _kpi("Avg / trade", f"${avg:,.1f}", "mean dollar result")
+    with c1: _kpi("Net P&L", f"{'-' if net < 0 else ''}${abs(net):,.0f}", f"over {len(g)} trades", "#16a34a" if net >= 0 else "#ef4444")
+    with c2: _kpi("Avg / trade", f"{'-' if avg < 0 else ''}${abs(avg):,.2f}", "mean dollar result")
     with c3: _kpi("Profit factor", "—" if np.isnan(pf) else f"{pf:.2f}", "gross win $ / gross loss $")
-    with c4: _kpi("Costs", f"${costs:,.0f}", "commission + swap")
+    with c4: _kpi("Costs", f"{'-' if costs < 0 else ''}${abs(costs):,.0f}", "commission + swap")
 
     if "Date" in g.columns:
         gg = g.copy()
@@ -306,20 +310,6 @@ def _timing_section(df: pd.DataFrame, styler) -> None:
             t._insight_box(
                 f"Best hour: <b>{int(best['Hour']):02d}:00</b> ({best['Win %']:.0f}% over {int(best['Trades'])} trades). "
                 f"Weakest: <b>{int(worst['Hour']):02d}:00</b> ({worst['Win %']:.0f}%).")
-
-    dur_col = "Trade Duration" if "Trade Duration" in g.columns else ("Duration" if "Duration" in g.columns else None)
-    if dur_col:
-        gd = g[g[dur_col].astype(str).str.strip().ne("") & g[dur_col].notna()].copy()
-        if not gd.empty:
-            order = ["0-30m", "30m-1h", "1h-2h", "2h-3h", "3h-4h", "4h-5h", "5h-6h", "6h-7h", "7h-8h", "8h+"]
-            tbl = _winrate_table(gd, dur_col).rename(columns={dur_col: "Category"})
-            tbl["__o"] = tbl["Category"].map(lambda v: order.index(v) if v in order else 99)
-            tbl = tbl.sort_values("__o").drop(columns="__o")
-            if not tbl.empty:
-                st.markdown("**By trade duration** — average R")
-                _line_metric(tbl, "", styler, value="Avg R",
-                             x_order=[o for o in order if o in set(tbl["Category"])],
-                             x_title="Hold time")
 
 
 # ── 4. Execution quality ──────────────────────────────────────────────────────
@@ -646,10 +636,13 @@ def _spread_section(df: pd.DataFrame, styler) -> None:
     xs = [float(g["Spread"].min()), float(g["Spread"].max())]
     reg_vals = [{"Spread": x, "R": float(slope * x + intercept)} for x in xs]
     vals = t._to_alt_values(g[["Spread", "R", "OutcomeC"]])
+    s_lo = float(g["Spread"].min()); s_hi = float(g["Spread"].max())
+    s_pad = max((s_hi - s_lo) * 0.08, 0.2)
     rule = (alt.Chart(alt.Data(values=[{"y": 0}]))
             .mark_rule(color="#cbd5e1", strokeDash=[4, 4]).encode(y=alt.Y("y:Q", title=None)))
     pts = alt.Chart(alt.Data(values=vals)).mark_circle(size=80, opacity=0.55, stroke="#fff", strokeWidth=1).encode(
         x=alt.X("Spread:Q", title="Spread at entry",
+                scale=alt.Scale(domain=[s_lo - s_pad, s_hi + s_pad]),
                 axis=alt.Axis(grid=True, gridColor="#eef0f5", labelColor="#94a3b8", titleColor="#94a3b8")),
         y=alt.Y("R:Q", title="Realised R",
                 axis=alt.Axis(format="+.0f", grid=True, gridColor="#eef0f5", labelColor="#94a3b8", titleColor="#94a3b8")),

@@ -31,13 +31,15 @@ def _fmt_num(v, d: int = 2):
 def render_entry_model_table(df: pd.DataFrame, title: str = "Entry Model Performance"):
     if df is None or df.empty:
         return
+    first_col_label = "Entry Model"
     if "Entry_Model" not in df.columns and "Instrument" in df.columns:
+        first_col_label = "Instrument"
         df = df.rename(columns={"Instrument": "Entry_Model"}).copy()
     expected = ["Entry_Model", "Trades", "Win %", "BE %", "Loss %"]
     if any(c not in df.columns for c in expected):
         return
     headers = [
-        '<th class="text">Entry_Model</th>',
+        f'<th class="text">{first_col_label}</th>',
         '<th class="num">Trades</th>',
         '<th class="num">Win %</th>',
         '<th class="num">BE %</th>',
