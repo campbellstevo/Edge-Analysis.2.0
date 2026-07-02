@@ -48,6 +48,16 @@ def _outcome(g: pd.DataFrame, rr_col: str = "__rr") -> pd.Series:
 
 
 # ── Approved house-style helpers ──────────────────────────────────────────────
+def _section_header(title: str) -> None:
+    """Clean section divider: thin rule + small purple uppercase label."""
+    st.markdown(
+        f"<div style='margin:34px 0 6px;padding-top:16px;border-top:2px solid #eef0f5;'>"
+        f"<div style='font-size:13px;font-weight:700;letter-spacing:0.14em;"
+        f"text-transform:uppercase;color:{PURPLE};'>{title}</div></div>",
+        unsafe_allow_html=True,
+    )
+
+
 def _tiles(rows, styler=None) -> None:
     """Comparison stat tiles — one card per category. Replaces 2-3 category bars."""
     if rows is None or len(rows) == 0:
@@ -104,7 +114,7 @@ def _line_metric(rows, title, styler, value="Avg R", x_order=None, x_title="",
                  axis=alt.Axis(labelAngle=0, labelFontSize=12, labelColor="#0f172a", labelLimit=140))
     base = alt.Chart(alt.Data(values=vals))
     rule = (alt.Chart(alt.Data(values=[{"y": baseline}]))
-            .mark_rule(color="#cbd5e1", strokeDash=[4, 4]).encode(y="y:Q"))
+            .mark_rule(color="#cbd5e1", strokeDash=[4, 4]).encode(y=alt.Y("y:Q", title=None)))
     line = base.mark_line(color="#4800ff", strokeWidth=2.5, interpolate="monotone").encode(
         x=xenc, y=alt.Y("__v:Q", title=value,
                         axis=alt.Axis(labelColor="#94a3b8", titleColor="#94a3b8", grid=True, gridColor="#eef0f5")))
@@ -186,7 +196,8 @@ def _mae_mfe_section(df: pd.DataFrame, styler) -> None:
             )
         )
         diag = (alt.Chart(alt.Data(values=[{"x": 0, "y": 0}, {"x": hi, "y": hi}]))
-                .mark_line(strokeDash=[4, 4], color=PURPLE).encode(x="x:Q", y="y:Q"))
+                .mark_line(strokeDash=[4, 4], color=PURPLE)
+                .encode(x=alt.X("x:Q", title=None), y=alt.Y("y:Q", title=None)))
         st.altair_chart(styler(alt.layer(scatter, diag).properties(height=320)), use_container_width=True)
         st.caption("Dashed line = captured the full favourable move. Points well below it = exited early.")
 
@@ -239,7 +250,7 @@ def _dollar_pnl_section(df: pd.DataFrame, styler) -> None:
                 area = (alt.Chart(alt.Data(values=vals)).mark_area(opacity=0.12, color=PURPLE)
                         .encode(x=alt.X("Date:T", title=None), y=alt.Y("CumUSD:Q", title="Cumulative $")))
                 line = (alt.Chart(alt.Data(values=vals)).mark_line(strokeWidth=2, color=PURPLE)
-                        .encode(x="Date:T", y="CumUSD:Q"))
+                        .encode(x=alt.X("Date:T", title=None), y=alt.Y("CumUSD:Q", title=None)))
                 st.altair_chart(styler(alt.layer(area, line).properties(height=300)), use_container_width=True)
 
     t._insight_box(
@@ -376,14 +387,14 @@ def render_mt5_tab(f_perf: pd.DataFrame, df_all: pd.DataFrame, styler) -> None:
         return
     st.markdown('<div class="section">', unsafe_allow_html=True)
 
-    st.markdown("## 📈 Performance & Money")
+    _section_header("Performance & Money")
     _dollar_pnl_section(data, styler)
     st.divider()
     _mae_mfe_section(data, styler)
     st.divider()
     _missed_runner_section(data, styler)
 
-    st.markdown("## 🧭 Edge Breakdown")
+    _section_header("Edge Breakdown")
     _direction_section(data, styler)
     st.divider()
     _conviction_section(data, styler)
@@ -394,7 +405,7 @@ def render_mt5_tab(f_perf: pd.DataFrame, df_all: pd.DataFrame, styler) -> None:
     st.divider()
     _timing_section(data, styler)
 
-    st.markdown("## 🎯 Discipline & Execution")
+    _section_header("Discipline & Execution")
     _discipline_section(data, styler)
     st.divider()
     _mistake_section(data, styler)
@@ -484,7 +495,7 @@ def _mistake_section(df: pd.DataFrame, styler) -> None:
     vals = t._to_alt_values(rdf[["Category", "Freq", "AvgR", "Cost", "CostSize", "Colour", "Label"]])
     base = alt.Chart(alt.Data(values=vals))
     rule = (alt.Chart(alt.Data(values=[{"y": 0}]))
-            .mark_rule(color="#cbd5e1", strokeDash=[4, 4]).encode(y="y:Q"))
+            .mark_rule(color="#cbd5e1", strokeDash=[4, 4]).encode(y=alt.Y("y:Q", title=None)))
     bubbles = base.mark_circle(opacity=0.75, stroke="#fff", strokeWidth=1.5).encode(
         x=alt.X("Freq:Q", title="How often it happens (trades)",
                 scale=alt.Scale(domain=[0, x_hi]),
@@ -636,7 +647,7 @@ def _spread_section(df: pd.DataFrame, styler) -> None:
     reg_vals = [{"Spread": x, "R": float(slope * x + intercept)} for x in xs]
     vals = t._to_alt_values(g[["Spread", "R", "OutcomeC"]])
     rule = (alt.Chart(alt.Data(values=[{"y": 0}]))
-            .mark_rule(color="#cbd5e1", strokeDash=[4, 4]).encode(y="y:Q"))
+            .mark_rule(color="#cbd5e1", strokeDash=[4, 4]).encode(y=alt.Y("y:Q", title=None)))
     pts = alt.Chart(alt.Data(values=vals)).mark_circle(size=80, opacity=0.55, stroke="#fff", strokeWidth=1).encode(
         x=alt.X("Spread:Q", title="Spread at entry",
                 axis=alt.Axis(grid=True, gridColor="#eef0f5", labelColor="#94a3b8", titleColor="#94a3b8")),

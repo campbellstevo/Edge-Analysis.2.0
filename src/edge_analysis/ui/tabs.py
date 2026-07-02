@@ -3341,8 +3341,8 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table):
     _labels = ["Performance", "Setup", "Timing", "Psychology", "Externals", "Projections", "Refinements"]
     _show_mt5 = _get_schema() == "mt5" or _df_is_mt5(df_all_safe)
     if _show_mt5:
-        _labels.append("MT5 ⚡")
-        _labels.append("Pro ⚡")
+        _labels.append("MT5")
+        _labels.append("Pro")
     _tab_objs = st.tabs(_labels)
     t_performance, t_setup, t_timing, t_psychology, t_externals, t_projections, t_refinements = _tab_objs[:7]
 

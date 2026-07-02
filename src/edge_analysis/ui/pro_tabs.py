@@ -10,7 +10,7 @@ import pandas as pd
 import altair as alt
 import streamlit as st
 
-from edge_analysis.ui.mt5_tabs import _num, _kpi, PURPLE
+from edge_analysis.ui.mt5_tabs import _num, _kpi, _section_header, PURPLE
 
 
 def _t():
@@ -53,11 +53,11 @@ def _exit_optimizer(df, styler) -> None:
             .encode(x=alt.X("Target:Q", title="Fixed R target"),
                     y=alt.Y("Expectancy:Q", title="Expectancy (R / trade)"),
                     tooltip=["Target:Q", "Expectancy:Q", "Total R:Q"]).properties(height=280))
-    cur = alt.Chart(alt.Data(values=[{"y": actual_exp}])).mark_rule(color="#94a3b8", strokeDash=[4, 4]).encode(y="y:Q")
+    cur = alt.Chart(alt.Data(values=[{"y": actual_exp}])).mark_rule(color="#94a3b8", strokeDash=[4, 4]).encode(y=alt.Y("y:Q", title=None))
     best_data = alt.Chart(alt.Data(values=[{"bx": float(best["Target"]), "by": float(best["Expectancy"])}]))
-    best_pt = best_data.mark_point(filled=True, size=220, color="#16a34a", stroke="#fff", strokeWidth=2.5).encode(x="bx:Q", y="by:Q")
+    best_pt = best_data.mark_point(filled=True, size=220, color="#16a34a", stroke="#fff", strokeWidth=2.5).encode(x=alt.X("bx:Q", title=None), y=alt.Y("by:Q", title=None))
     best_lab = best_data.mark_text(dy=-16, fontSize=13, fontWeight="bold", color="#16a34a",
-                                   text=f"Best: +{best['Target']:.1f}R → {best['Expectancy']:+.2f}R/trade").encode(x="bx:Q", y="by:Q")
+                                   text=f"Best: +{best['Target']:.1f}R → {best['Expectancy']:+.2f}R/trade").encode(x=alt.X("bx:Q", title=None), y=alt.Y("by:Q", title=None))
     st.altair_chart(styler(alt.layer(line, cur, best_pt, best_lab)), use_container_width=True)
     c1, c2, c3 = st.columns(3)
     with c1: _kpi("Your actual expectancy", f"{actual_exp:+.2f}R", f"{actual_total:+.0f}R total")
@@ -102,9 +102,9 @@ def _mae_stop_optimizer(df, styler) -> None:
                     tooltip=["Stop (R):Q", "Winners surviving %:Q"]))
     rec_surv = float(rdf.loc[rdf["Stop (R)"] == rec, "Winners surviving %"].iloc[0]) if (rdf["Stop (R)"] == rec).any() else 100.0
     rec_data = alt.Chart(alt.Data(values=[{"bx": rec, "by": rec_surv}]))
-    rec_pt = rec_data.mark_point(filled=True, size=220, color="#16a34a", stroke="#fff", strokeWidth=2.5).encode(x="bx:Q", y="by:Q")
+    rec_pt = rec_data.mark_point(filled=True, size=220, color="#16a34a", stroke="#fff", strokeWidth=2.5).encode(x=alt.X("bx:Q", title=None), y=alt.Y("by:Q", title=None))
     rec_lab = rec_data.mark_text(dy=18, fontSize=13, fontWeight="bold", color="#16a34a",
-                                 text=f"Suggested: −{rec:.1f}R keeps {rec_surv:.0f}% of winners").encode(x="bx:Q", y="by:Q")
+                                 text=f"Suggested: −{rec:.1f}R keeps {rec_surv:.0f}% of winners").encode(x=alt.X("bx:Q", title=None), y=alt.Y("by:Q", title=None))
     st.altair_chart(styler(alt.layer(area, line, rec_pt, rec_lab).properties(height=260)), use_container_width=True)
     med = float(mag.median()); p90 = float(mag.quantile(0.9))
     c1, c2, c3 = st.columns(3)
@@ -151,7 +151,8 @@ def _monte_carlo(df, styler) -> None:
     band = (alt.Chart(alt.Data(values=t._to_alt_values(cur))).mark_area(opacity=0.15, color=PURPLE)
             .encode(x=alt.X("Trade:Q"), y=alt.Y("p5:Q", title="Balance ($)"), y2="p95:Q"))
     med = (alt.Chart(alt.Data(values=t._to_alt_values(cur))).mark_line(color=PURPLE, strokeWidth=2)
-           .encode(x="Trade:Q", y="p50:Q", tooltip=["Trade:Q", "p50:Q", "p5:Q", "p95:Q"]))
+           .encode(x=alt.X("Trade:Q", title=None), y=alt.Y("p50:Q", title=None),
+                   tooltip=["Trade:Q", "p50:Q", "p5:Q", "p95:Q"]))
     st.altair_chart(styler(alt.layer(band, med).properties(height=300)), use_container_width=True)
 
     wins = r[r > 0]; losses = r[r < 0]
@@ -359,15 +360,15 @@ def render_pro_tab(f_perf: pd.DataFrame, df_all: pd.DataFrame, styler) -> None:
         st.info("No trades for current filters.")
         return
     st.markdown('<div class="section">', unsafe_allow_html=True)
-    st.markdown("## 🔬 Trade Management")
+    _section_header("Trade Management")
     _exit_optimizer(data, styler); st.divider()
     _mae_stop_optimizer(data, styler)
-    st.markdown("## 🎲 Risk & Projection")
+    _section_header("Risk & Projection")
     _monte_carlo(data, styler)
-    st.markdown("## 🧠 Behaviour")
+    _section_header("Behaviour")
     _tilt(data, styler); st.divider()
     _a_game(data, styler)
-    st.markdown("## 🗺️ Edge Maps")
+    _section_header("Edge Maps")
     _heatmap_hour_day(data, styler); st.divider()
     _symbol_session_matrix(data, styler); st.divider()
     _cost_drag(data, styler)

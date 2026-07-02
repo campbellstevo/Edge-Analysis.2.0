@@ -950,6 +950,16 @@ def _require_notion_login():
     if token:
         return
 
+    # Tokenized link (phone handoff): log in straight from the URL.
+    url_token = _get_query_param("notion_token")
+    if url_token:
+        _complete_login_with_token(url_token)
+        url_db = _get_query_param("database_id")
+        if url_db and _validate_dbid(url_db.replace("-", "")):
+            st.session_state[SessionKeys.DB_ID] = url_db
+            st.session_state[SessionKeys.NAV_TARGET] = PageNames.DASHBOARD
+        return
+
     _render_login_page()
     st.stop()
 
@@ -1193,6 +1203,54 @@ def render_dashboard(mobile: bool):
     render_all_tabs(f, df, styler, show_light_table)
 
 
+# --------------------------- Phone handoff (QR) --------------------------------
+APP_BASE_URL = "https://edge-analysis2.streamlit.app"
+
+
+def _render_phone_link_sidebar() -> None:
+    """Sidebar expander with a QR code / link that opens the dashboard on a
+    phone already connected — skips the Notion OAuth dance on mobile, where
+    the installed Notion app hijacks the consent page."""
+    token = (
+        st.session_state.get(SessionKeys.USER_TOKEN)
+        or st.session_state.get(SessionKeys.OAUTH_TOKEN)
+    )
+    if not token:
+        return
+    dbid = st.session_state.get(SessionKeys.DB_ID)
+    if not dbid:
+        uid = st.session_state.get(SessionKeys.USER_ID)
+        if uid:
+            rec = get_user(uid)
+            if rec and rec.get("db_id"):
+                dbid = rec["db_id"]
+    params = {"notion_token": token, "layout": "mobile"}
+    if dbid:
+        params["database_id"] = dbid
+    url = APP_BASE_URL + "/?" + urlencode(params)
+    with st.sidebar.expander("📱 Use on your phone"):
+        st.caption(
+            "Scan with your phone camera, then bookmark it or add it to your "
+            "home screen — it opens the dashboard already connected. "
+            "Keep this link private: anyone with it can see your dashboard."
+        )
+        try:
+            import qrcode
+            import qrcode.image.svg as _qsvg
+            _img = qrcode.make(url, image_factory=_qsvg.SvgPathImage)
+            _svg = _img.to_string().decode("utf-8")
+            _svg = _svg.replace(
+                "<svg",
+                "<svg style='width:190px;height:190px;background:#fff;"
+                "padding:10px;border:1px solid rgba(0,0,0,0.06);border-radius:12px;'",
+                1,
+            )
+            st.markdown(f"<div style='text-align:center'>{_svg}</div>", unsafe_allow_html=True)
+        except Exception:
+            pass
+        st.code(url, language=None)
+
+
 # --------------------------------- Router -------------------------------------
 def _detect_default_layout_index() -> int:
     """
@@ -1251,6 +1309,7 @@ def main() -> None:
             index=0 if current_layout == "Desktop Layout" else 1,
             key=SessionKeys.LAYOUT,
         )
+        _render_phone_link_sidebar()
     else:
         _inject_mobile_css(layout_mode)
 
