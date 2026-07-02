@@ -910,10 +910,26 @@ def inject_theme():
     [data-testid="stDecoration"] {{ display: none !important; }}
     [data-testid="stHeader"], .stAppHeader, [data-testid="stToolbar"] {{ background: #f6f7fb !important; }}
     [data-testid="stSidebar"] > div:first-child {{ padding-top: 1.5rem !important; }}
-    [data-testid="stSidebar"] {{
-        width: 18rem !important;
-        min-width: 18rem !important;
-        max-width: 18rem !important;
+    [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"],
+    [data-testid="collapsedControl"] {{
+        display: none !important;
+    }}
+
+    /* Typography scale: tighter, more modern headings */
+    .stMarkdown h1 {{ font-size: 26px !important; font-weight: 800 !important; letter-spacing: -0.02em; }}
+    .stMarkdown h2 {{ font-size: 21px !important; font-weight: 800 !important; letter-spacing: -0.015em; }}
+    .stMarkdown h3 {{ font-size: 19px !important; font-weight: 800 !important; letter-spacing: -0.01em; color: #0f172a; margin-bottom: 0 !important; }}
+    .stMarkdown h4 {{ font-size: 15px !important; font-weight: 700 !important; color: #334155; }}
+
+    /* Filters popover trigger: white pill */
+    [data-testid="stPopover"] > div > button, [data-testid="stPopoverButton"] {{
+        background: #ffffff !important;
+        border: 1px solid rgba(0,0,0,0.08) !important;
+        border-radius: 999px !important;
+        padding: 6px 18px !important;
+        font-weight: 600 !important;
+        color: #334155 !important;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.04) !important;
     }}
     .ea-topbar-logo img {{ width: 170px !important; height: auto; display: block; }}
     div[data-testid="stAlert"] {{ border-radius: 12px !important; }}

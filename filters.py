@@ -102,79 +102,54 @@ def render_filters(
     def _inst_label(v: str) -> str:
         return "GOLD" if v == "Gold" else v
 
-    if mobile:
+    try:
+        flt = st.popover("Filters", use_container_width=False)
+    except Exception:
         flt = st.expander("Filters")
-        with flt:
-            c1, c2 = st.columns(2, gap="small")
-            with c1:
-                sel_inst = st.selectbox(
-                    "Instrument",
-                    inst_opts,
-                    index=inst_opts.index(st.session_state.get("filters_inst_select", "All"))
-                    if st.session_state.get("filters_inst_select", "All") in inst_opts
-                    else 0,
-                    format_func=_inst_label,
-                    key="filters_inst_select",
-                )
-                sel_em = st.selectbox(
-                    "Entry Model",
-                    em_opts,
-                    index=em_opts.index(st.session_state.get("filters_em_select", "All"))
-                    if st.session_state.get("filters_em_select", "All") in em_opts
-                    else 0,
-                    key="filters_em_select",
-                )
-            with c2:
-                sel_sess = st.selectbox(
-                    "Session",
-                    sess_opts,
-                    index=sess_opts.index(st.session_state.get("filters_sess_select", "All"))
-                    if st.session_state.get("filters_sess_select", "All") in sess_opts
-                    else 0,
-                    key="filters_sess_select",
-                )
-                sel_acct = st.selectbox(
-                    "Account",
-                    acct_opts,
-                    index=acct_opts.index(st.session_state.get("filters_acct_select", "All"))
-                    if st.session_state.get("filters_acct_select", "All") in acct_opts
-                    else 0,
-                    key="filters_acct_select",
-                )
-            st.selectbox(
-                "Page",
-                [PageNames.DASHBOARD, PageNames.CONNECT],
-                index=0 if st.session_state.get(SessionKeys.NAV_PAGE) == PageNames.DASHBOARD else 1,
-                key=SessionKeys.NAV_PAGE,
+    with flt:
+        c1, c2 = st.columns(2, gap="small")
+        with c1:
+            sel_inst = st.selectbox(
+                "Instrument",
+                inst_opts,
+                index=inst_opts.index(st.session_state.get("filters_inst_select", "All"))
+                if st.session_state.get("filters_inst_select", "All") in inst_opts
+                else 0,
+                format_func=_inst_label,
+                key="filters_inst_select",
             )
-        container = flt
-    else:
-        sel_inst = st.sidebar.selectbox(
-            "Instrument",
-            inst_opts,
-            index=0,
-            format_func=_inst_label,
-            key="filters_inst_select",
+            sel_em = st.selectbox(
+                "Entry Model",
+                em_opts,
+                index=em_opts.index(st.session_state.get("filters_em_select", "All"))
+                if st.session_state.get("filters_em_select", "All") in em_opts
+                else 0,
+                key="filters_em_select",
+            )
+        with c2:
+            sel_sess = st.selectbox(
+                "Session",
+                sess_opts,
+                index=sess_opts.index(st.session_state.get("filters_sess_select", "All"))
+                if st.session_state.get("filters_sess_select", "All") in sess_opts
+                else 0,
+                key="filters_sess_select",
+            )
+            sel_acct = st.selectbox(
+                "Account",
+                acct_opts,
+                index=acct_opts.index(st.session_state.get("filters_acct_select", "All"))
+                if st.session_state.get("filters_acct_select", "All") in acct_opts
+                else 0,
+                key="filters_acct_select",
+            )
+        st.selectbox(
+            "Page",
+            [PageNames.DASHBOARD, PageNames.CONNECT],
+            index=0 if st.session_state.get(SessionKeys.NAV_PAGE) == PageNames.DASHBOARD else 1,
+            key=SessionKeys.NAV_PAGE,
         )
-        sel_em = st.sidebar.selectbox(
-            "Entry Model",
-            em_opts,
-            index=0,
-            key="filters_em_select",
-        )
-        sel_sess = st.sidebar.selectbox(
-            "Session",
-            sess_opts,
-            index=0,
-            key="filters_sess_select",
-        )
-        sel_acct = st.sidebar.selectbox(
-            "Account",
-            acct_opts,
-            index=0,
-            key="filters_acct_select",
-        )
-        container = st.sidebar
+    container = flt
 
     # Trade Type filter (MT5 only; appears when more than one type is present)
     sel_tot = "All"

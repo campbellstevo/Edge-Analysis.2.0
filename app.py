@@ -1177,6 +1177,7 @@ def render_dashboard(mobile: bool):
 
     inject_header_bar("Live · Notion connected" if (token and dbid) else "Not connected",
                       bool(token and dbid))
+    st.session_state["_ea_connected"] = bool(token and dbid)
 
     with st.spinner("Fetching trades from Notion…"):
         df = load_live_df(token, dbid)
@@ -1283,22 +1284,49 @@ def render_dashboard(mobile: bool):
     total_pnl_rr = float(f["PnL_from_RR"].sum())
 
     # Display KPIs
-    _cards = []
-    for label, value in [
-        ("TOTAL TRADES", stats["total"]),
-        ("WIN %", f"{stats['win_rate']:.0f}%"),
-        ("BE %", f"{stats['be_rate']:.0f}%"),
-        ("LOSS %", f"{stats['loss_rate']:.0f}%"),
-        ("AVG CLOSED RR (WINS ONLY)", f"{avg_rr_wins:.2f}"),
-        ("TOTAL PNL (FROM RR)", f"{total_pnl_rr:,.2f}"),
-    ]:
-        value_html = (
-            f"<div class='value' style='color: var(--brand);'>{value}</div>"
-            if label == "TOTAL PNL (FROM RR)"
-            else f"<div class='value'>{value}</div>"
+    # ── Hero band: net result + sparkline + stat chips (one card) ────────────
+    cum = f.sort_values("Date")["PnL_from_RR"].fillna(0).cumsum() if "Date" in f.columns else f["PnL_from_RR"].fillna(0).cumsum()
+    spark = ""
+    pts = cum.tolist()
+    if len(pts) >= 2:
+        lo, hi = min(min(pts), 0.0), max(max(pts), 0.0)
+        span = max(hi - lo, 0.001)
+        W, H = 560, 46
+        coords = " ".join(
+            f"{(i / (len(pts) - 1) * W):.1f},{(H - 4 - (v - lo) / span * (H - 8)):.1f}"
+            for i, v in enumerate(pts)
         )
-        _cards.append(f"<div class='kpi'><div class='label'>{label}</div>{value_html}</div>")
-    st.markdown('<div class="kpi-grid">' + "".join(_cards) + "</div>", unsafe_allow_html=True)
+        zero_y = H - 4 - (0.0 - lo) / span * (H - 8)
+        spark = (
+            f"<svg viewBox='0 0 {W} {H}' preserveAspectRatio='none' "
+            f"style='width:100%;height:{H}px;display:block;margin-top:10px;'>"
+            f"<line x1='0' y1='{zero_y:.1f}' x2='{W}' y2='{zero_y:.1f}' stroke='#e5e7eb' stroke-width='1' stroke-dasharray='4,4'/>"
+            f"<polyline points='{coords}' fill='none' stroke='#4800ff' stroke-width='2.5' "
+            f"stroke-linejoin='round' stroke-linecap='round'/></svg>"
+        )
+    net_col = "#16a34a" if total_pnl_rr >= 0 else "#ef4444"
+    chips = "".join(
+        f"<div style='flex:1;min-width:96px;background:#f8f9fc;border-radius:10px;padding:10px 12px;'>"
+        f"<div style='font-size:11px;font-weight:600;letter-spacing:0.06em;color:#94a3b8;'>{lab}</div>"
+        f"<div style='font-size:19px;font-weight:800;color:{col};margin-top:2px;'>{val}</div></div>"
+        for lab, val, col in [
+            ("TRADES", f"{stats['total']}", "#0f172a"),
+            ("WIN", f"{stats['win_rate']:.0f}%", "#0f172a"),
+            ("BREAK-EVEN", f"{stats['be_rate']:.0f}%", "#0f172a"),
+            ("LOSS", f"{stats['loss_rate']:.0f}%", "#0f172a"),
+            ("AVG WIN", f"{avg_rr_wins:.2f}R", "#4800ff"),
+        ]
+    )
+    st.markdown(
+        f"<div style='background:#ffffff;border:1px solid rgba(0,0,0,0.06);border-radius:16px;"
+        f"padding:20px 22px;box-shadow:0 2px 12px rgba(0,0,0,0.05);margin:2px 0 14px;'>"
+        f"<div style='font-size:12px;font-weight:600;letter-spacing:0.08em;color:#94a3b8;'>NET RESULT</div>"
+        f"<div style='font-size:34px;font-weight:800;color:{net_col};line-height:1.15;'>{total_pnl_rr:+,.1f}R</div>"
+        f"{spark}"
+        f"<div style='display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;'>{chips}</div>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
     st.markdown("<div class='spacer-12'></div>", unsafe_allow_html=True)
 
     # Render tabs with data
@@ -1368,16 +1396,8 @@ def main() -> None:
     st.session_state["layout_index"] = 1 if layout_mode == "mobile" else 0
     st.session_state["layout_mode"] = layout_mode
 
-    # Desktop sidebar controls
-    if layout_mode == "desktop":
-        st.sidebar.selectbox(
-            "Page",
-            [PageNames.DASHBOARD, PageNames.CONNECT],
-            index=0 if st.session_state.get(SessionKeys.NAV_PAGE) == PageNames.DASHBOARD else 1,
-            key=SessionKeys.NAV_PAGE,
-        )
-    else:
-        _inject_mobile_css(layout_mode)
+    # Command-bar layout: no sidebar on any device (page nav lives in Filters)
+    _inject_mobile_css("mobile")
 
     # Route to appropriate page
     if st.session_state.get(SessionKeys.NAV_PAGE) == PageNames.CONNECT:
