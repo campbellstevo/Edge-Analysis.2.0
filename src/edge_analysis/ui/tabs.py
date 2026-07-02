@@ -545,10 +545,11 @@ def _growth_tab(f: pd.DataFrame, df_all: pd.DataFrame, styler):
         st.markdown("### Cumulative PnL (RR)")
         if pnl_vals:
             area = (alt.Chart(alt.Data(values=pnl_vals)).mark_area(opacity=0.12, color="#4800ff")
-                    .encode(x=x_time, y=alt.Y("CumPnL:Q", title="Cumulative PnL (RR)")))
+                    .encode(x=x_time, y=alt.Y("CumPnL:Q", title="Cumulative PnL (RR)",
+                                               scale=alt.Scale(padding=14))))
             line = (alt.Chart(alt.Data(values=pnl_vals))
                     .mark_line(strokeWidth=2, color="#4800ff", interpolate="linear")
-                    .encode(x=x_time, y="CumPnL:Q"))
+                    .encode(x=x_time, y=alt.Y("CumPnL:Q", title=None, scale=alt.Scale(padding=14))))
             st.altair_chart(styler(alt.layer(area, line).properties(height=320)),
                             use_container_width=True)
         else:
@@ -556,7 +557,7 @@ def _growth_tab(f: pd.DataFrame, df_all: pd.DataFrame, styler):
     with c_right:
         st.markdown("### Win Rate (%)")
         if wr_vals:
-            line_color = "#0f172a" if st.session_state.get("ui_theme", "light") == "light" else "#e5e7eb"
+            line_color = "#4800ff"
             xwr = _x_enc(axis_fmt)
             line = (alt.Chart(alt.Data(values=wr_vals))
                     .mark_line(strokeWidth=2, color=line_color, interpolate="linear")
