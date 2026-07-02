@@ -938,13 +938,13 @@ def _render_login_page():
     )
     with st.expander("On your phone and it opens the Notion app instead?"):
         st.markdown(
-            "The Notion app on your phone can grab the sign-in page before your "
-            "browser finishes. If that happens:\n\n"
-            "1. Open this site in a **private / incognito tab** (private tabs never "
-            "switch to apps) and sign in there — **you only need to do this once**, "
-            "this device stays signed in afterwards.\n"
-            "2. Or, if you're signed in on a computer, open the sidebar there and "
-            "scan the QR under *Use on your phone*."
+            "That happens when your phone's **browser** isn't signed in to Notion — "
+            "the sign-in detour is what switches you to the app. One-time fix:\n\n"
+            "1. In this browser, go to **notion.so** and log in "
+            "(if it offers to open the app, choose *Continue in browser*).\n"
+            "2. Come back here and tap **Sign in with Notion** — you'll get the "
+            "normal page to select your template.\n\n"
+            "After that, this device stays signed in automatically."
         )
 
 
