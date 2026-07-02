@@ -1316,7 +1316,7 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
     day_flags["__violation"] = day_flags["overtrade"] | day_flags["revenge"]
     total_days = len(day_flags)
     clean_days = int((~day_flags["__violation"]).sum())
-    discipline_score = round((clean_days / max(1, total_days)) * 100, 1)
+    discipline_score = round((clean_days / max(1, total_days)) * 100)
 
     if outcome_col:
         day_outcome = g.groupby("__date").agg(
@@ -1416,7 +1416,7 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
                 .encode(
                     x=alt.X("Date:T", title=None,
                              axis=alt.Axis(format="%b %d", labelAngle=-45, labelOverlap=True)),
-                    y=alt.Y("Score:Q", title="Score (%)", scale=alt.Scale(domain=[0, 100])))
+                    y=alt.Y("Score:Q", title="Score (%)", scale=alt.Scale(domain=[0, 105])))
                 .properties(height=240))
         st.altair_chart(styler(alt.layer(area, line)), use_container_width=True)
         st.markdown(
@@ -3367,7 +3367,7 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
         f"<div style='font-size:30px;font-weight:800;color:{pc};'>{cur_r:+.1f}R"
         f"<span style='font-size:15px;color:#64748b;font-weight:600;'> / {need_r:.0f}R target</span></div></div>"
         f"<div style='font-size:13px;color:#64748b;'>{target_pct:.0f}% at {risk_pct:.2f}% risk = "
-        f"<b>{need_r:.0f}R</b> · {len(cur)} trades this month</div></div>"
+        f"<b>{need_r:.0f}R</b> · {len(cur)} trade{'s' if len(cur) != 1 else ''} this month</div></div>"
         f"<div style='height:10px;border-radius:5px;background:#eef0f5;margin-top:12px;overflow:hidden;'>"
         f"<div style='width:{prog:.1f}%;height:10px;background:{pc};border-radius:5px;'></div></div>"
         f"</div>",
