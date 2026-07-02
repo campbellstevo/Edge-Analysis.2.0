@@ -908,7 +908,7 @@ def inject_theme():
 
     /* Page chrome: no decoration strip, transparent header, no footer/badge */
     [data-testid="stDecoration"] {{ display: none !important; }}
-    [data-testid="stHeader"] {{ background: #f6f7fb !important; }}
+    [data-testid="stHeader"], .stAppHeader, [data-testid="stToolbar"] {{ background: #f6f7fb !important; }}
     [data-testid="stSidebar"] > div:first-child {{ padding-top: 1.5rem !important; }}
     section.main div[data-testid="stVerticalBlock"],
     [data-testid="stMain"] div[data-testid="stVerticalBlock"] {{ gap: 0.75rem !important; }}
