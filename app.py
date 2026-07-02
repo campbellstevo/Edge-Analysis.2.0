@@ -23,7 +23,7 @@ import pandas as pd
 import streamlit as st
 
 # Import theme functions up front for consolidated styling
-from edge_analysis.ui.theme import inject_theme, inject_header, setup_favicon, get_chart_styler
+from edge_analysis.ui.theme import inject_theme, inject_header, inject_header_bar, setup_favicon, get_chart_styler
 
 # ------------------------------- Constants ------------------------------------
 BRAND_PURPLE = "#4800ff"
@@ -1157,7 +1157,6 @@ def render_dashboard(mobile: bool):
     )
 
     styler = get_chart_styler()
-    inject_header("light")
 
     # Get token and database ID
     token = (
@@ -1176,12 +1175,14 @@ def render_dashboard(mobile: bool):
         if not dbid:
             dbid = _runtime_secret("DATABASE_ID")
 
+    inject_header_bar("Live · Notion connected" if (token and dbid) else "Not connected",
+                      bool(token and dbid))
+
     with st.spinner("Fetching trades from Notion…"):
         df = load_live_df(token, dbid)
 
-    # Connection status banner
     if token and dbid:
-        st.markdown("<div class='live-banner'>Live Notion Connected</div>", unsafe_allow_html=True)
+        pass
     else:
         with st.container():
             st.markdown(
@@ -1282,7 +1283,7 @@ def render_dashboard(mobile: bool):
     total_pnl_rr = float(f["PnL_from_RR"].sum())
 
     # Display KPIs
-    st.markdown('<div class="kpi-grid">', unsafe_allow_html=True)
+    _cards = []
     for label, value in [
         ("TOTAL TRADES", stats["total"]),
         ("WIN %", f"{stats['win_rate']:.0f}%"),
@@ -1296,11 +1297,8 @@ def render_dashboard(mobile: bool):
             if label == "TOTAL PNL (FROM RR)"
             else f"<div class='value'>{value}</div>"
         )
-        st.markdown(
-            f"<div class='kpi'><div class='label'>{label}</div>{value_html}</div>",
-            unsafe_allow_html=True,
-        )
-    st.markdown("</div>", unsafe_allow_html=True)
+        _cards.append(f"<div class='kpi'><div class='label'>{label}</div>{value_html}</div>")
+    st.markdown('<div class="kpi-grid">' + "".join(_cards) + "</div>", unsafe_allow_html=True)
     st.markdown("<div class='spacer-12'></div>", unsafe_allow_html=True)
 
     # Render tabs with data

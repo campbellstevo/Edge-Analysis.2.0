@@ -682,7 +682,7 @@ def inject_theme():
     
     .kpi-grid {{
       display: grid;
-      grid-template-columns: repeat(6, minmax(0,1fr));
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
       gap: 14px;
       margin: 8px 0 18px 0;
     }}
@@ -910,6 +910,18 @@ def inject_theme():
     [data-testid="stDecoration"] {{ display: none !important; }}
     [data-testid="stHeader"], .stAppHeader, [data-testid="stToolbar"] {{ background: #f6f7fb !important; }}
     [data-testid="stSidebar"] > div:first-child {{ padding-top: 1.5rem !important; }}
+    [data-testid="stSidebar"] {{
+        width: 18rem !important;
+        min-width: 18rem !important;
+        max-width: 18rem !important;
+    }}
+    .ea-topbar-logo img {{ width: 170px !important; height: auto; display: block; }}
+    div[data-testid="stAlert"] {{ border-radius: 12px !important; }}
+    div[data-testid="stAlert"]:has([data-testid="stAlertContentInfo"]) {{
+        background: #f8fafc !important;
+        border: 1px solid #eef0f5 !important;
+        color: #64748b !important;
+    }}
     section.main div[data-testid="stVerticalBlock"],
     [data-testid="stMain"] div[data-testid="stVerticalBlock"] {{ gap: 0.75rem !important; }}
     [data-testid="stStatusWidget"] {{ visibility: hidden !important; }}
@@ -1026,6 +1038,28 @@ def _img_tag_from_file(path: Path) -> str:
         return f"<img class='header-logo-img' src='data:image/png;base64,{b64}' alt='Edge Analysis'/>"
     except Exception:
         return ""
+
+
+def inject_header_bar(status_text: str = "", status_ok: bool = True):
+    """Compact top bar: logo left, connection pill right."""
+    logo_path = HEADER_LOGO_LIGHT if HEADER_LOGO_LIGHT.exists() else HEADER_LOGO_DARK
+    logo = _img_tag_from_file(logo_path) if logo_path and logo_path.exists() else ""
+    pill = ""
+    if status_text:
+        col = "#16a34a" if status_ok else "#ef4444"
+        pill = (
+            "<div style='display:flex;align-items:center;gap:8px;background:#ffffff;"
+            "border:1px solid rgba(0,0,0,0.06);border-radius:999px;padding:8px 16px;"
+            "box-shadow:0 2px 10px rgba(0,0,0,0.04);font-size:13px;font-weight:600;color:#334155;'>"
+            f"<span style='width:8px;height:8px;border-radius:50%;background:{col};display:inline-block;'></span>"
+            f"{status_text}</div>"
+        )
+    st.markdown(
+        "<div class='ea-topbar' style='display:flex;justify-content:space-between;"
+        "align-items:center;gap:16px;margin:0 0 14px;'>"
+        f"<div class='ea-topbar-logo'>{logo}</div>{pill}</div>",
+        unsafe_allow_html=True,
+    )
 
 
 def inject_header(_theme_ignored: str = "light"):
