@@ -996,6 +996,23 @@ def inject_theme():
     /* Tab underline: only under the tabs, not the full page width */
     .stTabs [data-baseweb="tab-border"] {{ display: none !important; }}
 
+    /* Tabs as pills */
+    .stTabs [data-baseweb="tab-list"] {{ gap: 8px !important; }}
+    .stTabs button[role="tab"] {{
+        background: #ffffff !important;
+        border: 1px solid rgba(0,0,0,0.06) !important;
+        border-radius: 999px !important;
+        padding: 4px 18px !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.03) !important;
+    }}
+    .stTabs button[role="tab"] p {{ color: #64748b !important; font-weight: 600 !important; }}
+    .stTabs button[role="tab"][aria-selected="true"] {{
+        background: #4800ff !important;
+        border-color: #4800ff !important;
+    }}
+    .stTabs button[role="tab"][aria-selected="true"] p {{ color: #ffffff !important; }}
+    .stTabs [data-baseweb="tab-highlight"] {{ display: none !important; }}
+
     </style>
     """, unsafe_allow_html=True)
 

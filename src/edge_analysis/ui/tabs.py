@@ -3327,6 +3327,16 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
         return
     g = df_raw.copy()
     g["__dt"] = pd.to_datetime(g["Date"], errors="coerce")
+    # MT5 timestamps are UTC — group by the trader's calendar (Melbourne)
+    if "Hour (Melb)" in g.columns:
+        try:
+            if getattr(g["__dt"].dt, "tz", None) is None:
+                g["__dt"] = (g["__dt"].dt.tz_localize("UTC")
+                             .dt.tz_convert("Australia/Melbourne").dt.tz_localize(None))
+            else:
+                g["__dt"] = g["__dt"].dt.tz_convert("Australia/Melbourne").dt.tz_localize(None)
+        except Exception:
+            pass
     g = g[g["__dt"].notna()]
     rr_col = next((c for c in ["Closed RR", "RR", "Closed R"] if c in g.columns), None)
     if rr_col is None or g.empty:
@@ -3391,27 +3401,49 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
     if has_usd:
         monthly["usd"] = mg["__usd"].resample("MS").sum()
     monthly = monthly[monthly["n"] > 0].tail(12)
-    cards = []
-    for ts, row in monthly.iterrows():
-        col = "#16a34a" if row["r"] >= 0 else "#ef4444"
-        hit = row["r"] >= need_r
-        badge = ("<span style='font-size:10px;font-weight:700;color:#16a34a;background:#e8f7ee;"
-                 "border-radius:999px;padding:2px 8px;margin-left:6px;'>TARGET</span>" if hit else "")
-        usd_s = (f"<div style='font-size:12px;color:#64748b;'>{'-' if row['usd'] < 0 else ''}"
-                 f"${abs(row['usd']):,.0f}</div>") if has_usd and pd.notna(row.get("usd")) else ""
-        cards.append(
-            f"<div style='background:#fff;border:1px solid rgba(0,0,0,0.06);border-radius:12px;"
-            f"padding:12px 14px;box-shadow:0 2px 10px rgba(0,0,0,0.04);'>"
-            f"<div style='font-size:12px;font-weight:600;color:#64748b;'>{ts.strftime('%b %Y')}{badge}</div>"
-            f"<div style='font-size:22px;font-weight:800;color:{col};'>{row['r']:+.1f}R</div>"
-            f"{usd_s}<div style='font-size:11px;color:#94a3b8;'>{int(row['n'])} trades</div></div>"
-        )
-    if cards:
-        st.markdown(
-            "<div style='display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));"
-            "gap:12px;margin:6px 0 4px;'>" + "".join(cards) + "</div>",
-            unsafe_allow_html=True,
-        )
+    if not monthly.empty:
+        md = monthly.reset_index()
+        md.columns = ["dt"] + list(md.columns[1:])
+        md["MonthLab"] = md["dt"].dt.strftime("%b %y")
+        md["NetR"] = md["r"].round(2)
+        md["Colour"] = md["NetR"].apply(lambda x: "good" if x >= 0 else "bad")
+        md["Lab"] = md["NetR"].apply(lambda v: f"{v:+.1f}R")
+        md["Trades"] = md["n"].astype(int)
+        cols = ["MonthLab", "NetR", "Colour", "Lab", "Trades"]
+        if has_usd and "usd" in md.columns:
+            md["USD"] = md["usd"].round(0)
+            cols.append("USD")
+        order = list(md["MonthLab"])
+        vals = _to_alt_values(md[cols])
+        lo = min(float(md["NetR"].min()), 0.0); hi = max(float(md["NetR"].max()), need_r)
+        span = max(hi - lo, 1.0)
+        dom = [lo - span * 0.18, hi + span * 0.22]
+        base = alt.Chart(alt.Data(values=vals))
+        xenc = alt.X("MonthLab:N", sort=order, title=None,
+                     axis=alt.Axis(labelAngle=0, labelFontSize=12, labelColor="#0f172a",
+                                   ticks=False, domain=False))
+        tip = [alt.Tooltip("MonthLab:N", title=" "), alt.Tooltip("NetR:Q", title="Net R", format="+.2f"),
+               alt.Tooltip("Trades:Q")]
+        if "USD" in cols:
+            tip.append(alt.Tooltip("USD:Q", title="Net $", format="+,.0f"))
+        bars = base.mark_bar(size=34, cornerRadiusTopLeft=6, cornerRadiusTopRight=6).encode(
+            x=xenc,
+            y=alt.Y("NetR:Q", title="Net R", scale=alt.Scale(domain=dom),
+                    axis=alt.Axis(format="+.0f", grid=True, gridColor="#eef0f5",
+                                  labelColor="#94a3b8", titleColor="#94a3b8")),
+            color=alt.Color("Colour:N", legend=None,
+                            scale=alt.Scale(domain=["good", "bad"], range=["#16a34a", "#ef4444"])),
+            tooltip=tip)
+        text = base.mark_text(dy=-10, fontSize=12, fontWeight="bold", color="#334155").encode(
+            x=xenc, y=alt.Y("NetR:Q", scale=alt.Scale(domain=dom)), text="Lab:N")
+        zero = (alt.Chart(alt.Data(values=[{"y": 0}]))
+                .mark_rule(color="#cbd5e1", strokeWidth=1.5).encode(y=alt.Y("y:Q", title=None)))
+        tgt = (alt.Chart(alt.Data(values=[{"y": float(need_r)}]))
+               .mark_rule(color="#4800ff", strokeDash=[5, 5], strokeWidth=1.5)
+               .encode(y=alt.Y("y:Q", title=None)))
+        st.altair_chart(styler(alt.layer(zero, tgt, bars, text).properties(height=300)),
+                        use_container_width=True)
+        st.caption(f"Dashed purple line = your {target_pct:.0f}% target pace ({need_r:.0f}R per month).")
         hits = int((monthly["r"] >= need_r).sum())
         pos = int((monthly["r"] > 0).sum())
         _insight_box(
