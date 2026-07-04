@@ -190,20 +190,24 @@ def render_filters(
             st.session_state["ea_menu"] = (_cur_page if _cur_page in _menu_opts
                                            else PageNames.DASHBOARD)
         st.selectbox("Page", _menu_opts, key="ea_menu", on_change=_menu_cb)
-        if st.session_state.get("ea_show_qr"):
-            _phone_qr_section()
+    if st.session_state.pop("ea_show_qr", False):
+        if _qr_dialog is not None:
+            _qr_dialog()
+        else:
+            with st.expander("Sign in on your phone", expanded=True):
+                _phone_qr_body()
 
     return sel_inst, sel_em, sel_sess, date_range, sel_acct, sel_tot
 
 
-def _phone_qr_section() -> None:
-    """Compact phone handoff inside the Filters panel: scan once, then the
-    phone stays signed in (device-persistent login)."""
+def _phone_qr_body() -> None:
+    """Phone handoff: scan once, phone stays signed in (device-persistent login)."""
     token = (
         st.session_state.get(SessionKeys.USER_TOKEN)
         or st.session_state.get(SessionKeys.OAUTH_TOKEN)
     )
     if not token:
+        st.caption("Sign in on this computer first, then come back here.")
         return
     from urllib.parse import urlencode
     params = {"notion_token": token}
@@ -211,17 +215,34 @@ def _phone_qr_section() -> None:
     if dbid:
         params["database_id"] = dbid
     url = "https://edge-analysis2.streamlit.app/?" + urlencode(params)
-    st.markdown("<div style='border-top:1px solid #eef0f5;margin:10px 0 8px;'></div>",
-                unsafe_allow_html=True)
-    st.caption("Sign in on your phone: scan once, then add to home screen. Keep this code private.")
+    qr_html = ""
     try:
         import qrcode
         import qrcode.image.svg as _qsvg
         _svg = qrcode.make(url, image_factory=_qsvg.SvgPathImage).to_string().decode("utf-8")
-        _svg = _svg.replace(
+        qr_html = _svg.replace(
             "<svg",
-            "<svg style='width:150px;height:150px;background:#fff;padding:8px;"
-            "border:1px solid rgba(0,0,0,0.06);border-radius:12px;'", 1)
-        st.markdown(f"<div style='text-align:center'>{_svg}</div>", unsafe_allow_html=True)
+            "<svg style='width:210px;height:210px;background:#fff;padding:10px;"
+            "border:1px solid rgba(0,0,0,0.08);border-radius:14px;'", 1)
     except Exception:
+        pass
+    st.markdown(
+        "<div style='text-align:center;padding:4px 0 2px;'>" + qr_html + "</div>"
+        "<div style='font-size:14px;color:#334155;line-height:2;padding:10px 6px 2px;'>"
+        "<b>1.</b> Point your phone camera at the code<br>"
+        "<b>2.</b> Open the link — the dashboard signs in by itself<br>"
+        "<b>3.</b> Add it to your home screen and you're set"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+    if not qr_html:
         st.code(url, language=None)
+    st.caption("This code signs anyone in to your dashboard — don't share or screenshot it.")
+
+
+try:
+    @st.dialog("Sign in on your phone")
+    def _qr_dialog():
+        _phone_qr_body()
+except Exception:
+    _qr_dialog = None

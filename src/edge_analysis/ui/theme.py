@@ -1111,6 +1111,29 @@ def inject_dark_overlay():
     [data-testid="stRadio"] label span {
         color: #c9d0dc !important;
     }
+    div[role="dialog"], [data-testid="stDialog"] > div > div {
+        background: #141926 !important;
+        border-color: rgba(255,255,255,0.09) !important;
+    }
+    div[role="dialog"] p, div[role="dialog"] h1, div[role="dialog"] h2,
+    div[role="dialog"] h3, div[role="dialog"] span {
+        color: #d3d9e3 !important;
+    }
+    div[role="dialog"] div[style*="color: rgb(51, 65, 85)"] { color: #c9d0dc !important; }
+    [data-baseweb="calendar"], [data-baseweb="datepicker"] {
+        background: #161b27 !important;
+        color: #d3d9e3 !important;
+    }
+    [data-baseweb="calendar"] button { color: #d3d9e3 !important; }
+    li[role="option"]:hover, [data-baseweb="menu"] [aria-selected="true"] {
+        background: #232a3a !important;
+    }
+    .stCode, pre, code {
+        background: #10141d !important;
+        color: #c9d0dc !important;
+    }
+    [data-testid="stSpinner"] p { color: #9aa4b4 !important; }
+    .stTabs [data-baseweb="tab-list"] { background: transparent !important; }
     </style>
     """, unsafe_allow_html=True)
 
