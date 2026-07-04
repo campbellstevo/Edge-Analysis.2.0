@@ -1059,6 +1059,7 @@ def inject_dark_overlay():
     [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p {
         color: #8791a1 !important;
     }
+    .ea-topbar-logo img { filter: invert(1) hue-rotate(180deg); }
     .kpi { background: #161b27 !important; border-color: rgba(255,255,255,0.09) !important; }
     .kpi .label { color: #8791a1 !important; }
     .kpi .value { color: #e8ebf1; }
