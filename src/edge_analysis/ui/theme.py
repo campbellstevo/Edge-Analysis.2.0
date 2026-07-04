@@ -1037,24 +1037,23 @@ def inject_dark_overlay():
     [data-testid="stHeader"], .stAppHeader, [data-testid="stToolbar"] {
         background: #0e1117 !important;
     }
-    div[style*="background:#fff"], div[style*="background: #fff"],
-    div[style*="background:#ffffff"] {
+    div[style*="background: rgb(255, 255, 255)"] {
         background: #161b27 !important;
         border-color: rgba(255,255,255,0.09) !important;
     }
-    div[style*="background:#f8f9fc"], div[style*="background:#f8fafc"] {
+    div[style*="background: rgb(248, 249, 252)"], div[style*="background: rgb(248, 250, 252)"] {
         background: #1d2331 !important;
     }
-    div[style*="background:#eef0f5"] { background: #262c3b !important; }
-    div[style*="background:#f0ebff"] {
+    div[style*="background: rgb(238, 240, 245)"] { background: #262c3b !important; }
+    div[style*="background: rgb(240, 235, 255)"] {
         background: #251d42 !important;
         color: #d8d2f0 !important;
     }
-    div[style*="background:#e8f7ee"] { background: #143323 !important; }
-    div[style*="border-top:2px solid #eef0f5"] { border-color: #232937 !important; }
-    [style*="color:#0f172a"] { color: #e8ebf1 !important; }
-    [style*="color:#334155"] { color: #c9d0dc !important; }
-    [style*="color:#64748b"] { color: #9aa4b4 !important; }
+    div[style*="background: rgb(232, 247, 238)"] { background: #143323 !important; }
+    div[style*="border-top: 2px solid rgb(238, 240, 245)"] { border-color: #232937 !important; }
+    [style*="color: rgb(15, 23, 42)"] { color: #e8ebf1 !important; }
+    [style*="color: rgb(51, 65, 85)"] { color: #c9d0dc !important; }
+    [style*="color: rgb(100, 116, 139)"] { color: #9aa4b4 !important; }
     .stMarkdown, .stMarkdown p, .stMarkdown li { color: #d3d9e3 !important; }
     .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4 { color: #eef1f6 !important; }
     [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p {
