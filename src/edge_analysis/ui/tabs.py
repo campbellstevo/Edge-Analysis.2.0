@@ -3393,6 +3393,53 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
                f"needs roughly <b>{n_need}</b> more trades.")
         _insight_box(msg, "good" if left_r <= 0 else "info")
 
+    # ── Recommended pace: derived from expectancy, volatility, frequency ─────
+    st.markdown("### Recommended")
+    st.caption("Derived from your own expectancy, volatility and trade frequency — a pace your data supports, not a wish.")
+    sd = float(g["__rr"].std()) if len(g) > 2 else 0.0
+    mg_tmp = g.set_index("__dt").sort_index()
+    _mn = mg_tmp["__rr"].resample("MS").size()
+    tpm_est = float(_mn[_mn > 0].mean()) if (_mn > 0).any() else float(len(g))
+    exp_m = exp * tpm_est
+    sd_m = sd * float(np.sqrt(max(tpm_est, 1.0)))
+    if exp <= 0:
+        _insight_box(
+            "Your expectancy is not positive yet — a monthly profit target isn't meaningful "
+            "until the edge is. Focus on the Refinements tab first.", "warn")
+    else:
+        rec_target = max(1.0, exp_m - 0.25 * sd_m)
+        rec_loss = min(-1.0, exp_m - 1.75 * sd_m)
+        recs = [
+            ("RECOMMENDED MONTHLY TARGET", f"+{rec_target:.0f}R",
+             f"≈ {rec_target * float(risk_pct):.1f}% at {risk_pct:.2f}% risk", "#16a34a"),
+            ("RECOMMENDED MAX MONTHLY LOSS", f"{rec_loss:.0f}R",
+             f"≈ {rec_loss * float(risk_pct):.1f}% — stop trading if hit", "#ef4444"),
+            ("WEEKLY TARGET PACE", f"+{rec_target / 4.33:.1f}R",
+             "monthly target ÷ 4.33 weeks", "#16a34a"),
+            ("WEEKLY LOSS CAP", f"{rec_loss / 4.33:.1f}R",
+             "max monthly loss ÷ 4.33", "#ef4444"),
+        ]
+        cards = "".join(
+            f"<div style='flex:1;min-width:170px;background:#fff;border:1px solid rgba(0,0,0,0.06);"
+            f"border-radius:12px;padding:12px 14px;box-shadow:0 2px 10px rgba(0,0,0,0.04);'>"
+            f"<div style='font-size:11px;font-weight:600;letter-spacing:0.05em;color:#94a3b8;'>{lab}</div>"
+            f"<div style='font-size:22px;font-weight:800;color:{col};'>{val}</div>"
+            f"<div style='font-size:12px;color:#64748b;'>{sub}</div></div>"
+            for lab, val, sub, col in recs)
+        st.markdown(f"<div style='display:flex;gap:12px;flex-wrap:wrap;margin:6px 0;'>{cards}</div>",
+                    unsafe_allow_html=True)
+        gap = float(target_pct) / float(risk_pct) - rec_target
+        if gap > 1.5:
+            _insight_box(
+                f"Your {target_pct:.0f}% target ({float(target_pct)/float(risk_pct):.0f}R) is "
+                f"<b>{gap:.0f}R above</b> what your current stats support (+{rec_target:.0f}R). "
+                f"Either lower the target or grow the expectancy — chasing the gap is how tilt starts.",
+                "warn")
+        elif gap < -1.5:
+            _insight_box(
+                f"Your data supports more than your {target_pct:.0f}% target — "
+                f"about <b>+{rec_target:.0f}R</b> a month at current pace. Room to aim higher.", "good")
+
     st.markdown("### Track Record")
     st.caption("Net R per calendar month" + (" · dollars from MT5 where available." if has_usd else "."))
     mg = g.set_index("__dt").sort_index()

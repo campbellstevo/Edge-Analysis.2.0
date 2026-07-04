@@ -23,7 +23,7 @@ import pandas as pd
 import streamlit as st
 
 # Import theme functions up front for consolidated styling
-from edge_analysis.ui.theme import inject_theme, inject_header, inject_header_bar, setup_favicon, get_chart_styler
+from edge_analysis.ui.theme import inject_theme, inject_header, inject_header_bar, inject_dark_overlay, setup_favicon, get_chart_styler
 
 # ------------------------------- Constants ------------------------------------
 BRAND_PURPLE = "#4800ff"
@@ -1351,6 +1351,18 @@ def main() -> None:
     """Main application entry point."""
     # Require login
     _require_notion_login()
+
+    # Theme preference: restore from this device, persist changes, apply overlay
+    if "ea_theme_pref" not in st.session_state:
+        _saved_theme = _js_eval("localStorage.getItem('ea_theme') || ''", key="ea_theme_load")
+        if _saved_theme in ("dark", "light"):
+            st.session_state["ea_theme_pref"] = _saved_theme
+    if st.session_state.pop("ea_theme_dirty", False):
+        _js_eval("localStorage.setItem('ea_theme', "
+                 + json.dumps(st.session_state.get("ea_theme_pref", "light")) + ")",
+                 key="ea_theme_save")
+    if st.session_state.get("ea_theme_pref") == "dark":
+        inject_dark_overlay()
 
     # Recover the template choice from this device if the server forgot it
     _recover_db_from_device()

@@ -166,13 +166,32 @@ def render_filters(
                 value=st.session_state.get("filters_date_range", (min_date, max_date)),
                 key="filters_date_range",
             )
-        st.selectbox(
-            "Page",
-            [PageNames.DASHBOARD, PageNames.CONNECT],
-            index=0 if st.session_state.get(SessionKeys.NAV_PAGE) == PageNames.DASHBOARD else 1,
-            key=SessionKeys.NAV_PAGE,
-        )
-        _phone_qr_section()
+        _theme_label = ("Light theme" if st.session_state.get("ea_theme_pref") == "dark"
+                        else "Dark theme")
+        _menu_opts = [PageNames.DASHBOARD, PageNames.CONNECT, "Sign in on iPhone", _theme_label]
+
+        def _menu_cb():
+            choice = st.session_state.get("ea_menu")
+            page_now = st.session_state.get(SessionKeys.NAV_PAGE, PageNames.DASHBOARD)
+            if choice in (PageNames.DASHBOARD, PageNames.CONNECT):
+                st.session_state[SessionKeys.NAV_TARGET] = choice
+                st.session_state["ea_show_qr"] = False
+            elif choice == "Sign in on iPhone":
+                st.session_state["ea_show_qr"] = True
+                st.session_state["ea_menu"] = page_now
+            else:  # theme toggle
+                cur = st.session_state.get("ea_theme_pref", "light")
+                st.session_state["ea_theme_pref"] = "dark" if cur != "dark" else "light"
+                st.session_state["ea_theme_dirty"] = True
+                st.session_state["ea_menu"] = page_now
+
+        if st.session_state.get("ea_menu") not in _menu_opts:
+            _cur_page = st.session_state.get(SessionKeys.NAV_PAGE, PageNames.DASHBOARD)
+            st.session_state["ea_menu"] = (_cur_page if _cur_page in _menu_opts
+                                           else PageNames.DASHBOARD)
+        st.selectbox("Page", _menu_opts, key="ea_menu", on_change=_menu_cb)
+        if st.session_state.get("ea_show_qr"):
+            _phone_qr_section()
 
     return sel_inst, sel_em, sel_sess, date_range, sel_acct, sel_tot
 

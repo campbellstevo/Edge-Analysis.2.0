@@ -1025,6 +1025,96 @@ def inject_theme():
     """, unsafe_allow_html=True)
 
 
+
+
+def inject_dark_overlay():
+    """Dark theme overlay. Injected after the base (light) theme when the user
+    picks dark mode — !important rules override the light inline styles.
+    Charts and data tables intentionally stay as white cards for legibility."""
+    st.markdown("""
+    <style>
+    .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"],
+    [data-testid="stHeader"], .stAppHeader, [data-testid="stToolbar"] {
+        background: #0e1117 !important;
+    }
+    div[style*="background:#fff"], div[style*="background: #fff"],
+    div[style*="background:#ffffff"] {
+        background: #161b27 !important;
+        border-color: rgba(255,255,255,0.09) !important;
+    }
+    div[style*="background:#f8f9fc"], div[style*="background:#f8fafc"] {
+        background: #1d2331 !important;
+    }
+    div[style*="background:#eef0f5"] { background: #262c3b !important; }
+    div[style*="background:#f0ebff"] {
+        background: #251d42 !important;
+        color: #d8d2f0 !important;
+    }
+    div[style*="background:#e8f7ee"] { background: #143323 !important; }
+    div[style*="border-top:2px solid #eef0f5"] { border-color: #232937 !important; }
+    [style*="color:#0f172a"] { color: #e8ebf1 !important; }
+    [style*="color:#334155"] { color: #c9d0dc !important; }
+    [style*="color:#64748b"] { color: #9aa4b4 !important; }
+    .stMarkdown, .stMarkdown p, .stMarkdown li { color: #d3d9e3 !important; }
+    .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4 { color: #eef1f6 !important; }
+    [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p {
+        color: #8791a1 !important;
+    }
+    .kpi { background: #161b27 !important; border-color: rgba(255,255,255,0.09) !important; }
+    .kpi .label { color: #8791a1 !important; }
+    .kpi .value { color: #e8ebf1; }
+    .kpi .muted { color: #8791a1 !important; }
+    hr { border-top-color: #232937 !important; }
+    [data-baseweb="select"] > div, [data-baseweb="input"] > div,
+    [data-baseweb="base-input"], input, textarea {
+        background: #161b27 !important;
+        color: #e8ebf1 !important;
+        border-color: rgba(255,255,255,0.12) !important;
+    }
+    ul[role="listbox"], [data-baseweb="menu"], [data-baseweb="popover"] > div {
+        background: #161b27 !important;
+    }
+    ul[role="listbox"] li, [role="option"] { color: #d3d9e3 !important; }
+    div[data-testid="stExpander"] > details, [data-testid="stPopoverBody"] {
+        background: #141926 !important;
+        border-color: rgba(255,255,255,0.09) !important;
+    }
+    div[data-testid="stExpander"] summary { color: #c9d0dc !important; }
+    [data-testid="stPopover"] > div > button, [data-testid="stPopoverButton"],
+    .stButton button {
+        background: #161b27 !important;
+        border-color: rgba(255,255,255,0.12) !important;
+        color: #c9d0dc !important;
+    }
+    div[data-testid="stNumberInput"] {
+        background: #161b27 !important;
+        border-color: rgba(255,255,255,0.09) !important;
+    }
+    div[data-testid="stNumberInput"] label, div[data-testid="stSlider"] label,
+    [data-testid="stSelectbox"] label, [data-testid="stDateInput"] label,
+    [data-testid="stWidgetLabel"] p {
+        color: #9aa4b4 !important;
+    }
+    .stTabs button[role="tab"] {
+        background: #161b27 !important;
+        border-color: rgba(255,255,255,0.09) !important;
+    }
+    .stTabs button[role="tab"] p { color: #9aa4b4 !important; }
+    .stTabs button[role="tab"][aria-selected="true"] { background: #4800ff !important; }
+    .stTabs button[role="tab"][aria-selected="true"] p { color: #ffffff !important; }
+    div[data-testid="stAlert"]:has([data-testid="stAlertContentInfo"]) {
+        background: #141926 !important;
+        border-color: rgba(255,255,255,0.09) !important;
+        color: #9aa4b4 !important;
+    }
+    [data-testid="stRadio"] label, [data-testid="stRadio"] label p,
+    [data-testid="stRadio"] label span {
+        color: #c9d0dc !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+
 # ───────────────────────── Favicon helpers ─────────────────────────
 def _square_canvas(im: Image.Image, size: int = 256) -> Image.Image:
     canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
