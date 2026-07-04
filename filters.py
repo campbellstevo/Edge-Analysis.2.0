@@ -135,13 +135,36 @@ def render_filters(
                 else 0,
                 key="filters_sess_select",
             )
-            sel_acct = st.selectbox(
-                "Account",
-                acct_opts,
-                index=acct_opts.index(st.session_state.get("filters_acct_select", "All"))
-                if st.session_state.get("filters_acct_select", "All") in acct_opts
-                else 0,
-                key="filters_acct_select",
+            sel_acct = "All"
+        c3, c4 = st.columns(2, gap="small")
+        sel_tot = "All"
+        with c3:
+            if tot_opts and len(tot_opts) > 1:
+                _cur_tot = st.session_state.get("filters_tot_select", "All")
+                if _cur_tot not in tot_opts:
+                    _cur_tot = "All"
+                sel_tot = st.selectbox(
+                    "Trade Type",
+                    tot_opts,
+                    index=tot_opts.index(_cur_tot),
+                    key="filters_tot_select",
+                )
+        with c4:
+            current_mode = st.session_state.get("filters_date_mode", "All")
+            if current_mode not in date_mode_options:
+                current_mode = "All"
+            date_mode = st.selectbox(
+                "Date range",
+                date_mode_options,
+                index=date_mode_options.index(current_mode),
+                key="filters_date_mode",
+            )
+        date_range: Optional[DateRange] = None
+        if date_mode == "Custom":
+            date_range = st.date_input(
+                "Custom dates",
+                value=st.session_state.get("filters_date_range", (min_date, max_date)),
+                key="filters_date_range",
             )
         st.selectbox(
             "Page",
@@ -149,39 +172,37 @@ def render_filters(
             index=0 if st.session_state.get(SessionKeys.NAV_PAGE) == PageNames.DASHBOARD else 1,
             key=SessionKeys.NAV_PAGE,
         )
-    container = flt
-
-    # Trade Type filter (MT5 only; appears when more than one type is present)
-    sel_tot = "All"
-    if tot_opts and len(tot_opts) > 1:
-        _cur_tot = st.session_state.get("filters_tot_select", "All")
-        if _cur_tot not in tot_opts:
-            _cur_tot = "All"
-        sel_tot = container.selectbox(
-            "Trade Type",
-            tot_opts,
-            index=tot_opts.index(_cur_tot),
-            key="filters_tot_select",
-        )
-
-    # Shared date range logic
-    current_mode = st.session_state.get("filters_date_mode", "All")
-    if current_mode not in date_mode_options:
-        current_mode = "All"
-
-    date_mode = container.selectbox(
-        "Date range",
-        date_mode_options,
-        index=date_mode_options.index(current_mode),
-        key="filters_date_mode",
-    )
-
-    date_range: Optional[DateRange] = None
-    if date_mode == "Custom":
-        date_range = container.date_input(
-            "Custom dates",
-            value=st.session_state.get("filters_date_range", (min_date, max_date)),
-            key="filters_date_range",
-        )
+        _phone_qr_section()
 
     return sel_inst, sel_em, sel_sess, date_range, sel_acct, sel_tot
+
+
+def _phone_qr_section() -> None:
+    """Compact phone handoff inside the Filters panel: scan once, then the
+    phone stays signed in (device-persistent login)."""
+    token = (
+        st.session_state.get(SessionKeys.USER_TOKEN)
+        or st.session_state.get(SessionKeys.OAUTH_TOKEN)
+    )
+    if not token:
+        return
+    from urllib.parse import urlencode
+    params = {"notion_token": token}
+    dbid = st.session_state.get(SessionKeys.DB_ID)
+    if dbid:
+        params["database_id"] = dbid
+    url = "https://edge-analysis2.streamlit.app/?" + urlencode(params)
+    st.markdown("<div style='border-top:1px solid #eef0f5;margin:10px 0 8px;'></div>",
+                unsafe_allow_html=True)
+    st.caption("Sign in on your phone: scan once, then add to home screen. Keep this code private.")
+    try:
+        import qrcode
+        import qrcode.image.svg as _qsvg
+        _svg = qrcode.make(url, image_factory=_qsvg.SvgPathImage).to_string().decode("utf-8")
+        _svg = _svg.replace(
+            "<svg",
+            "<svg style='width:150px;height:150px;background:#fff;padding:8px;"
+            "border:1px solid rgba(0,0,0,0.06);border-radius:12px;'", 1)
+        st.markdown(f"<div style='text-align:center'>{_svg}</div>", unsafe_allow_html=True)
+    except Exception:
+        st.code(url, language=None)

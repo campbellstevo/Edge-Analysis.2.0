@@ -996,6 +996,14 @@ def inject_theme():
     /* Tab underline: only under the tabs, not the full page width */
     .stTabs [data-baseweb="tab-border"] {{ display: none !important; }}
 
+    /* Filters popover: comfortable panel, no edge-cramping */
+    [data-testid="stPopoverBody"] {{
+        min-width: 400px !important;
+        max-width: 460px !important;
+        padding: 14px 16px !important;
+        border-radius: 14px !important;
+    }}
+
     /* Tabs as pills */
     .stTabs [data-baseweb="tab-list"] {{ gap: 8px !important; }}
     .stTabs button[role="tab"] {{
