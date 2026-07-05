@@ -1139,6 +1139,22 @@ def inject_dark_overlay():
         border-color: rgba(255,255,255,0.06) !important;
     }
     .table-wrap tr:nth-child(even) td { background: #191f2c !important; }
+    .ref-card { background: #161b27 !important; border-color: rgba(255,255,255,0.09) !important; }
+    .ref-card-title { color: #e8ebf1 !important; }
+    .ref-card-body { color: #9aa4b4 !important; }
+    .proj-stat-cell { background: #161b27 !important; border-color: rgba(255,255,255,0.09) !important; }
+    .proj-stat-label { color: #9aa4b4 !important; }
+    .proj-stat-value { color: #e8ebf1; }
+    .proj-table-row { background: #161b27 !important; color: #c9d0dc !important; }
+    .proj-table-row:nth-child(even) { background: #191f2c !important; }
+    .stSelectbox [data-baseweb="select"] div {
+        background: #161b27 !important;
+        color: #e8ebf1 !important;
+    }
+    [data-baseweb="select"] > div:focus-within,
+    [data-baseweb="select"] [aria-expanded="true"] {
+        background: #161b27 !important;
+    }
     .ea-title { color: #eef1f6 !important; }
     .ea-sub, .ea-help, .ea-step { color: #9aa4b4 !important; }
     .ea-secondary .stButton > button {
