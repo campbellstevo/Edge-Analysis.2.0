@@ -3638,8 +3638,7 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table):
     _labels = ["Performance", "Setup", "Timing", "Psychology", "Conditions", "Targets", "Plan", "Review", "Projections", "Refinements"]
     _show_mt5 = _get_schema() == "mt5" or _df_is_mt5(df_all_safe)
     if _show_mt5:
-        _labels.append("MT5")
-        _labels.append("Pro")
+        _labels.append("Advanced")
     _tab_objs = st.tabs(_labels)
     (t_performance, t_setup, t_timing, t_psychology, t_externals, t_targets,
      t_plan, t_review, t_projections, t_refinements) = _tab_objs[:10]
@@ -3717,11 +3716,14 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table):
     with t_refinements:
         _refinements_tab(f_perf, df_all_safe, styler)
 
-    # Tab 8: MT5 analytics (only when the MT5 Trade Log is connected)
+    # Advanced tab: MT5 + Pro analytics behind a pill switch
     if _show_mt5:
         with _tab_objs[10]:
-            from edge_analysis.ui.mt5_tabs import render_mt5_tab
-            render_mt5_tab(f_perf, df_all_safe, styler)
-        with _tab_objs[11]:
-            from edge_analysis.ui.pro_tabs import render_pro_tab
-            render_pro_tab(f_perf, df_all_safe, styler)
+            _adv = st.radio("Advanced view", ["MT5", "Pro"], horizontal=True,
+                            key="adv_view", label_visibility="collapsed")
+            if _adv == "Pro":
+                from edge_analysis.ui.pro_tabs import render_pro_tab
+                render_pro_tab(f_perf, df_all_safe, styler)
+            else:
+                from edge_analysis.ui.mt5_tabs import render_mt5_tab
+                render_mt5_tab(f_perf, df_all_safe, styler)
