@@ -372,6 +372,24 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
                 "Mental State, Mistake) — the discipline sections can't score what isn't logged. "
                 "Backfill them in Notion while the trades are fresh.", "warn")
 
+    # journal notes
+    notes = []
+    for _, r in wk.iterrows():
+        for col, tag in (("Comment", "Note"), ("Teachings/Learning Curve", "Teaching")):
+            v = str(r.get(col, "") or "").strip()
+            if v and v.lower() not in ("nan", "none", "na"):
+                notes.append((r["__dt"].strftime("%a"), tag, v[:240]))
+    if notes:
+        st.markdown("#### Notes from your journal")
+        st.markdown(
+            "<div style='background:#fff;border:1px solid rgba(0,0,0,0.06);border-radius:12px;"
+            "box-shadow:0 2px 10px rgba(0,0,0,0.04);overflow:hidden;margin:4px 0 10px;'>"
+            + "".join(
+                f"<div style='padding:10px 16px;border-bottom:1px solid rgba(148,163,184,0.15);"
+                f"font-size:13px;color:#334155;'><b style='color:#64748b;'>{d} · {tag}</b> — {v}</div>"
+                for d, tag, v in notes[:10])
+            + "</div>", unsafe_allow_html=True)
+
     # vs last week
     if not pw.empty:
         st.markdown("#### vs last week")

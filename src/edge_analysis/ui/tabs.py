@@ -2064,6 +2064,97 @@ def _slider_row(label: str, fmt, make_widget):
     return val
 
 
+def _confluence_board(f: pd.DataFrame) -> None:
+    """Every logged confluence/flag ranked by average R — one board."""
+    if f is None or f.empty:
+        return
+    g = f.copy()
+    rr_col = next((c for c in ["Closed RR", "RR", "Closed R"] if c in g.columns), None)
+    if rr_col is None:
+        return
+    g["__rr"] = pd.to_numeric(g[rr_col], errors="coerce")
+    g = g[g["__rr"].notna()]
+    if len(g) < 8:
+        return
+
+    def _yes(col):
+        return g[col].astype(str).str.strip().str.lower().isin(["yes", "true", "__yes__", "1"])
+
+    rows = []
+    checkbox = [("Clear Bias/Prepared", "Prepared / clear bias"),
+                ("Opposing Weak Structure?", "Opposing weak structure"),
+                ("Oversold or Overbought?", "OB/OS extreme"),
+                ("Sweep?", "Sweep"), ("DIV?", "Divergence"),
+                ("True Break?", "True break"),
+                ("Multi Entry Model Setup", "Multi-entry")]
+    for col, label in checkbox:
+        if col not in g.columns:
+            continue
+        m = _yes(col)
+        known = g[col].astype(str).str.strip().str.lower().isin(
+            ["yes", "no", "true", "false", "__yes__", "__no__", "1", "0"])
+        for lab, mask in ((f"{label} · yes", m & known), (f"{label} · no", ~m & known)):
+            n = int(mask.sum())
+            if n >= 3:
+                rows.append({"Category": lab, "Avg R": round(float(g.loc[mask, "__rr"].mean()), 2),
+                             "Trades": n})
+    cats = ["Volatility", "News Aspect", "Entry Timeframe", "Tiers in pricing HTF",
+            "Tiers in pricing MTF", "Stop Loss + Covering", "Breakeven Criteria"]
+    for col in cats:
+        if col not in g.columns:
+            continue
+        vals = (g[col].astype(str).str.replace(r'[\[\]"]', "", regex=True).str.strip())
+        for val, sub in g.groupby(vals):
+            if not val or val.lower() in ("nan", "none", "na", ""):
+                continue
+            if len(sub) >= 3:
+                short = col.replace("Tiers in pricing ", "Tiers ").replace("?", "")
+                rows.append({"Category": f"{short} · {val[:24]}",
+                             "Avg R": round(float(sub["__rr"].mean()), 2), "Trades": len(sub)})
+    if not rows:
+        return
+    st.markdown("### Confluence Board")
+    st.caption("Every flag you log, ranked by what it's actually worth per trade (min 3 trades). "
+               "Green at the top = stack these. Red at the bottom = these cost you.")
+    d = pd.DataFrame(rows).sort_values("Avg R", ascending=False)
+    if len(d) > 18:
+        d = pd.concat([d.head(9), d.tail(9)])
+    _rank_dots(d, "Category", "Avg R")
+    best, worst = d.iloc[0], d.iloc[-1]
+    _insight_box(
+        f"Strongest confluence: <b>{best['Category']}</b> ({best['Avg R']:+.2f}R over {int(best['Trades'])}). "
+        f"Costliest: <b>{worst['Category']}</b> ({worst['Avg R']:+.2f}R over {int(worst['Trades'])}).")
+
+
+def _loss_postmortem(f: pd.DataFrame) -> None:
+    """Where the losses come from, by your own Reason-of-loss tags."""
+    if f is None or f.empty or "Reason of loss" not in f.columns:
+        return
+    g = f.copy()
+    rr_col = next((c for c in ["Closed RR", "RR", "Closed R"] if c in g.columns), None)
+    if rr_col is None:
+        return
+    g["__rr"] = pd.to_numeric(g[rr_col], errors="coerce")
+    losses = g[g["__rr"] < -0.15].copy()
+    losses["__why"] = (losses["Reason of loss"].astype(str)
+                       .str.replace(r'[\[\]"]', "", regex=True).str.strip())
+    losses = losses[~losses["__why"].str.lower().isin(["", "nan", "none", "na"])]
+    if losses.empty:
+        return
+    st.markdown("### Loss Post-Mortem")
+    st.caption("Your own Reason-of-loss tags — where the red actually comes from.")
+    rows = []
+    for why, sub in losses.groupby("__why"):
+        rows.append({"Category": why[:36], "Avg R": round(float(sub["__rr"].mean()), 2),
+                     "Trades": len(sub), "Net R": round(float(sub["__rr"].sum()), 1)})
+    d = pd.DataFrame(rows).sort_values("Net R")
+    _rank_dots(d, "Category", "Net R", fmt="+.1f")
+    worst = d.iloc[0]
+    _insight_box(f"<b>{worst['Category']}</b> is your most expensive failure mode: "
+                 f"<b>{worst['Net R']:+.1f}R</b> across {int(worst['Trades'])} losses. "
+                 f"One rule that eliminates it is worth more than a new setup.", "bad")
+
+
 def _rank_dots(rows, cat_col, val_col, fmt="+.2f", suffix="R") -> None:
     """House-style ranked dot chart: dashed zero rule, green/red dots, bold labels."""
     d = pd.DataFrame(rows).copy()
@@ -3590,10 +3681,14 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table):
     # ── Tab 4: Psychology ─────────────────────────────────────────────────────
     with t_psychology:
         _psychology_tab(f_perf, df_all_safe, styler)
+        st.divider()
+        _loss_postmortem(f_perf)
 
     # ── Tab 5: Externals ──────────────────────────────────────────────────────
     with t_externals:
         _conditions_tab(f_perf, show_table)
+        st.divider()
+        _confluence_board(f_perf)
 
     # ── Targets tab ───────────────────────────────────────────────────────────
     with t_targets:

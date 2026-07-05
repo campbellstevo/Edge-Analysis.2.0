@@ -340,6 +340,33 @@ def _execution_section(df: pd.DataFrame, styler) -> None:
         for col, (lab, val, sub) in zip(cols, cards):
             with col: _kpi(lab, val, sub)
 
+    _pe = _num(df, "Planned Entry"); _ep = _num(df, "Entry Price"); _slp = _num(df, "SL")
+    if _pe is not None and _ep is not None and _slp is not None:
+        gg = df.copy()
+        gg["__pe"], gg["__ep"], gg["__sl"] = _pe.values, _ep.values, _slp.values
+        gg = gg[gg["__pe"].notna() & gg["__ep"].notna() & gg["__sl"].notna()]
+        gg = gg[(gg["__ep"] - gg["__sl"]).abs() > 0]
+        if len(gg) >= 5:
+            _long = gg.get("Direction", pd.Series("", index=gg.index)).astype(str).str.contains(
+                "Long", case=False, na=False)
+            _dev = pd.Series(
+                np.where(_long, gg["__ep"] - gg["__pe"], gg["__pe"] - gg["__ep"]),
+                index=gg.index) / (gg["__ep"] - gg["__sl"]).abs()
+            _dev = _dev.clip(-3, 3)
+            _avg_dev, _tot_dev = float(_dev.mean()), float(_dev.sum())
+            st.markdown("**Entry deviation — planned vs actual**")
+            dc1, dc2 = st.columns(2)
+            with dc1:
+                _kpi("Avg entry slip", f"{_avg_dev:+.2f}R", "vs planned entry, in stop-units")
+            with dc2:
+                _kpi("Total slip cost", f"{_tot_dev:+.1f}R", f"over {len(gg)} planned entries",
+                     "#ef4444" if _tot_dev > 1 else PURPLE)
+            if _avg_dev > 0.08:
+                t._insight_box(
+                    f"You enter on average <b>{_avg_dev:+.2f}R</b> worse than your planned level — "
+                    f"about <b>{_tot_dev:+.1f}R</b> total given away to chasing. "
+                    "Set the limit order at the plan and let it come to you.", "warn")
+
     if has_pd:
         g = df.copy()
         g["__pd"] = g[_pdcol].astype(str).str.strip()
