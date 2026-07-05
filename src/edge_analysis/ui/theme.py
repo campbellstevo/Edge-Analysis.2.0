@@ -1117,7 +1117,11 @@ def inject_dark_overlay():
         color: #e8ebf1 !important;
         border-color: rgba(255,255,255,0.12) !important;
     }
-    ul[role="listbox"], [data-baseweb="menu"], [data-baseweb="popover"] > div {
+    ul[role="listbox"], [data-baseweb="menu"], [data-baseweb="popover"] > div,
+    [data-baseweb="popover"] > div > div, [data-baseweb="popover"] ul,
+    [data-testid="stSelectboxVirtualDropdown"],
+    [data-testid="stSelectboxVirtualDropdown"] ul,
+    [data-testid="stSelectboxVirtualDropdown"] > div {
         background: #161b27 !important;
     }
     ul[role="listbox"] li, [role="option"] { color: #d3d9e3 !important; }
