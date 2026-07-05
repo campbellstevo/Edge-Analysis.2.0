@@ -1176,7 +1176,13 @@ def inject_dark_overlay():
         border-color: rgba(255,255,255,0.06) !important;
     }
     .table-wrap tr:nth-child(even) td { background: #191f2c !important; }
-    .ref-card { background: #161b27 !important; border-color: rgba(255,255,255,0.09) !important; }
+    .ref-card {
+        background: #161b27 !important;
+        border-top-color: rgba(255,255,255,0.09) !important;
+        border-right-color: rgba(255,255,255,0.09) !important;
+        border-bottom-color: rgba(255,255,255,0.09) !important;
+        /* left border keeps its semantic green/red/purple stripe */
+    }
     .ref-card-title { color: #e8ebf1 !important; }
     .ref-card-body { color: #9aa4b4 !important; }
     .proj-stat-cell { background: #161b27 !important; border-color: rgba(255,255,255,0.09) !important; }
