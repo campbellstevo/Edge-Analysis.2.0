@@ -145,7 +145,7 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
             f"<div style='text-align:right;font-size:13px;'>{stat}{small}</div></div>"
         )
     st.markdown(
-        "<div style='background:#fff;border:1px solid rgba(0,0,0,0.06);border-radius:14px;"
+        "<div style='background:#fff;border:1px solid rgba(0,0,0,0.06);border-radius:12px;"
         "box-shadow:0 2px 10px rgba(0,0,0,0.04);overflow:hidden;margin:4px 0 10px;'>"
         + rows_html + "</div>", unsafe_allow_html=True)
     t._insight_box("Any box a <b>NO</b> → no trade. The gap between textbook and off-plan "
@@ -197,7 +197,7 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
             f"<span style='font-weight:800;color:{GREEN if v >= 0 else RED};'>{_fmt_r(v)}</span></div>"
             for name, v, n in items)
         return (f"<div style='flex:1;min-width:280px;background:#fff;border:1px solid rgba(0,0,0,0.06);"
-                f"border-radius:14px;box-shadow:0 2px 10px rgba(0,0,0,0.04);overflow:hidden;'>"
+                f"border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,0.04);overflow:hidden;'>"
                 f"<div style='padding:11px 16px;font-size:12px;font-weight:700;letter-spacing:0.08em;"
                 f"color:{col};'>{title}</div>{rows}</div>")
 

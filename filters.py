@@ -180,7 +180,8 @@ def render_filters(
             )
         _theme_label = ("Light theme" if st.session_state.get("ea_theme_pref") == "dark"
                         else "Dark theme")
-        _menu_opts = [PageNames.DASHBOARD, PageNames.CONNECT, "Sign in on iPhone", _theme_label]
+        _menu_opts = [PageNames.DASHBOARD, PageNames.CONNECT, "Refresh data",
+                      "Sign in on iPhone", _theme_label]
 
         def _menu_cb():
             choice = st.session_state.get("ea_menu")
@@ -188,6 +189,13 @@ def render_filters(
             if choice in (PageNames.DASHBOARD, PageNames.CONNECT):
                 st.session_state[SessionKeys.NAV_TARGET] = choice
                 st.session_state["ea_show_qr"] = False
+            elif choice == "Refresh data":
+                try:
+                    st.cache_data.clear()
+                except Exception:
+                    pass
+                st.session_state.pop("ea_last_sync", None)
+                st.session_state["ea_menu"] = page_now
             elif choice == "Sign in on iPhone":
                 st.session_state["ea_show_qr"] = True
                 st.session_state["ea_menu"] = page_now

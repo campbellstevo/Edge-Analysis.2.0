@@ -22,8 +22,16 @@ from edge_analysis.core.parsing import (
 )
 
 
+def _stamp_sync():
+    try:
+        st.session_state["ea_last_sync"] = pd.Timestamp.now().strftime("%H:%M")
+    except Exception:
+        pass
+
+
 @st.cache_data(show_spinner=True, ttl=300)
 def load_live_df(token: Optional[str], dbid: Optional[str]) -> pd.DataFrame:
+    _stamp_sync()
     if not (token and dbid):
         return pd.DataFrame()
 

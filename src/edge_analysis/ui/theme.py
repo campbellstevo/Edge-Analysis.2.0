@@ -1018,6 +1018,17 @@ def inject_theme():
         border-radius: 14px !important;
     }}
 
+    /* Mobile: hint that the tab row scrolls */
+    @media (max-width: 640px) {{
+        .stTabs [data-baseweb="tab-list"] {{
+            overflow-x: auto !important;
+            -webkit-overflow-scrolling: touch;
+            padding-right: 28px !important;
+            mask-image: linear-gradient(to right, black 92%, transparent 100%);
+            -webkit-mask-image: linear-gradient(to right, black 92%, transparent 100%);
+        }}
+    }}
+
     /* Radios as pills (Most Possible / Worst / Best etc.) */
     [data-testid="stRadio"] [role="radiogroup"] {{ gap: 8px !important; }}
     [data-testid="stRadio"] [role="radiogroup"] > label {{

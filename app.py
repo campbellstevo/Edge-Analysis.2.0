@@ -1175,8 +1175,11 @@ def render_dashboard(mobile: bool):
         if not dbid:
             dbid = _runtime_secret("DATABASE_ID")
 
-    inject_header_bar("Live · Notion connected" if (token and dbid) else "Not connected",
-                      bool(token and dbid))
+    _sync = st.session_state.get("ea_last_sync")
+    _status = "Live · Notion connected" if (token and dbid) else "Not connected"
+    if token and dbid and _sync:
+        _status += f" · synced {_sync}"
+    inject_header_bar(_status, bool(token and dbid))
     st.session_state["_ea_connected"] = bool(token and dbid)
 
     with st.spinner("Fetching trades from Notion…"):
@@ -1305,8 +1308,16 @@ def render_dashboard(mobile: bool):
             f"stroke-linejoin='round' stroke-linecap='round'/></svg>"
         )
     net_col = "#16a34a" if total_pnl_rr >= 0 else "#ef4444"
+    _wk_chip = ""
+    if "Date" in f.columns:
+        _dser = pd.to_datetime(f["Date"], errors="coerce")
+        _wk_r = float(f.loc[_dser >= (pd.Timestamp.now() - pd.Timedelta(days=7)), "PnL_from_RR"].sum())
+        _wc = "#16a34a" if _wk_r >= 0 else "#ef4444"
+        _arrow = "▲" if _wk_r >= 0 else "▼"
+        _wk_chip = (f"<span style='font-size:14px;font-weight:700;color:{_wc};"
+                    f"margin-left:12px;vertical-align:middle;'>{_arrow} {_wk_r:+.1f}R this week</span>")
     chips = "".join(
-        f"<div style='flex:1;min-width:96px;background:#f8f9fc;border-radius:10px;padding:10px 12px;'>"
+        f"<div style='flex:1;min-width:132px;background:#f8f9fc;border-radius:10px;padding:10px 12px;'>"
         f"<div style='font-size:11px;font-weight:600;letter-spacing:0.06em;color:#94a3b8;'>{lab}</div>"
         f"<div style='font-size:19px;font-weight:800;color:{col};margin-top:2px;'>{val}</div></div>"
         for lab, val, col in [
@@ -1318,10 +1329,10 @@ def render_dashboard(mobile: bool):
         ]
     )
     st.markdown(
-        f"<div style='background:#ffffff;border:1px solid rgba(0,0,0,0.06);border-radius:16px;"
+        f"<div style='background:#ffffff;border:1px solid rgba(0,0,0,0.06);border-radius:12px;"
         f"padding:20px 22px;box-shadow:0 2px 12px rgba(0,0,0,0.05);margin:2px 0 14px;'>"
         f"<div style='font-size:12px;font-weight:600;letter-spacing:0.08em;color:#94a3b8;'>NET RESULT</div>"
-        f"<div style='font-size:34px;font-weight:800;color:{net_col};line-height:1.15;'>{total_pnl_rr:+,.1f}R</div>"
+        f"<div style='font-size:34px;font-weight:800;color:{net_col};line-height:1.15;'>{total_pnl_rr:+,.1f}R{_wk_chip}</div>"
         f"{spark}"
         f"<div style='display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;'>{chips}</div>"
         f"</div>",

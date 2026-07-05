@@ -51,12 +51,12 @@ def _df_is_mt5(df) -> bool:
 
 def _unavailable(label: str) -> None:
     """Quiet note when a section has no data for this template."""
-    st.caption(f"{label}: not enough data in this journal yet.")
+    st.caption(f"{label}: nothing to show yet — once you log this in Notion, it fills in automatically.")
 
 
 def _insight_box(body: str, kind: str = "info") -> None:
     """Live-data insight callout. Always purple — kind only affects the prefix icon."""
-    icons = {"info": "", "warn": "⚠ ", "good": "✓ ", "bad": "⚠ "}
+    icons = {"info": "", "warn": "⚠ ", "good": "✓ ", "bad": "✕ "}
     prefix = icons.get(kind, "")
     st.markdown(
         f'<div style="background:#f0ebff;border-left:4px solid #4800ff;border-radius:6px;'
@@ -3468,7 +3468,7 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
     prog = max(0.0, min(100.0, cur_r / need_r * 100.0)) if need_r > 0 else 0.0
     pc = "#16a34a" if cur_r >= need_r else ("#4800ff" if cur_r >= 0 else "#ef4444")
     st.markdown(
-        f"<div style='background:#fff;border:1px solid rgba(0,0,0,0.06);border-radius:16px;"
+        f"<div style='background:#fff;border:1px solid rgba(0,0,0,0.06);border-radius:12px;"
         f"padding:18px 22px;box-shadow:0 2px 12px rgba(0,0,0,0.05);margin:10px 0 4px;'>"
         f"<div style='display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;'>"
         f"<div><div style='font-size:12px;font-weight:600;letter-spacing:0.08em;color:#94a3b8;'>"
@@ -3648,15 +3648,22 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table):
     with t_performance:
         _growth_tab(f_perf, df_all_safe, styler)
         st.divider()
-        if not _is_salty():
-            _account_comparison_tab(f_perf, styler)
-            st.divider()
         _instruments_tab(f_perf, show_table)
         st.divider()
         if not _is_salty():
             _early_close_tab(df_all_safe, styler)
+            st.divider()
+            _account_comparison_tab(f_perf, styler)
         else:
             _early_close_tab_salty(df_all_safe, styler)
+        with st.expander("New here? What R, expectancy and MFE mean"):
+            st.markdown(
+                "- **R** — your risk unit. +2R means you made twice what you risked on the trade.\n"
+                "- **Win / BE / Loss %** — share of trades that made money, scratched, or lost.\n"
+                "- **Expectancy** — average R per trade. Positive = the system makes money over time.\n"
+                "- **MFE / MAE** — how far a trade went for you / against you before it closed.\n"
+                "- **Give-back** — profit a trade showed (MFE) but didn't bank.\n"
+                "- **Profit factor** — gross wins ÷ gross losses. Above 1 = profitable.")
 
     # ── Tab 2: Setup ──────────────────────────────────────────────────────────
     with t_setup:
