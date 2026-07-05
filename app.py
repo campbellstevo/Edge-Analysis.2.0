@@ -1338,6 +1338,26 @@ def render_dashboard(mobile: bool):
         f"</div>",
         unsafe_allow_html=True,
     )
+    try:
+        _now = pd.Timestamp.now()
+        if _now.dayofweek <= 2 and "Date" in f.columns:
+            _d = pd.to_datetime(f["Date"], errors="coerce")
+            _mon = (_now - pd.Timedelta(days=int(_now.dayofweek))).normalize()
+            _lw = f[(_d >= _mon - pd.Timedelta(days=7)) & (_d < _mon)]
+            if len(_lw):
+                _lr = float(_lw["PnL_from_RR"].sum())
+                _lc = "#16a34a" if _lr >= 0 else "#ef4444"
+                st.markdown(
+                    f"<div style='display:flex;align-items:center;gap:10px;background:#ffffff;"
+                    f"border:1px solid rgba(0,0,0,0.06);border-radius:12px;padding:10px 16px;"
+                    f"box-shadow:0 2px 10px rgba(0,0,0,0.04);margin:0 0 12px;font-size:14px;color:#334155;'>"
+                    f"<span style='font-weight:700;'>Last week wrapped:</span>"
+                    f"<span style='font-weight:800;color:{_lc};'>{_lr:+.1f}R</span>"
+                    f"<span style='color:#64748b;'>over {len(_lw)} trade{'s' if len(_lw) != 1 else ''} "
+                    f"— full breakdown in the Review tab.</span></div>",
+                    unsafe_allow_html=True)
+    except Exception:
+        pass
     st.markdown("<div class='spacer-12'></div>", unsafe_allow_html=True)
 
     # Render tabs with data

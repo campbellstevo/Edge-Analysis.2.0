@@ -597,6 +597,15 @@ def _growth_tab(f: pd.DataFrame, df_all: pd.DataFrame, styler):
 
 # ── Account comparison cards ──────────────────────────────────────────────────
 def _account_comparison_tab(f: pd.DataFrame, styler):
+    # fully silent when there is nothing to compare
+    if f is not None and not f.empty:
+        _lm = {str(c).strip().lower(): c for c in f.columns}
+        _ac = _lm.get("account") or _lm.get("accounts") or _lm.get("account name")
+        if _ac is not None:
+            _vals = f[_ac].astype(str).str.strip()
+            _vals = _vals[~_vals.isin(["", "nan", "NaN", "None"])]
+            if _vals.nunique() <= 1:
+                return
     st.markdown('<div class="section">', unsafe_allow_html=True)
     st.markdown("### Account Comparison")
 
@@ -3716,14 +3725,7 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table):
             _account_comparison_tab(f_perf, styler)
         else:
             _early_close_tab_salty(df_all_safe, styler)
-        with st.expander("New here? What R, expectancy and MFE mean"):
-            st.markdown(
-                "- **R** — your risk unit. +2R means you made twice what you risked on the trade.\n"
-                "- **Win / BE / Loss %** — share of trades that made money, scratched, or lost.\n"
-                "- **Expectancy** — average R per trade. Positive = the system makes money over time.\n"
-                "- **MFE / MAE** — how far a trade went for you / against you before it closed.\n"
-                "- **Give-back** — profit a trade showed (MFE) but didn't bank.\n"
-                "- **Profit factor** — gross wins ÷ gross losses. Above 1 = profitable.")
+
 
     # ── Tab 2: Setup ──────────────────────────────────────────────────────────
     with t_setup:

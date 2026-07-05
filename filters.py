@@ -210,6 +210,14 @@ def render_filters(
             st.session_state["ea_menu"] = (_cur_page if _cur_page in _menu_opts
                                            else PageNames.DASHBOARD)
         st.selectbox("Page", _menu_opts, key="ea_menu", on_change=_menu_cb)
+        with st.expander("What do R, expectancy and MFE mean?"):
+            st.markdown(
+                "- **R** — your risk unit. +2R = twice what you risked.\n"
+                "- **Win / BE / Loss %** — trades that made money, scratched, or lost.\n"
+                "- **Expectancy** — average R per trade. Positive = profitable over time.\n"
+                "- **MFE / MAE** — how far a trade went for / against you before closing.\n"
+                "- **Give-back** — profit shown (MFE) but not banked.\n"
+                "- **Profit factor** — gross wins ÷ gross losses. Above 1 = profitable.")
     if st.session_state.pop("ea_show_qr", False):
         if _qr_dialog is not None:
             _qr_dialog()
