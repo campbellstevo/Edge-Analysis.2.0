@@ -1821,6 +1821,13 @@ def _hourly_expectancy_clock(df_raw: pd.DataFrame) -> None:
 }})();
 </script>
 """
+    if st.session_state.get("ea_theme_pref") == "dark":
+        for _a, _b in [("#ffffff", "#161b27"), ("#fff", "#161b27"),
+                       ("#64748b", "#9aa4b4"), ("#e2e8f0", "#262c3b"),
+                       ("#0f172a", "#e8ebf1"), ("#334155", "#c9d0dc"),
+                       ("rgba(72,0,255,0.06)", "rgba(139,124,255,0.16)"),
+                       ("rgba(72,0,255,0.12)", "rgba(139,124,255,0.28)")]:
+            html = html.replace(_a, _b)
     components.html(html, height=460, scrolling=False)
 
 

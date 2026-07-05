@@ -989,6 +989,20 @@ def inject_theme():
       letter-spacing: 0.06em;
     }}
 
+    /* Tables: swipeable on phones, essentials-only under 640px */
+    .table-wrap {{ overflow-x: auto; -webkit-overflow-scrolling: touch; }}
+    @media (max-width: 640px) {{
+        .table-wrap th:nth-child(4), .table-wrap td:nth-child(4),
+        .table-wrap th:nth-child(5), .table-wrap td:nth-child(5),
+        .table-wrap th:nth-child(6), .table-wrap td:nth-child(6) {{
+            display: none;
+        }}
+        .table-wrap th, .table-wrap td {{
+            font-size: 13px !important;
+            padding: 8px 10px !important;
+        }}
+    }}
+
     /* No copy-link icons on heading hover */
     [data-testid="stHeaderActionElements"] {{ display: none !important; }}
     h1 > a, h2 > a, h3 > a, h4 > a {{ display: none !important; }}
@@ -1110,6 +1124,31 @@ def inject_dark_overlay():
     [data-testid="stRadio"] label span {
         color: #c9d0dc !important;
     }
+    .entry-card, .table-wrap, .table-wrap table {
+        background: #161b27 !important;
+        border-color: rgba(255,255,255,0.09) !important;
+    }
+    .table-wrap th {
+        background: #1d2331 !important;
+        color: #c9d0dc !important;
+        border-color: rgba(255,255,255,0.10) !important;
+    }
+    .table-wrap td {
+        background: transparent !important;
+        color: #c9d0dc !important;
+        border-color: rgba(255,255,255,0.06) !important;
+    }
+    .table-wrap tr:nth-child(even) td { background: #191f2c !important; }
+    .ea-title { color: #eef1f6 !important; }
+    .ea-sub, .ea-help, .ea-step { color: #9aa4b4 !important; }
+    .ea-secondary .stButton > button {
+        background: #161b27 !important;
+        color: #c9d0dc !important;
+        border-color: rgba(255,255,255,0.12) !important;
+    }
+    [style*="color: rgb(17, 24, 39)"] { color: #e8ebf1 !important; }
+    [style*="color: rgb(71, 85, 105)"] { color: #9aa4b4 !important; }
+    [style*="color: rgb(30, 41, 59)"] { color: #dfe4ec !important; }
     div[role="dialog"], [data-testid="stDialog"] > div > div {
         background: #141926 !important;
         border-color: rgba(255,255,255,0.09) !important;
