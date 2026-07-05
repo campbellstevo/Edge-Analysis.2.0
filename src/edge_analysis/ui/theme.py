@@ -1018,6 +1018,28 @@ def inject_theme():
         border-radius: 14px !important;
     }}
 
+    /* Radios as pills (Most Possible / Worst / Best etc.) */
+    [data-testid="stRadio"] [role="radiogroup"] {{ gap: 8px !important; }}
+    [data-testid="stRadio"] [role="radiogroup"] > label {{
+        border: 1px solid rgba(0,0,0,0.10) !important;
+        border-radius: 999px !important;
+        padding: 5px 16px 5px 10px !important;
+        background: #ffffff;
+        transition: none;
+    }}
+    [data-testid="stRadio"] [role="radiogroup"] > label:has(input:checked) {{
+        background: #4800ff !important;
+        border-color: #4800ff !important;
+    }}
+    [data-testid="stRadio"] [role="radiogroup"] > label:has(input:checked) p,
+    [data-testid="stRadio"] [role="radiogroup"] > label:has(input:checked) span {{
+        color: #ffffff !important;
+    }}
+    [data-testid="stRadio"] [data-baseweb="radio"] > div:first-child {{
+        width: 10px !important; height: 10px !important;
+        margin-right: 6px !important;
+    }}
+
     /* Tabs as pills */
     .stTabs [data-baseweb="tab-list"] {{ gap: 8px !important; }}
     .stTabs button[role="tab"] {{

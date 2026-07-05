@@ -1213,7 +1213,7 @@ def render_dashboard(mobile: bool):
     inst_opts = ["All"] + instruments
     em_opts = ["All"] + MODEL_SET
     sess_opts = ["All"] + sorted(set(SESSION_CANONICAL) | set(df["Session Norm"].dropna().unique()))
-    date_mode_options = ["All", "Custom"]
+    date_mode_options = ["All", "Last 30 days", "Last 90 days", "This year", "Custom"]
 
     # Account filter options
     _ACCT_MAP = {

@@ -102,10 +102,16 @@ def render_filters(
     def _inst_label(v: str) -> str:
         return "GOLD" if v == "Gold" else v
 
+    _active = sum(1 for k in ["filters_inst_select", "filters_sess_select",
+                              "filters_em_select", "filters_tot_select"]
+                  if st.session_state.get(k, "All") != "All")
+    if st.session_state.get("filters_date_mode", "All") != "All":
+        _active += 1
+    _flabel = f"Filters · {_active} active" if _active else "Filters"
     try:
-        flt = st.popover("Filters", use_container_width=False)
+        flt = st.popover(_flabel, use_container_width=False)
     except Exception:
-        flt = st.expander("Filters")
+        flt = st.expander(_flabel)
     with flt:
         c1, c2 = st.columns(2, gap="small")
         with c1:
@@ -160,7 +166,13 @@ def render_filters(
                 key="filters_date_mode",
             )
         date_range: Optional[DateRange] = None
-        if date_mode == "Custom":
+        if date_mode == "Last 30 days":
+            date_range = (max_date - __import__("datetime").timedelta(days=29), max_date)
+        elif date_mode == "Last 90 days":
+            date_range = (max_date - __import__("datetime").timedelta(days=89), max_date)
+        elif date_mode == "This year":
+            date_range = (max_date.replace(month=1, day=1), max_date)
+        elif date_mode == "Custom":
             date_range = st.date_input(
                 "Custom dates",
                 value=st.session_state.get("filters_date_range", (min_date, max_date)),

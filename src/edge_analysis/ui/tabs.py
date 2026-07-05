@@ -3257,7 +3257,7 @@ def _refinements_tab(f_perf: pd.DataFrame, df_all_safe: pd.DataFrame, styler):
     c_working, c_holding, c_refine = st.columns(3)
 
     with c_working:
-        st.markdown('<div class="ref-col-header">✓ What\'s Working</div>', unsafe_allow_html=True)
+        st.markdown('<div class="ref-col-header" style="color:#16a34a;border-color:#16a34a;">✓ What\'s Working</div>', unsafe_allow_html=True)
         for item in result.get("working", []):
             st.markdown(
                 f'<div class="ref-card ref-working">'
@@ -3268,7 +3268,7 @@ def _refinements_tab(f_perf: pd.DataFrame, df_all_safe: pd.DataFrame, styler):
             )
 
     with c_holding:
-        st.markdown('<div class="ref-col-header">⚠ Holding the System Back</div>', unsafe_allow_html=True)
+        st.markdown('<div class="ref-col-header" style="color:#ef4444;border-color:#ef4444;">⚠ Holding the System Back</div>', unsafe_allow_html=True)
         for item in result.get("holding_back", []):
             st.markdown(
                 f'<div class="ref-card ref-holding">'
@@ -3279,7 +3279,7 @@ def _refinements_tab(f_perf: pd.DataFrame, df_all_safe: pd.DataFrame, styler):
             )
 
     with c_refine:
-        st.markdown('<div class="ref-col-header">→ Potential Refinements</div>', unsafe_allow_html=True)
+        st.markdown('<div class="ref-col-header" style="color:#4800ff;border-color:#4800ff;">→ Potential Refinements</div>', unsafe_allow_html=True)
         for item in result.get("refinements", []):
             st.markdown(
                 f'<div class="ref-card ref-refine">'
@@ -3290,7 +3290,7 @@ def _refinements_tab(f_perf: pd.DataFrame, df_all_safe: pd.DataFrame, styler):
             )
 
     st.markdown("<br>", unsafe_allow_html=True)
-    if st.button("Refresh", key="refinements_rerun"):
+    if st.button("Re-run analysis", key="refinements_rerun"):
         st.rerun()
 
     st.markdown("</div>", unsafe_allow_html=True)
@@ -3635,7 +3635,7 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table):
     f_perf = _prep_perf_df(f)
     df_all_safe = df_all.copy() if df_all is not None else df_all
 
-    _labels = ["Performance", "Setup", "Timing", "Psychology", "Externals", "Targets", "Plan", "Review", "Projections", "Refinements"]
+    _labels = ["Performance", "Setup", "Timing", "Psychology", "Conditions", "Targets", "Plan", "Review", "Projections", "Refinements"]
     _show_mt5 = _get_schema() == "mt5" or _df_is_mt5(df_all_safe)
     if _show_mt5:
         _labels.append("MT5")
