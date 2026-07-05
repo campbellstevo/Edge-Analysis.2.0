@@ -1187,6 +1187,34 @@ def inject_dark_overlay():
         color: #c9d0dc !important;
     }
     [data-testid="stSpinner"] p { color: #9aa4b4 !important; }
+    .stButton button:hover, .stButton button:focus, .stButton button:active,
+    [data-testid="stPopover"] > div > button:hover,
+    [data-testid="stPopover"] > div > button:focus,
+    [data-testid="stPopoverButton"]:hover {
+        background: #1d2331 !important;
+        color: #e8ebf1 !important;
+        border-color: rgba(255,255,255,0.2) !important;
+    }
+    .stButton button:hover p, [data-testid="stPopover"] > div > button:hover p {
+        color: #e8ebf1 !important;
+    }
+    .stTabs button[role="tab"]:hover { background: #1d2331 !important; }
+    .stTabs button[role="tab"]:hover p { color: #e8ebf1 !important; }
+    .stTabs button[role="tab"][aria-selected="true"]:hover { background: #4800ff !important; }
+    .stTabs button[role="tab"][aria-selected="true"]:hover p { color: #ffffff !important; }
+    ul[role="listbox"] li:hover, [role="option"]:hover {
+        background: #232a3a !important;
+        color: #e8ebf1 !important;
+    }
+    [data-baseweb="select"]:hover > div, [data-baseweb="select"] > div:hover {
+        background: #161b27 !important;
+        color: #e8ebf1 !important;
+        border-color: rgba(255,255,255,0.2) !important;
+    }
+    div[data-testid="stExpander"] summary:hover {
+        background: #1d2331 !important;
+        color: #e8ebf1 !important;
+    }
     .stTabs [data-baseweb="tab-list"] { background: transparent !important; }
     </style>
     """, unsafe_allow_html=True)

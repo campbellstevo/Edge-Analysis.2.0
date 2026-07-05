@@ -3543,13 +3543,14 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table):
     f_perf = _prep_perf_df(f)
     df_all_safe = df_all.copy() if df_all is not None else df_all
 
-    _labels = ["Performance", "Setup", "Timing", "Psychology", "Externals", "Targets", "Projections", "Refinements"]
+    _labels = ["Performance", "Setup", "Timing", "Psychology", "Externals", "Targets", "Plan", "Review", "Projections", "Refinements"]
     _show_mt5 = _get_schema() == "mt5" or _df_is_mt5(df_all_safe)
     if _show_mt5:
         _labels.append("MT5")
         _labels.append("Pro")
     _tab_objs = st.tabs(_labels)
-    t_performance, t_setup, t_timing, t_psychology, t_externals, t_targets, t_projections, t_refinements = _tab_objs[:8]
+    (t_performance, t_setup, t_timing, t_psychology, t_externals, t_targets,
+     t_plan, t_review, t_projections, t_refinements) = _tab_objs[:10]
 
     # ── Tab 1: Performance ────────────────────────────────────────────────────
     with t_performance:
@@ -3598,6 +3599,13 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table):
     with t_targets:
         _targets_tab(df_all_safe, styler)
 
+    # ── Trading Plan + Weekly Review ──────────────────────────────────────────
+    from edge_analysis.ui.plan_tabs import render_plan_tab, render_review_tab
+    with t_plan:
+        render_plan_tab(df_all_safe, styler)
+    with t_review:
+        render_review_tab(df_all_safe, styler)
+
     # ── Tab 6: Projections ────────────────────────────────────────────────────
     with t_projections:
         _projections_tab(df_all_safe, styler)
@@ -3608,9 +3616,9 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table):
 
     # Tab 8: MT5 analytics (only when the MT5 Trade Log is connected)
     if _show_mt5:
-        with _tab_objs[8]:
+        with _tab_objs[10]:
             from edge_analysis.ui.mt5_tabs import render_mt5_tab
             render_mt5_tab(f_perf, df_all_safe, styler)
-        with _tab_objs[9]:
+        with _tab_objs[11]:
             from edge_analysis.ui.pro_tabs import render_pro_tab
             render_pro_tab(f_perf, df_all_safe, styler)
