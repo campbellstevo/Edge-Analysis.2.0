@@ -1270,8 +1270,10 @@ def get_chart_styler():
         except Exception:
             pass
         return (chart.configure(background="#161b27")
-                .configure_view(fill="#161b27")
-                .configure_axis(domainColor="#2c3242"))
+                .configure_view(fill="#161b27", stroke=None)
+                .configure_axis(domainColor="#2c3242", gridColor="#232937",
+                                labelColor="#8b94a3", titleColor="#8b94a3",
+                                tickColor="#2c3242"))
     return _styler
 
 # ---------------------------------------------------------------------------
