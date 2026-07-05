@@ -908,7 +908,7 @@ def inject_theme():
 
     /* Page chrome: no decoration strip, transparent header, no footer/badge */
     [data-testid="stDecoration"] {{ display: none !important; }}
-    [data-testid="stHeader"], .stAppHeader, [data-testid="stToolbar"] {{ background: #f6f7fb !important; }}
+    [data-testid="stHeader"], .stAppHeader {{ display: none !important; }}
     [data-testid="stSidebar"] > div:first-child {{ padding-top: 1.5rem !important; }}
     [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"],
     [data-testid="collapsedControl"] {{
@@ -1059,7 +1059,6 @@ def inject_dark_overlay():
     [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p {
         color: #8791a1 !important;
     }
-    .ea-topbar-logo img { filter: invert(1) hue-rotate(180deg); }
     .kpi { background: #161b27 !important; border-color: rgba(255,255,255,0.09) !important; }
     .kpi .label { color: #8791a1 !important; }
     .kpi .value { color: #e8ebf1; }
@@ -1195,8 +1194,12 @@ def _img_tag_from_file(path: Path) -> str:
 
 
 def inject_header_bar(status_text: str = "", status_ok: bool = True):
-    """Compact top bar: logo left, connection pill right."""
-    logo_path = HEADER_LOGO_LIGHT if HEADER_LOGO_LIGHT.exists() else HEADER_LOGO_DARK
+    """Compact top bar: logo left, connection pill right. Logo follows the theme."""
+    _dark = st.session_state.get("ea_theme_pref") == "dark"
+    if _dark and HEADER_LOGO_DARK.exists():
+        logo_path = HEADER_LOGO_DARK
+    else:
+        logo_path = HEADER_LOGO_LIGHT if HEADER_LOGO_LIGHT.exists() else HEADER_LOGO_DARK
     logo = _img_tag_from_file(logo_path) if logo_path and logo_path.exists() else ""
     pill = ""
     if status_text:
@@ -1231,14 +1234,44 @@ def inject_header(_theme_ignored: str = "light"):
 
 
 # ───────────────────────── Chart styling helper ───────────────────
+_DARK_CHART_COLORS = {
+    "#eef0f5": "#252b3a",
+    "#f1f5f9": "#232937",
+    "#0f172a": "#dfe4ec",
+    "#334155": "#c9d0dc",
+    "#64748b": "#9aa4b4",
+    "#cbd5e1": "#414b61",
+    "#e5e7eb": "#414b61",
+    "#ffffff": "#161b27",
+    "#fff": "#161b27",
+}
+
+
 def get_chart_styler():
     """
     Return a chart styling function for Altair charts.
-    Configures background and view fill to match light theme.
+    Light: white canvas. Dark: dark canvas + in-spec colors remapped so
+    labels/grids/rules stay legible.
     """
     c = LIGHT
+    if st.session_state.get("ea_theme_pref") != "dark":
+        def _styler(chart):
+            return chart.configure(background=c["chart_bg"]).configure_view(fill=c["chart_bg"])
+        return _styler
+
+    import json as _json
+
     def _styler(chart):
-        return chart.configure(background=c["chart_bg"]).configure_view(fill=c["chart_bg"])
+        try:
+            s = _json.dumps(chart.to_dict())
+            for k, v in _DARK_CHART_COLORS.items():
+                s = s.replace('"' + k + '"', '"' + v + '"')
+            chart = chart.__class__.from_dict(_json.loads(s))
+        except Exception:
+            pass
+        return (chart.configure(background="#161b27")
+                .configure_view(fill="#161b27")
+                .configure_axis(domainColor="#2c3242"))
     return _styler
 
 # ---------------------------------------------------------------------------
