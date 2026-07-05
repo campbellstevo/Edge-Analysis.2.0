@@ -1202,8 +1202,35 @@ def inject_dark_overlay():
     .stTabs button[role="tab"]:hover p { color: #e8ebf1 !important; }
     .stTabs button[role="tab"][aria-selected="true"]:hover { background: #4800ff !important; }
     .stTabs button[role="tab"][aria-selected="true"]:hover p { color: #ffffff !important; }
-    ul[role="listbox"] li:hover, [role="option"]:hover {
+    ul[role="listbox"] li:hover, [role="option"]:hover,
+    [data-baseweb="menu"] li:hover {
         background: #232a3a !important;
+    }
+    ul[role="listbox"] li, ul[role="listbox"] li *,
+    [data-baseweb="menu"] li, [data-baseweb="menu"] li *,
+    [role="option"], [role="option"] *,
+    [data-testid="stSelectboxVirtualDropdown"] li,
+    [data-testid="stSelectboxVirtualDropdown"] li * {
+        color: #e8ebf1 !important;
+        background-color: transparent;
+    }
+    ul[role="listbox"] [aria-selected="true"],
+    [data-testid="stSelectboxVirtualDropdown"] [aria-selected="true"] {
+        background: #232a3a !important;
+    }
+    div[data-testid="stAlert"] p, div[data-testid="stAlert"] span,
+    div[data-testid="stAlert"] [data-testid="stMarkdownContainer"] * {
+        color: #9aa4b4 !important;
+    }
+    button[data-testid="stBaseButton-secondary"],
+    button[kind="secondary"], button[kind="secondaryFormSubmit"] {
+        background: #161b27 !important;
+        color: #c9d0dc !important;
+        border-color: rgba(255,255,255,0.12) !important;
+    }
+    button[data-testid="stBaseButton-secondary"]:hover,
+    button[kind="secondary"]:hover {
+        background: #1d2331 !important;
         color: #e8ebf1 !important;
     }
     [data-baseweb="select"]:hover > div, [data-baseweb="select"] > div:hover {

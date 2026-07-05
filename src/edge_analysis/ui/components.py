@@ -26,7 +26,11 @@ def _fmt_int(v):
     return "" if pd.isna(v) else f"{int(v)}"
 
 def _fmt_num(v, d: int = 2):
-    return "" if pd.isna(v) else f"{float(v):.{d}f}"
+    """Trim decimal noise: 28.00 -> 28, 33.30 -> 33.3, 0.39 stays 0.39."""
+    if pd.isna(v):
+        return ""
+    out = f"{float(v):.{d}f}".rstrip("0").rstrip(".")
+    return out if out not in ("", "-") else "0"
 
 def render_entry_model_table(df: pd.DataFrame, title: str = "Entry Model Performance"):
     if df is None or df.empty:
