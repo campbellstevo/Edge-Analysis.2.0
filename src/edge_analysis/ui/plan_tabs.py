@@ -127,14 +127,25 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
     for i, (rule, mask, lab_y, lab_n) in enumerate(gates, 1):
         mask = mask.fillna(False) if hasattr(mask, "fillna") else mask
         a, b, na, nb = seg(mask)
+        logged = (na + nb) >= 5 and min(na, nb) >= 1
+        low = logged and min(na, nb) < 3
         if na >= 3:
             all_pass &= mask
-        ca = GREEN if (a == a and a >= 0) else RED
-        cb = GREEN if (b == b and b >= 0) else RED
-        stat = (f"<span style='color:{ca};font-weight:700;'>{lab_y} {_fmt_r(a)}</span>"
-                f"<span style='color:#94a3b8;'> · </span>"
-                f"<span style='color:{cb};font-weight:700;'>{lab_n} {_fmt_r(b)}</span>")
-        small = f"<div style='font-size:11px;color:#94a3b8;'>{na} vs {nb} trades</div>"
+        if not logged:
+            stat = ("<span style='font-size:12px;color:#94a3b8;'>not logged yet — "
+                    "start tagging this in Notion</span>")
+            small = ""
+        else:
+            edge = (a - b) if (a == a and b == b) else float("nan")
+            ec = GREEN if (edge == edge and edge >= 0) else RED
+            chip = (f"<span style='background:{ec}1a;color:{ec};font-weight:800;font-size:13px;"
+                    f"border-radius:999px;padding:3px 12px;'>edge {edge:+.2f}R</span>"
+                    if edge == edge else "")
+            lows = (" <span style='font-size:10px;color:#94a3b8;border:1px solid rgba(148,163,184,0.4);"
+                    "border-radius:999px;padding:1px 7px;'>low sample</span>" if low else "")
+            stat = chip + lows
+            small = (f"<div style='font-size:11px;color:#94a3b8;margin-top:3px;'>"
+                     f"{lab_y} {_fmt_r(a)} ({na}) · {lab_n} {_fmt_r(b)} ({nb})</div>")
         rows_html += (
             f"<div style='display:flex;align-items:center;gap:14px;padding:11px 16px;"
             f"border-bottom:1px solid rgba(148,163,184,0.15);'>"
@@ -142,7 +153,7 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
             f"color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center;"
             f"justify-content:center;'>{i}</div>"
             f"<div style='flex:1;font-size:14px;color:#334155;font-weight:600;'>{rule}</div>"
-            f"<div style='text-align:right;font-size:13px;'>{stat}{small}</div></div>"
+            f"<div style='text-align:right;'>{stat}{small}</div></div>"
         )
     st.markdown(
         "<div style='background:#fff;border:1px solid rgba(0,0,0,0.06);border-radius:12px;"
@@ -371,24 +382,6 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
                 f"<b>{blank} of {n}</b> trades this week have blank manual fields (A+, Conviction, "
                 "Mental State, Mistake) — the discipline sections can't score what isn't logged. "
                 "Backfill them in Notion while the trades are fresh.", "warn")
-
-    # journal notes
-    notes = []
-    for _, r in wk.iterrows():
-        for col, tag in (("Comment", "Note"), ("Teachings/Learning Curve", "Teaching")):
-            v = str(r.get(col, "") or "").strip()
-            if v and v.lower() not in ("nan", "none", "na"):
-                notes.append((r["__dt"].strftime("%a"), tag, v[:240]))
-    if notes:
-        st.markdown("#### Notes from your journal")
-        st.markdown(
-            "<div style='background:#fff;border:1px solid rgba(0,0,0,0.06);border-radius:12px;"
-            "box-shadow:0 2px 10px rgba(0,0,0,0.04);overflow:hidden;margin:4px 0 10px;'>"
-            + "".join(
-                f"<div style='padding:10px 16px;border-bottom:1px solid rgba(148,163,184,0.15);"
-                f"font-size:13px;color:#334155;'><b style='color:#64748b;'>{d} · {tag}</b> — {v}</div>"
-                for d, tag, v in notes[:10])
-            + "</div>", unsafe_allow_html=True)
 
     # vs last week
     if not pw.empty:

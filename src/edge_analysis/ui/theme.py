@@ -1004,9 +1004,10 @@ def inject_theme():
     }}
 
     /* While rerunning, hide the stale previous render instead of ghosting it */
-    div[data-stale="true"], [data-stale="true"] {{
-        opacity: 0.03 !important;
-        transition: opacity 0.15s ease 0.35s;
+    div[data-stale="true"], [data-stale="true"], .stale-element,
+    [data-testid="stAppViewContainer"] .element-container.stale-element {{
+        opacity: 0 !important;
+        transition: opacity 0.1s ease 0.4s;
     }}
 
     /* No copy-link icons on heading hover */

@@ -29,7 +29,7 @@ def _stamp_sync():
         pass
 
 
-@st.cache_data(show_spinner=True, ttl=300)
+@st.cache_data(show_spinner=False, ttl=1800)
 def load_live_df(token: Optional[str], dbid: Optional[str]) -> pd.DataFrame:
     _stamp_sync()
     if not (token and dbid):
