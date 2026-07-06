@@ -1,7 +1,6 @@
 from __future__ import annotations
 import pandas as pd
 import streamlit as st
-import re
 
 def show_light_table(df: pd.DataFrame, hide_index: bool = True):
     if df is None or df.empty:

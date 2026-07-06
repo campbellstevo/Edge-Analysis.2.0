@@ -9,7 +9,7 @@ import streamlit as st
 import re
 
 # Import Notion adapter and parsing helpers
-from edge_analysis.data.notion_adapter import load_trades_from_notion, detect_schema, normalise_salty_df
+from edge_analysis.data.notion_adapter import load_trades_from_notion
 from edge_analysis.data.template_adapter import adapt_df  # NEW: Import template adapter
 from edge_analysis.core.parsing import (
     infer_instrument,

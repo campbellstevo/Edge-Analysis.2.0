@@ -933,9 +933,15 @@ def inject_theme():
     }}
     .ea-topbar-logo img {{ width: 170px !important; height: auto; display: block; }}
     div[data-testid="stAlert"] {{ border-radius: 12px !important; }}
-    div[data-testid="stAlert"]:has([data-testid="stAlertContentInfo"]) {{
+    div[data-testid="stAlert"]:has([data-testid="stAlertContentInfo"]),
+    div[data-testid="stAlertContainer"]:has([data-testid="stAlertContentInfo"]),
+    div[data-testid="stAlert"]:has(svg[title="Info"]) {{
         background: #f8fafc !important;
         border: 1px solid #eef0f5 !important;
+        color: #64748b !important;
+    }}
+    div[data-testid="stAlert"]:has([data-testid="stAlertContentInfo"]) p,
+    div[data-testid="stAlertContainer"]:has([data-testid="stAlertContentInfo"]) p {{
         color: #64748b !important;
     }}
     section.main div[data-testid="stVerticalBlock"],

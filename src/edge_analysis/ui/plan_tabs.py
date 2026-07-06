@@ -4,7 +4,6 @@ journal. Modeled on Campbell's approved artifact layouts. Helpers from tabs.py
 are imported lazily to avoid circular imports.
 """
 from __future__ import annotations
-import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -251,7 +250,6 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
         return
     g = g[g["__dt"].notna()].sort_values("__dt")
     now = pd.Timestamp.now()
-    this_mon = (now - pd.Timedelta(days=int(now.dayofweek))).normalize()
     weeks = sorted(g["__dt"].dt.to_period("W-SUN").unique())
     labels = {p: f"w/c {p.start_time.strftime('%d %b %Y')}" for p in weeks}
     default_p = now.to_period("W-SUN")

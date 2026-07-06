@@ -166,16 +166,7 @@ def _runtime_secret(key: str, default=None):
 # Pull in externalized modules for cleaner structure
 from data_loading import load_live_df
 from filters import render_filters
-from edge_analysis.core.constants import MODEL_SET, INSTRUMENT_CANONICAL, SESSION_CANONICAL
-from edge_analysis.core.parsing import (
-    infer_instrument,
-    normalize_session,
-    build_models_list,
-    parse_closed_rr,
-    classify_outcome_from_fields,
-    normalize_account_group,
-    build_duration_bin,
-)
+from edge_analysis.core.constants import MODEL_SET, SESSION_CANONICAL
 from edge_analysis.ui.components import show_light_table
 from edge_analysis.ui.tabs import render_all_tabs, generate_overall_stats
 from edge_analysis.user_store import get_user, upsert_user, set_user_db
@@ -600,7 +591,6 @@ def render_connect_page(mobile: bool):
     Args:
         mobile: Whether to render in mobile mode
     """
-    styler = get_chart_styler()
     inject_header("light")
     _connect_page_css()
 
@@ -973,6 +963,10 @@ def _sync_device_auth() -> None:
     if not token:
         return
     dbid = st.session_state.get(SessionKeys.DB_ID) or ""
+    _sig = f"{token[-10:]}|{dbid}"
+    if st.session_state.get("ea_auth_sig") == _sig:
+        return
+    st.session_state["ea_auth_sig"] = _sig
     js = (
         "(function(){var o={};try{o=JSON.parse(localStorage.getItem("
         + json.dumps(_DEVICE_AUTH_KEY)
@@ -1069,21 +1063,6 @@ def _require_notion_login():
 
 
 # -------------------------- Mobile CSS helper ---------------------------------
-def _inject_mobile_css(layout_mode: str):
-    """Hide sidebar in mobile mode."""
-    if layout_mode != "mobile":
-        return
-    st.markdown(
-        """
-    <style>
-      [data-testid="stSidebar"] { display: none !important; }
-      [data-testid="stAppViewContainer"] > .main { padding-left: 0 !important; }
-    </style>
-    """,
-        unsafe_allow_html=True,
-    )
-
-
 # -------------------------------- Dashboard -----------------------------------
 DateRange = Union[DateType, Tuple[DateType, DateType]]
 
@@ -1121,7 +1100,6 @@ def render_dashboard(mobile: bool):
         f"""
         <style>
         :root {{ --brand: {BRAND_PURPLE}; }}
-        .live-banner {{ text-align:center; margin:-8px 0 16px 0; font-weight:800; font-size:22px; color:var(--brand); }}
         [data-testid="stSidebar"] {{ background:#fff !important; }}
         [data-testid="stSidebar"] * {{ color:#0f172a !important; }}
 
@@ -1441,8 +1419,6 @@ def main() -> None:
     st.session_state["layout_index"] = 1 if layout_mode == "mobile" else 0
     st.session_state["layout_mode"] = layout_mode
 
-    # Command-bar layout: no sidebar on any device (page nav lives in Filters)
-    _inject_mobile_css("mobile")
 
     # Route to appropriate page
     if st.session_state.get(SessionKeys.NAV_PAGE) == PageNames.CONNECT:
