@@ -1003,6 +1003,12 @@ def inject_theme():
         }}
     }}
 
+    /* While rerunning, hide the stale previous render instead of ghosting it */
+    div[data-stale="true"], [data-stale="true"] {{
+        opacity: 0.03 !important;
+        transition: opacity 0.15s ease 0.35s;
+    }}
+
     /* No copy-link icons on heading hover */
     [data-testid="stHeaderActionElements"] {{ display: none !important; }}
     h1 > a, h2 > a, h3 > a, h4 > a {{ display: none !important; }}
