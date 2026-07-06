@@ -145,17 +145,6 @@ def render_filters(
         c3, c4 = st.columns(2, gap="small")
         sel_tot = "All"
         with c3:
-            if tot_opts and len(tot_opts) > 1:
-                _cur_tot = st.session_state.get("filters_tot_select", "All")
-                if _cur_tot not in tot_opts:
-                    _cur_tot = "All"
-                sel_tot = st.selectbox(
-                    "Trade Type",
-                    tot_opts,
-                    index=tot_opts.index(_cur_tot),
-                    key="filters_tot_select",
-                )
-        with c4:
             current_mode = st.session_state.get("filters_date_mode", "All")
             if current_mode not in date_mode_options:
                 current_mode = "All"
@@ -165,6 +154,31 @@ def render_filters(
                 index=date_mode_options.index(current_mode),
                 key="filters_date_mode",
             )
+        with c4:
+            # one box, two journals: MT5 templates filter by Trade Type,
+            # the SR template filters by Account
+            _has_tot = bool(tot_opts) and len(tot_opts) > 1
+            _has_acct = (not _has_tot) and bool(acct_opts) and len(acct_opts) > 1
+            if _has_tot:
+                _cur_tot = st.session_state.get("filters_tot_select", "All")
+                if _cur_tot not in tot_opts:
+                    _cur_tot = "All"
+                sel_tot = st.selectbox(
+                    "Trade Type",
+                    tot_opts,
+                    index=tot_opts.index(_cur_tot),
+                    key="filters_tot_select",
+                )
+            elif _has_acct:
+                _cur_acct = st.session_state.get("filters_acct_select", "All")
+                if _cur_acct not in acct_opts:
+                    _cur_acct = "All"
+                sel_acct = st.selectbox(
+                    "Account",
+                    acct_opts,
+                    index=acct_opts.index(_cur_acct),
+                    key="filters_acct_select",
+                )
         date_range: Optional[DateRange] = None
         if date_mode == "Last 30 days":
             date_range = (max_date - __import__("datetime").timedelta(days=29), max_date)
