@@ -1014,8 +1014,10 @@ def inject_theme():
     [data-testid="stPopoverBody"] {{
         min-width: 400px !important;
         max-width: 460px !important;
+        max-height: 78vh !important;
+        overflow-y: auto !important;
         padding: 14px 16px !important;
-        border-radius: 14px !important;
+        border-radius: 12px !important;
     }}
 
     /* Mobile: hint that the tab row scrolls */
@@ -1047,8 +1049,7 @@ def inject_theme():
         color: #ffffff !important;
     }}
     [data-testid="stRadio"] [data-baseweb="radio"] > div:first-child {{
-        width: 10px !important; height: 10px !important;
-        margin-right: 6px !important;
+        display: none !important;
     }}
 
     /* Tabs as pills */

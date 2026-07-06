@@ -181,7 +181,7 @@ def render_filters(
         _theme_label = ("Light theme" if st.session_state.get("ea_theme_pref") == "dark"
                         else "Dark theme")
         _menu_opts = [PageNames.DASHBOARD, PageNames.CONNECT, "Refresh data",
-                      "Sign in on iPhone", _theme_label]
+                      "Sign in on iPhone", "What the stats mean", _theme_label]
 
         def _menu_cb():
             choice = st.session_state.get("ea_menu")
@@ -199,6 +199,9 @@ def render_filters(
             elif choice == "Sign in on iPhone":
                 st.session_state["ea_show_qr"] = True
                 st.session_state["ea_menu"] = page_now
+            elif choice == "What the stats mean":
+                st.session_state["ea_show_help"] = True
+                st.session_state["ea_menu"] = page_now
             else:  # theme toggle
                 cur = st.session_state.get("ea_theme_pref", "light")
                 st.session_state["ea_theme_pref"] = "dark" if cur != "dark" else "light"
@@ -210,20 +213,18 @@ def render_filters(
             st.session_state["ea_menu"] = (_cur_page if _cur_page in _menu_opts
                                            else PageNames.DASHBOARD)
         st.selectbox("Page", _menu_opts, key="ea_menu", on_change=_menu_cb)
-        with st.expander("What do R, expectancy and MFE mean?"):
-            st.markdown(
-                "- **R** — your risk unit. +2R = twice what you risked.\n"
-                "- **Win / BE / Loss %** — trades that made money, scratched, or lost.\n"
-                "- **Expectancy** — average R per trade. Positive = profitable over time.\n"
-                "- **MFE / MAE** — how far a trade went for / against you before closing.\n"
-                "- **Give-back** — profit shown (MFE) but not banked.\n"
-                "- **Profit factor** — gross wins ÷ gross losses. Above 1 = profitable.")
     if st.session_state.pop("ea_show_qr", False):
         if _qr_dialog is not None:
             _qr_dialog()
         else:
             with st.expander("Sign in on your phone", expanded=True):
                 _phone_qr_body()
+    if st.session_state.pop("ea_show_help", False):
+        if _help_dialog is not None:
+            _help_dialog()
+        else:
+            with st.expander("What the stats mean", expanded=True):
+                _help_body()
 
     return sel_inst, sel_em, sel_sess, date_range, sel_acct, sel_tot
 
@@ -274,3 +275,21 @@ try:
         _phone_qr_body()
 except Exception:
     _qr_dialog = None
+
+
+def _help_body() -> None:
+    st.markdown(
+        "- **R** — your risk unit. +2R = twice what you risked.\n"
+        "- **Win / BE / Loss %** — trades that made money, scratched, or lost.\n"
+        "- **Expectancy** — average R per trade. Positive = profitable over time.\n"
+        "- **MFE / MAE** — how far a trade went for / against you before closing.\n"
+        "- **Give-back** — profit shown (MFE) but not banked.\n"
+        "- **Profit factor** — gross wins ÷ gross losses. Above 1 = profitable.")
+
+
+try:
+    @st.dialog("What the stats mean")
+    def _help_dialog():
+        _help_body()
+except Exception:
+    _help_dialog = None
