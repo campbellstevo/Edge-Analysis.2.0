@@ -617,7 +617,7 @@ def _account_comparison_tab(f: pd.DataFrame, styler):
     lower_map = {str(c).strip().lower(): c for c in f.columns}
     acct_col = lower_map.get("account") or lower_map.get("accounts") or lower_map.get("account name")
     if acct_col is None:
-        st.info("No 'Account' column found in data.")
+        pass
         st.markdown("</div>", unsafe_allow_html=True)
         return
 
@@ -625,7 +625,7 @@ def _account_comparison_tab(f: pd.DataFrame, styler):
     g["__Account"] = g[acct_col].astype(str).str.strip()
     g = g[~g["__Account"].isin(["", "nan", "NaN", "None"])]
     if g.empty:
-        st.info("No account values present.")
+        pass
         st.markdown("</div>", unsafe_allow_html=True)
         return
     if g["__Account"].nunique() <= 1:
@@ -635,7 +635,7 @@ def _account_comparison_tab(f: pd.DataFrame, styler):
 
     counted = g[g["Outcome"].isin(["Win", "BE", "Loss"])]
     if counted.empty:
-        st.info("No counted outcomes for any account.")
+        pass
         st.markdown("</div>", unsafe_allow_html=True)
         return
 
@@ -654,7 +654,7 @@ def _account_comparison_tab(f: pd.DataFrame, styler):
         ))
 
     if not rows:
-        st.info("No account stats available.")
+        pass
         st.markdown("</div>", unsafe_allow_html=True)
         return
 
@@ -705,14 +705,14 @@ def _early_close_tab(df: pd.DataFrame, styler):
     EC_WIN = "Early Close (Ended up being a win)"
 
     if df is None or df.empty or "Result" not in df.columns:
-        st.info("No early close data available.")
+        pass
         st.markdown("</div>", unsafe_allow_html=True)
         return
 
     ec = df[df["Result"].isin([EC_BE, EC_WIN])].copy()
 
     if ec.empty:
-        st.info("No early close trades found in the current data.")
+        pass
         st.markdown("</div>", unsafe_allow_html=True)
         return
 
@@ -908,13 +908,13 @@ def _psych_session_alert(df: pd.DataFrame, styler) -> None:
     st.markdown("### Session Redistribution")
     sess_col = next((c for c in ["Session Norm", "Session"] if c in df.columns), None)
     if sess_col is None:
-        st.info("No Session column found.")
+        _unavailable("Sessions")
         return
     g = df.copy()
     g["__sess"] = g[sess_col].apply(_clean_session_value)
     g = g[g["__sess"].notna()]
     if g.empty:
-        st.info("No session data in current filters.")
+        _unavailable("Sessions")
         return
     total = len(g)
     counts = g["__sess"].value_counts()
