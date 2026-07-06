@@ -272,11 +272,11 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
     n_w, n_l = int((rr > 0.15).sum()), int((rr < -0.15).sum())
     n_be = n - n_w - n_l
     net = float(rr.sum())
-    usd = pd.to_numeric(wk.get("PnL"), errors="coerce")
+    usd = pd.to_numeric(wk["PnL"], errors="coerce") if "PnL" in wk.columns else None
     net_usd = float(usd.sum()) if usd is not None and usd.notna().any() else None
     best_i = rr.idxmax()
     ex_best = float(rr.drop(best_i).sum()) if n > 1 else 0.0
-    mfe = pd.to_numeric(wk.get("MFE (R)"), errors="coerce")
+    mfe = pd.to_numeric(wk["MFE (R)"], errors="coerce") if "MFE (R)" in wk.columns else None
     give = ((mfe - rr).clip(lower=0)).sum() if mfe is not None and mfe.notna().any() else float("nan")
 
     def card(lab, val, sub, col):
