@@ -1287,81 +1287,83 @@ def render_dashboard(mobile: bool):
     total_pnl_rr = float(f["PnL_from_RR"].sum())
 
     # Display KPIs
-    # ── Hero band: net result + sparkline + stat chips (one card) ────────────
-    cum = f.sort_values("Date")["PnL_from_RR"].fillna(0).cumsum() if "Date" in f.columns else f["PnL_from_RR"].fillna(0).cumsum()
-    spark = ""
-    pts = cum.tolist()
-    if len(pts) >= 2:
-        lo, hi = min(min(pts), 0.0), max(max(pts), 0.0)
-        span = max(hi - lo, 0.001)
-        W, H = 560, 46
-        coords = " ".join(
-            f"{(i / (len(pts) - 1) * W):.1f},{(H - 4 - (v - lo) / span * (H - 8)):.1f}"
-            for i, v in enumerate(pts)
+    def _hero_block():
+        # ── Hero band: net result + sparkline + stat chips (one card) ────────────
+        cum = f.sort_values("Date")["PnL_from_RR"].fillna(0).cumsum() if "Date" in f.columns else f["PnL_from_RR"].fillna(0).cumsum()
+        spark = ""
+        pts = cum.tolist()
+        if len(pts) >= 2:
+            lo, hi = min(min(pts), 0.0), max(max(pts), 0.0)
+            span = max(hi - lo, 0.001)
+            W, H = 560, 46
+            coords = " ".join(
+                f"{(i / (len(pts) - 1) * W):.1f},{(H - 4 - (v - lo) / span * (H - 8)):.1f}"
+                for i, v in enumerate(pts)
+            )
+            zero_y = H - 4 - (0.0 - lo) / span * (H - 8)
+            spark = (
+                f"<svg viewBox='0 0 {W} {H}' preserveAspectRatio='none' "
+                f"style='width:100%;height:{H}px;display:block;margin-top:10px;'>"
+                f"<line x1='0' y1='{zero_y:.1f}' x2='{W}' y2='{zero_y:.1f}' stroke='#e5e7eb' stroke-width='1' stroke-dasharray='4,4'/>"
+                f"<polyline points='{coords}' fill='none' stroke='#4800ff' stroke-width='2.5' "
+                f"stroke-linejoin='round' stroke-linecap='round'/></svg>"
+            )
+        net_col = "#16a34a" if total_pnl_rr >= 0 else "#ef4444"
+        _wk_chip = ""
+        if "Date" in f.columns:
+            _dser = pd.to_datetime(f["Date"], errors="coerce")
+            _wk_r = float(f.loc[_dser >= (pd.Timestamp.now() - pd.Timedelta(days=7)), "PnL_from_RR"].sum())
+            _wc = "#16a34a" if _wk_r >= 0 else "#ef4444"
+            _arrow = "▲" if _wk_r >= 0 else "▼"
+            _wk_chip = (f"<span style='font-size:14px;font-weight:700;color:{_wc};"
+                        f"margin-left:12px;vertical-align:middle;'>{_arrow} {_wk_r:+.1f}R this week</span>")
+        chips = "".join(
+            f"<div style='flex:1;min-width:132px;background:#f8f9fc;border-radius:10px;padding:10px 12px;'>"
+            f"<div style='font-size:11px;font-weight:600;letter-spacing:0.06em;color:#94a3b8;'>{lab}</div>"
+            f"<div style='font-size:19px;font-weight:800;color:{col};margin-top:2px;'>{val}</div></div>"
+            for lab, val, col in [
+                ("TRADES", f"{stats['total']}", "#0f172a"),
+                ("WIN", f"{stats['win_rate']:.0f}%", "#0f172a"),
+                ("BREAK-EVEN", f"{stats['be_rate']:.0f}%", "#0f172a"),
+                ("LOSS", f"{stats['loss_rate']:.0f}%", "#0f172a"),
+                ("AVG WIN", f"{avg_rr_wins:.2f}R", "#4800ff"),
+            ]
         )
-        zero_y = H - 4 - (0.0 - lo) / span * (H - 8)
-        spark = (
-            f"<svg viewBox='0 0 {W} {H}' preserveAspectRatio='none' "
-            f"style='width:100%;height:{H}px;display:block;margin-top:10px;'>"
-            f"<line x1='0' y1='{zero_y:.1f}' x2='{W}' y2='{zero_y:.1f}' stroke='#e5e7eb' stroke-width='1' stroke-dasharray='4,4'/>"
-            f"<polyline points='{coords}' fill='none' stroke='#4800ff' stroke-width='2.5' "
-            f"stroke-linejoin='round' stroke-linecap='round'/></svg>"
+        st.markdown(
+            f"<div style='background:#ffffff;border:1px solid rgba(0,0,0,0.06);border-radius:12px;"
+            f"padding:20px 22px;box-shadow:0 2px 12px rgba(0,0,0,0.05);margin:2px 0 14px;'>"
+            f"<div style='font-size:12px;font-weight:600;letter-spacing:0.08em;color:#94a3b8;'>NET RESULT</div>"
+            f"<div style='font-size:34px;font-weight:800;color:{net_col};line-height:1.15;'>{total_pnl_rr:+,.1f}R{_wk_chip}</div>"
+            f"{spark}"
+            f"<div style='display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;'>{chips}</div>"
+            f"</div>",
+            unsafe_allow_html=True,
         )
-    net_col = "#16a34a" if total_pnl_rr >= 0 else "#ef4444"
-    _wk_chip = ""
-    if "Date" in f.columns:
-        _dser = pd.to_datetime(f["Date"], errors="coerce")
-        _wk_r = float(f.loc[_dser >= (pd.Timestamp.now() - pd.Timedelta(days=7)), "PnL_from_RR"].sum())
-        _wc = "#16a34a" if _wk_r >= 0 else "#ef4444"
-        _arrow = "▲" if _wk_r >= 0 else "▼"
-        _wk_chip = (f"<span style='font-size:14px;font-weight:700;color:{_wc};"
-                    f"margin-left:12px;vertical-align:middle;'>{_arrow} {_wk_r:+.1f}R this week</span>")
-    chips = "".join(
-        f"<div style='flex:1;min-width:132px;background:#f8f9fc;border-radius:10px;padding:10px 12px;'>"
-        f"<div style='font-size:11px;font-weight:600;letter-spacing:0.06em;color:#94a3b8;'>{lab}</div>"
-        f"<div style='font-size:19px;font-weight:800;color:{col};margin-top:2px;'>{val}</div></div>"
-        for lab, val, col in [
-            ("TRADES", f"{stats['total']}", "#0f172a"),
-            ("WIN", f"{stats['win_rate']:.0f}%", "#0f172a"),
-            ("BREAK-EVEN", f"{stats['be_rate']:.0f}%", "#0f172a"),
-            ("LOSS", f"{stats['loss_rate']:.0f}%", "#0f172a"),
-            ("AVG WIN", f"{avg_rr_wins:.2f}R", "#4800ff"),
-        ]
-    )
-    st.markdown(
-        f"<div style='background:#ffffff;border:1px solid rgba(0,0,0,0.06);border-radius:12px;"
-        f"padding:20px 22px;box-shadow:0 2px 12px rgba(0,0,0,0.05);margin:2px 0 14px;'>"
-        f"<div style='font-size:12px;font-weight:600;letter-spacing:0.08em;color:#94a3b8;'>NET RESULT</div>"
-        f"<div style='font-size:34px;font-weight:800;color:{net_col};line-height:1.15;'>{total_pnl_rr:+,.1f}R{_wk_chip}</div>"
-        f"{spark}"
-        f"<div style='display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;'>{chips}</div>"
-        f"</div>",
-        unsafe_allow_html=True,
-    )
-    try:
-        _now = pd.Timestamp.now()
-        if _now.dayofweek <= 2 and "Date" in f.columns:
-            _d = pd.to_datetime(f["Date"], errors="coerce")
-            _mon = (_now - pd.Timedelta(days=int(_now.dayofweek))).normalize()
-            _lw = f[(_d >= _mon - pd.Timedelta(days=7)) & (_d < _mon)]
-            if len(_lw):
-                _lr = float(_lw["PnL_from_RR"].sum())
-                _lc = "#16a34a" if _lr >= 0 else "#ef4444"
-                st.markdown(
-                    f"<div style='display:flex;align-items:center;gap:10px;background:#ffffff;"
-                    f"border:1px solid rgba(0,0,0,0.06);border-radius:12px;padding:10px 16px;"
-                    f"box-shadow:0 2px 10px rgba(0,0,0,0.04);margin:0 0 12px;font-size:14px;color:#334155;'>"
-                    f"<span style='font-weight:700;'>Last week wrapped:</span>"
-                    f"<span style='font-weight:800;color:{_lc};'>{_lr:+.1f}R</span>"
-                    f"<span style='color:#64748b;'>over {len(_lw)} trade{'s' if len(_lw) != 1 else ''} "
-                    f"— full breakdown in the Review tab.</span></div>",
-                    unsafe_allow_html=True)
-    except Exception:
-        pass
+        try:
+            _now = pd.Timestamp.now()
+            if _now.dayofweek <= 2 and "Date" in f.columns:
+                _d = pd.to_datetime(f["Date"], errors="coerce")
+                _mon = (_now - pd.Timedelta(days=int(_now.dayofweek))).normalize()
+                _lw = f[(_d >= _mon - pd.Timedelta(days=7)) & (_d < _mon)]
+                if len(_lw):
+                    _lr = float(_lw["PnL_from_RR"].sum())
+                    _lc = "#16a34a" if _lr >= 0 else "#ef4444"
+                    st.markdown(
+                        f"<div style='display:flex;align-items:center;gap:10px;background:#ffffff;"
+                        f"border:1px solid rgba(0,0,0,0.06);border-radius:12px;padding:10px 16px;"
+                        f"box-shadow:0 2px 10px rgba(0,0,0,0.04);margin:0 0 12px;font-size:14px;color:#334155;'>"
+                        f"<span style='font-weight:700;'>Last week wrapped:</span>"
+                        f"<span style='font-weight:800;color:{_lc};'>{_lr:+.1f}R</span>"
+                        f"<span style='color:#64748b;'>over {len(_lw)} trade{'s' if len(_lw) != 1 else ''} "
+                        f"— full breakdown in the Review tab.</span></div>",
+                        unsafe_allow_html=True)
+        except Exception:
+            pass
+
     st.markdown("<div class='spacer-12'></div>", unsafe_allow_html=True)
 
     # Render tabs with data
-    render_all_tabs(f, df, styler, show_light_table)
+    render_all_tabs(f, df, styler, show_light_table, hero_fn=_hero_block)
 
 
 # --------------------------------- Router -------------------------------------

@@ -3704,7 +3704,7 @@ def _monthly_report_pdf(monthly, need_r, target_pct, risk_pct, records_rows) -> 
 
 
 # ─────────────────────────── 7-TAB LAYOUT ────────────────────────────────────
-def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table):
+def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, hero_fn=None):
     f_perf = _prep_perf_df(f)
     df_all_safe = df_all.copy() if df_all is not None else df_all
 
@@ -3719,6 +3719,8 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table):
 
     # ── Tab 1: Performance ────────────────────────────────────────────────────
     with t_performance:
+        if hero_fn is not None:
+            hero_fn()
         _growth_tab(f_perf, df_all_safe, styler)
         st.divider()
         _instruments_tab(f_perf, show_table)
