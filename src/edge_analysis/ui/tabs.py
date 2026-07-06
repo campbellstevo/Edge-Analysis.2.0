@@ -1833,6 +1833,7 @@ def _hourly_expectancy_clock(df_raw: pd.DataFrame) -> None:
     if st.session_state.get("ea_theme_pref") == "dark":
         html = "<style>html,body{background:#161b27 !important;margin:0;}</style>" + html
         for _a, _b in [("#f6f7fb", "#161b27"), ("background: white", "background: #161b27"),
+                       ("#eaecf0", "#1d2331"), ("#cbd5e1", "#3a4256"),
                        ("background:white", "background:#161b27"),
                        ("#ffffff", "#161b27"), ("#fff", "#161b27"),
                        ("#64748b", "#9aa4b4"), ("#e2e8f0", "#262c3b"),
