@@ -107,7 +107,7 @@ def render_filters(
                   if st.session_state.get(k, "All") != "All")
     if st.session_state.get("filters_date_mode", "All") != "All":
         _active += 1
-    _flabel = f"Filters · {_active} active" if _active else "Filters"
+    _flabel = f"Settings · {_active} filters on" if _active else "Settings"
     try:
         flt = st.popover(_flabel, use_container_width=False)
     except Exception:
@@ -180,8 +180,8 @@ def render_filters(
             )
         _theme_label = ("Light theme" if st.session_state.get("ea_theme_pref") == "dark"
                         else "Dark theme")
-        _menu_opts = [PageNames.DASHBOARD, PageNames.CONNECT, "Refresh data",
-                      "Sign in on iPhone", "What the stats mean", _theme_label]
+        _menu_opts = [PageNames.DASHBOARD, PageNames.CONNECT, "Getting started",
+                      "Refresh data", "Sign in on iPhone", "What the stats mean", _theme_label]
 
         def _menu_cb():
             choice = st.session_state.get("ea_menu")
@@ -201,6 +201,9 @@ def render_filters(
                 st.session_state["ea_menu"] = page_now
             elif choice == "What the stats mean":
                 st.session_state["ea_show_help"] = True
+                st.session_state["ea_menu"] = page_now
+            elif choice == "Getting started":
+                st.session_state["ea_show_setup"] = True
                 st.session_state["ea_menu"] = page_now
             else:  # theme toggle
                 cur = st.session_state.get("ea_theme_pref", "light")
@@ -225,6 +228,12 @@ def render_filters(
         else:
             with st.expander("What the stats mean", expanded=True):
                 _help_body()
+    if st.session_state.pop("ea_show_setup", False):
+        if _setup_dialog is not None:
+            _setup_dialog()
+        else:
+            with st.expander("Getting started", expanded=True):
+                _setup_body()
 
     return sel_inst, sel_em, sel_sess, date_range, sel_acct, sel_tot
 
@@ -293,3 +302,33 @@ try:
         _help_body()
 except Exception:
     _help_dialog = None
+
+
+def _setup_body() -> None:
+    st.markdown(
+        "**1. Get the trading journal template**\n"
+        "Duplicate the Edge Analysis MT5 journal template into your own Notion workspace. "
+        "Every column the dashboard reads is already set up in it.\n\n"
+        "**2. Connect it here**\n"
+        "Settings → Page → *Change Template*, sign in with Notion, and pick the journal "
+        "you just duplicated. Your data appears within seconds.\n\n"
+        "**3. Automatic MT5 import (optional)**\n"
+        "If you trade on MetaTrader 5, the sync tool fills your journal automatically after "
+        "every trade — R multiples, MFE/MAE, timings, costs. Without it you can still log "
+        "trades in Notion by hand.\n\n"
+        "**4. Put it on your phone**\n"
+        "Settings → Page → *Sign in on iPhone*, scan the code once, add to home screen. "
+        "Stays signed in.\n\n"
+        "**5. Make it yours**\n"
+        "Log the manual fields (A+ Setup, Conviction, Mental State, Mistake) — the Plan, "
+        "Psychology and Refinements tabs get sharper with every tagged trade."
+    )
+    st.caption("Analytics on your own journal — not financial advice.")
+
+
+try:
+    @st.dialog("Getting started")
+    def _setup_dialog():
+        _setup_body()
+except Exception:
+    _setup_dialog = None
