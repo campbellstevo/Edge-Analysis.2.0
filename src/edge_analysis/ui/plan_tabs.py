@@ -131,7 +131,8 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
     ok_model = _col_contains(g, "Entry Model", "Protected|FBOS|FBoS")
     bad_model = _col_contains(g, "Entry Model", "No.Close|No Close")
     ok_break = _yes(g, "True Break?")
-    planned = pd.to_numeric(g.get("Planned R:R"), errors="coerce")
+    planned = (pd.to_numeric(g["Planned R:R"], errors="coerce")
+               if "Planned R:R" in g.columns else pd.Series(float("nan"), index=g.index))
     ok_room = planned >= 3
     ok_obos = _yes(g, "Oversold or Overbought?")
 
