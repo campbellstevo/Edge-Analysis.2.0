@@ -17,6 +17,29 @@ def _t():
     return _tabs
 
 
+def get_tz_offset(df) -> int:
+    """Infer the trader's UTC offset from their own journal: the difference
+    between their logged local-hour column and the UTC timestamp. Cached per
+    session. Falls back to +10 (the template default) when not inferable."""
+    if "ea_tz_offset" in st.session_state:
+        return st.session_state["ea_tz_offset"]
+    off = 10
+    try:
+        hour_col = next((c for c in df.columns if str(c).strip().lower().startswith("hour")), None)
+        if hour_col is not None and "Date" in df.columns:
+            hrs = pd.to_numeric(df[hour_col], errors="coerce")
+            utc = pd.to_datetime(df["Date"], errors="coerce")
+            ok = hrs.notna() & utc.notna()
+            if int(ok.sum()) >= 3:
+                diff = ((hrs[ok] - utc[ok].dt.hour) % 24).round().astype(int)
+                m = int(diff.mode().iloc[0])
+                off = m - 24 if m > 12 else m
+    except Exception:
+        pass
+    st.session_state["ea_tz_offset"] = off
+    return off
+
+
 def _prep(df_raw: pd.DataFrame):
     """Live+Challenge trades with Melbourne-calendar dates and numeric R."""
     if df_raw is None or df_raw.empty:
@@ -35,11 +58,9 @@ def _prep(df_raw: pd.DataFrame):
         return None
     g["__dt"] = pd.to_datetime(g.get("Date"), errors="coerce")
     try:
-        if getattr(g["__dt"].dt, "tz", None) is None:
-            g["__dt"] = (g["__dt"].dt.tz_localize("UTC")
-                         .dt.tz_convert("Australia/Melbourne").dt.tz_localize(None))
-        else:
-            g["__dt"] = g["__dt"].dt.tz_convert("Australia/Melbourne").dt.tz_localize(None)
+        if getattr(g["__dt"].dt, "tz", None) is not None:
+            g["__dt"] = g["__dt"].dt.tz_localize(None)
+        g["__dt"] = g["__dt"] + pd.Timedelta(hours=get_tz_offset(g))
     except Exception:
         pass
     return g
@@ -80,9 +101,21 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
     st.caption(f"Live + Challenge trades only · {n_all} trades · every number below is "
                "recomputed from your journal on each load.")
 
-    hr = pd.to_numeric(g.get("Hour (Melb)"), errors="coerce")
-    in_window = hr.isin([17, 18, 19, 20, 21, 22, 23, 0, 1, 2]) if hr is not None else pd.Series(False, index=g.index)
-    midday = hr.isin([11, 12, 13, 14, 15, 16]) if hr is not None else pd.Series(False, index=g.index)
+    hr = pd.to_numeric(g["Hour (Melb)"], errors="coerce") if "Hour (Melb)" in g.columns else g["__dt"].dt.hour
+    # profitable trading window: derived from this journal, not hardcoded
+    _hr_stats = g.assign(__h=hr).groupby("__h")["__rr"].agg(["mean", "size"])
+    _good_hours = set(_hr_stats[(_hr_stats["size"] >= 2) & (_hr_stats["mean"] > 0)].index.astype(int))
+    if len(_good_hours) >= 3:
+        in_window = hr.isin(_good_hours)
+    else:
+        in_window = hr.isin([17, 18, 19, 20, 21, 22, 23, 0, 1, 2])
+    _bad_hours = set(_hr_stats[(_hr_stats["size"] >= 2) & (_hr_stats["mean"] < 0)].index.astype(int))
+    midday = hr.isin(_bad_hours) if _bad_hours else hr.isin([11, 12, 13, 14, 15, 16])
+    # proven instruments: positive expectancy with a real sample
+    _sym = g.get("Symbol", g.get("Instrument", pd.Series("", index=g.index))).astype(str)
+    _sym_stats = g.assign(__s=_sym).groupby("__s")["__rr"].agg(["mean", "size"])
+    _proven = set(_sym_stats[(_sym_stats["size"] >= 5) & (_sym_stats["mean"] > 0)].index)
+    on_proven = _sym.isin(_proven) if _proven else pd.Series(True, index=g.index)
 
     sess = g.get("Session", pd.Series("", index=g.index)).astype(str)
     is_asia = sess.str.contains("Asia", case=False, na=False)
@@ -112,12 +145,13 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
         ("It's a genuine A+ setup", ok_aplus, "A+", "non-A+"),
         ("Bias is clear, entry is textbook", ok_exec, "Right", "off-plan"),
         ("London or New York — never Asia", (is_ldn | is_ny), "LDN/NY", "other"),
-        ("Inside your 5 PM–2 AM window", in_window, "in window", "outside"),
+        ("Inside your profitable hours (from your data)", in_window, "in window", "outside"),
         ("Single entry, structure stop set", ok_single, "single", "multi"),
         ("5M entries only", ok_5m, "5M", "other TF"),
         ("Protected Structure or FBoS", ok_model, "PS/FBoS", "other"),
         ("True break confirmed", ok_break, "confirmed", "No/NA"),
         ("Minimum 3R of room to target", ok_room, "≥3R", "<3R"),
+        ("Stick to your proven instruments", on_proven, "proven", "other"),
     ]
 
     st.markdown("#### Pre-trade checklist — every box yes, or pass")
@@ -182,7 +216,7 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
     named = [("New York session", is_ny), ("London session", is_ldn), ("Asia session", is_asia),
              ("Right bias + right execution", ok_exec), ("A+ setups", ok_aplus),
              ("Non-A+ setups", ~ok_aplus & g["A+ Setup?"].notna() if "A+ Setup?" in g.columns else None),
-             ("5 PM–2 AM window", in_window), ("Trading 11 AM–4 PM", midday),
+             ("Your profitable hours", in_window), ("Your losing hours", midday),
              ("Good headspace", ok_head), ("Single entry", ok_single),
              ("Multi-entry", ~ok_single), ("OB/OS extremes", ok_obos),
              ("True break confirmed", ok_break), ("No-Close entries", bad_model)]
@@ -217,6 +251,8 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
                 + _ranklist("STRICT DON'TS — THESE BLEED", bad, False)
                 + "</div>", unsafe_allow_html=True)
 
+    _rules_section(good, bad, max(1.0, round((5.0 / 1.0) / 4.0)))
+
     if planned is not None and planned.notna().sum() >= 10:
         st.markdown("#### For reference — targeted RR")
         st.caption("Not a rule — win rate and expectancy by the RR you aimed for.")
@@ -238,6 +274,120 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
             "<div class='table-wrap'><table><thead><tr><th class='text'>Target</th>"
             "<th class='num'>Trades</th><th class='num'>Win %</th><th class='num'>Expectancy</th>"
             f"</tr></thead><tbody>{rws}</tbody></table></div>", unsafe_allow_html=True)
+
+
+
+
+def _rules_js(expr: str, key: str):
+    try:
+        from streamlit_js_eval import streamlit_js_eval
+        return streamlit_js_eval(js_expressions=expr, key=key)
+    except Exception:
+        return None
+
+
+def _rules_state() -> dict:
+    """Rules live in session, mirrored to this device's browser storage."""
+    if "ea_rules" not in st.session_state:
+        st.session_state["ea_rules"] = {"custom": [], "accepted": [], "declined": []}
+        st.session_state["ea_rules_loaded"] = False
+    if not st.session_state.get("ea_rules_loaded"):
+        raw = _rules_js("localStorage.getItem('ea_rules') || ''", key="ea_rules_load")
+        if raw:
+            try:
+                import json as _json
+                data = _json.loads(raw)
+                if isinstance(data, dict):
+                    st.session_state["ea_rules"] = {
+                        "custom": list(data.get("custom", []))[:30],
+                        "accepted": list(data.get("accepted", []))[:30],
+                        "declined": list(data.get("declined", []))[:60],
+                    }
+            except Exception:
+                pass
+            st.session_state["ea_rules_loaded"] = True
+    return st.session_state["ea_rules"]
+
+
+def _rules_save() -> None:
+    import json as _json
+    st.session_state["ea_rules_loaded"] = True
+    payload = _json.dumps(st.session_state["ea_rules"])
+    _rules_js("localStorage.setItem('ea_rules', " + _json.dumps(payload) + ")",
+              key=f"ea_rules_save_{abs(hash(payload)) % 100000}")
+
+
+def _rules_section(good, bad, need_weekly_cap: float) -> None:
+    t = _t()
+    st.markdown("#### My rules")
+    st.caption("Your own rules plus ones recommended from your data. "
+               "Saved on this device.")
+    state = _rules_state()
+
+    # recommendations derived from the ranked edge
+    recs = []
+    for name, v, n in bad[:4]:
+        recs.append((f"avoid:{name}", f"Avoid {name} — costing {v:+.2f}R per trade ({n} trades)"))
+    for name, v, n in good[:3]:
+        recs.append((f"keep:{name}", f"Stick to {name} — worth {v:+.2f}R per trade ({n} trades)"))
+    recs.append(("cap:week", f"Stop for the week at −{need_weekly_cap:.0f}R"))
+
+    active = list(state["custom"]) + [txt for rid, txt in recs if rid in state["accepted"]]
+    if active:
+        for k, rule in enumerate(active):
+            c1, c2 = st.columns([12, 1])
+            with c1:
+                st.markdown(
+                    f"<div style='background:#fff;border:1px solid rgba(0,0,0,0.06);"
+                    f"border-radius:10px;padding:9px 14px;font-size:14px;color:#334155;"
+                    f"margin:2px 0;'>{rule}</div>", unsafe_allow_html=True)
+            with c2:
+                if st.button("✕", key=f"rule_del_{k}", help="Remove this rule"):
+                    if rule in state["custom"]:
+                        state["custom"].remove(rule)
+                    else:
+                        for rid, txt in recs:
+                            if txt == rule and rid in state["accepted"]:
+                                state["accepted"].remove(rid)
+                                state["declined"].append(rid)
+                    _rules_save()
+                    st.rerun()
+    else:
+        st.caption("No rules yet — add your own below or accept a recommendation.")
+
+    c1, c2 = st.columns([12, 2])
+    with c1:
+        new_rule = st.text_input("Add a rule", key="ea_new_rule",
+                                 label_visibility="collapsed",
+                                 placeholder="Write your own rule…")
+    with c2:
+        if st.button("Add", key="ea_add_rule", use_container_width=True):
+            if new_rule and new_rule.strip():
+                state["custom"].append(new_rule.strip()[:160])
+                _rules_save()
+                st.rerun()
+
+    pending = [(rid, txt) for rid, txt in recs
+               if rid not in state["accepted"] and rid not in state["declined"]]
+    if pending:
+        st.markdown("#### Recommended from your data")
+        for rid, txt in pending:
+            c1, c2, c3 = st.columns([10, 1.6, 1.6])
+            with c1:
+                st.markdown(
+                    f"<div style='background:#f8f9fc;border:1px dashed rgba(72,0,255,0.35);"
+                    f"border-radius:10px;padding:9px 14px;font-size:14px;color:#334155;"
+                    f"margin:2px 0;'>{txt}</div>", unsafe_allow_html=True)
+            with c2:
+                if st.button("Accept", key=f"rec_ok_{rid}"):
+                    state["accepted"].append(rid)
+                    _rules_save()
+                    st.rerun()
+            with c3:
+                if st.button("Decline", key=f"rec_no_{rid}"):
+                    state["declined"].append(rid)
+                    _rules_save()
+                    st.rerun()
 
 
 # ─────────────────────────── Weekly Trading Review ───────────────────────────

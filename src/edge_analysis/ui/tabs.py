@@ -3438,16 +3438,15 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
         return
     g = df_raw.copy()
     g["__dt"] = pd.to_datetime(g["Date"], errors="coerce")
-    # MT5 timestamps are UTC — group by the trader's calendar (Melbourne)
-    if "Hour (Melb)" in g.columns:
-        try:
-            if getattr(g["__dt"].dt, "tz", None) is None:
-                g["__dt"] = (g["__dt"].dt.tz_localize("UTC")
-                             .dt.tz_convert("Australia/Melbourne").dt.tz_localize(None))
-            else:
-                g["__dt"] = g["__dt"].dt.tz_convert("Australia/Melbourne").dt.tz_localize(None)
-        except Exception:
-            pass
+    # timestamps are UTC — shift to the trader's own calendar, inferred from
+    # their journal's hour column
+    try:
+        from edge_analysis.ui.plan_tabs import get_tz_offset
+        if getattr(g["__dt"].dt, "tz", None) is not None:
+            g["__dt"] = g["__dt"].dt.tz_localize(None)
+        g["__dt"] = g["__dt"] + pd.Timedelta(hours=get_tz_offset(g))
+    except Exception:
+        pass
     g = g[g["__dt"].notna()]
     rr_col = next((c for c in ["Closed RR", "RR", "Closed R"] if c in g.columns), None)
     if rr_col is None or g.empty:
