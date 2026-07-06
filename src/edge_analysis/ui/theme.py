@@ -1257,13 +1257,22 @@ def inject_dark_overlay():
     [data-baseweb="menu"] li:hover {
         background: #232a3a !important;
     }
-    ul[role="listbox"] li, ul[role="listbox"] li *,
-    [data-baseweb="menu"] li, [data-baseweb="menu"] li *,
-    [role="option"], [role="option"] *,
-    [data-testid="stSelectboxVirtualDropdown"] li,
+    ul[role="listbox"] li, [data-baseweb="menu"] li, [role="option"],
+    [data-testid="stSelectboxVirtualDropdown"] li {
+        color: #e8ebf1 !important;
+        background: #161b27 !important;
+    }
+    ul[role="listbox"] li *, [data-baseweb="menu"] li *, [role="option"] *,
     [data-testid="stSelectboxVirtualDropdown"] li * {
         color: #e8ebf1 !important;
-        background-color: transparent;
+        background: transparent !important;
+    }
+    ul[role="listbox"] li:hover, [data-baseweb="menu"] li:hover, [role="option"]:hover,
+    [data-testid="stSelectboxVirtualDropdown"] li:hover,
+    ul[role="listbox"] li[aria-selected="true"], [role="option"][aria-selected="true"],
+    [role="option"][data-highlighted], ul[role="listbox"] li:focus {
+        background: #262f42 !important;
+        color: #ffffff !important;
     }
     ul[role="listbox"] [aria-selected="true"],
     [data-testid="stSelectboxVirtualDropdown"] [aria-selected="true"] {
