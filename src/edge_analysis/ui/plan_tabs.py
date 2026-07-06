@@ -251,7 +251,7 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
     g = g[g["__dt"].notna()].sort_values("__dt")
     now = pd.Timestamp.now()
     weeks = sorted(g["__dt"].dt.to_period("W-SUN").unique())
-    labels = {p: f"w/c {p.start_time.strftime('%d %b %Y')}" for p in weeks}
+    labels = {p: f"{p.start_time.strftime('%d %b')} – {p.end_time.strftime('%d %b %Y')}" for p in weeks}
     default_p = now.to_period("W-SUN")
     opts = [labels[p] for p in weeks[::-1]]
     sel = st.selectbox("Week", opts, index=0 if labels.get(default_p) not in opts

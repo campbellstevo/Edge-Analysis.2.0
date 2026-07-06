@@ -3616,8 +3616,8 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
     rows = []
     if not weekly.empty:
         bw, ww = weekly.idxmax(), weekly.idxmin()
-        rows.append(("BEST WEEK", f"{weekly.max():+.1f}R", f"w/c {bw.strftime('%d %b %Y')}", "#16a34a"))
-        rows.append(("WORST WEEK", f"{weekly.min():+.1f}R", f"w/c {ww.strftime('%d %b %Y')}", "#ef4444"))
+        rows.append(("BEST WEEK", f"{weekly.max():+.1f}R", f"week of {bw.strftime('%d %b')}", "#16a34a"))
+        rows.append(("WORST WEEK", f"{weekly.min():+.1f}R", f"week of {ww.strftime('%d %b')}", "#ef4444"))
     if not monthly.empty:
         bm, wm = monthly["r"].idxmax(), monthly["r"].idxmin()
         rows.append(("BEST MONTH", f"{monthly['r'].max():+.1f}R", bm.strftime("%b %Y"), "#16a34a"))
