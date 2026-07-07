@@ -127,6 +127,12 @@ def render_whoop_tab(df_all: pd.DataFrame, styler) -> None:
         url = st.session_state.get("whoop_auth_url")
         if url:
             st.link_button("Connect WHOOP", url, type="primary")
+            st.caption("WHOOP opens in a new tab to sign in. After you tap "
+                       "**Approve**, come back here and click the button below.")
+            if st.button("I've connected — refresh", key="whoop_recheck"):
+                for _k in ("whoop_boot",):
+                    st.session_state.pop(_k, None)
+                st.rerun()
         else:
             st.info("WHOOP credentials aren't configured yet. Add `WHOOP_CLIENT_ID`, "
                     "`WHOOP_CLIENT_SECRET` and `WHOOP_REDIRECT_URI` to the app secrets.")
