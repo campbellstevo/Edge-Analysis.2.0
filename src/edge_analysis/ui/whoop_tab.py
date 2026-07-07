@@ -1,23 +1,23 @@
-"""Recovery tab — WHOOP physiology trends and their correlation to trade edge."""
+"""Recovery tab — how your WHOOP stats affect your trading.
+
+No raw physiology dashboards (you have those in the WHOOP app); this tab only
+shows the impact of each WHOOP signal on your trade results.
+"""
 from __future__ import annotations
 
 import pandas as pd
 import streamlit as st
 
-try:
-    import altair as alt
-except Exception:  # pragma: no cover
-    alt = None
-
 from edge_analysis.ui.mt5_tabs import _tiles, _line_metric, _section_header
 from edge_analysis.data import whoop
+from edge_analysis.data.whoop import DRIVER_METRICS, METRIC_LABELS
 
 
 # --------------------------------------------------------------------------- #
-# helpers
+# trade prep + joins
 # --------------------------------------------------------------------------- #
 def _r_and_win(df: pd.DataFrame) -> pd.DataFrame:
-    """Return trades with numeric R (`R`) and a boolean `is_win`, plus `tdate`."""
+    """Trades with numeric R (`R`), boolean `is_win`, and tz-naive `tdate`."""
     out = df.copy()
     out["R"] = pd.to_numeric(out.get("Closed RR"), errors="coerce")
     oc = out.get("Outcome Canonical")
@@ -35,7 +35,6 @@ def _r_and_win(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _agg_bands(merged: pd.DataFrame, order: list) -> pd.DataFrame:
-    """Aggregate joined trades by their assigned band into _tiles/_line rows."""
     g = merged.dropna(subset=["__band", "R"])
     rows = []
     for cat in order:
@@ -55,83 +54,53 @@ def _agg_bands(merged: pd.DataFrame, order: list) -> pd.DataFrame:
 def _band_recovery(v):
     if pd.isna(v):
         return None
-    if v < 34:
-        return "Red (<34%)"
-    if v < 67:
-        return "Yellow (34–66%)"
-    return "Green (67%+)"
+    return "Red (<34%)" if v < 34 else "Yellow (34–66%)" if v < 67 else "Green (67%+)"
 
 
 def _band_sleep(v):
     if pd.isna(v):
         return None
-    if v < 70:
-        return "Under 70%"
-    if v < 85:
-        return "70–84%"
-    return "85%+"
+    return "Under 70%" if v < 70 else "70–84%" if v < 85 else "85%+"
 
 
 def _band_strain(v):
     if pd.isna(v):
         return None
-    if v < 10:
-        return "Low (<10)"
-    if v < 15:
-        return "Moderate (10–15)"
-    return "High (15+)"
+    return "Low (<10)" if v < 10 else "Moderate (10–15)" if v < 15 else "High (15+)"
 
 
-def _summary_tiles(daily: pd.DataFrame) -> None:
-    """Latest + average physiology tiles across the window."""
-    def _fmt(v, suffix="", dec=0):
-        if v is None or (isinstance(v, float) and pd.isna(v)):
-            return "—"
-        return f"{v:.{dec}f}{suffix}"
-
-    latest = daily.dropna(subset=["recovery"]).tail(1)
-    latest_rec = float(latest["recovery"].iloc[0]) if not latest.empty else None
-    avg_rec = daily["recovery"].mean()
-    avg_sleep = daily["sleep_hours"].mean()
-    avg_strain = daily["day_strain"].mean()
-
-    tiles = [
-        ("Latest recovery", _fmt(latest_rec, "%"),
-         "#16a34a" if (latest_rec or 0) >= 67 else "#f59e0b" if (latest_rec or 0) >= 34 else "#ef4444"),
-        ("Avg recovery", _fmt(avg_rec, "%"), "#4800ff"),
-        ("Avg sleep", _fmt(avg_sleep, "h", 1), "#4800ff"),
-        ("Avg day strain", _fmt(avg_strain, "", 1), "#4800ff"),
-    ]
-    cols = st.columns(len(tiles))
-    for col, (label, val, color) in zip(cols, tiles):
-        with col:
-            st.markdown(
-                f"<div style='background:#fff;border:1px solid rgba(0,0,0,0.06);"
-                f"border-radius:12px;padding:14px 16px;box-shadow:0 2px 10px rgba(0,0,0,0.04);'>"
-                f"<div style='font-size:13px;color:#64748b;font-weight:600;'>{label}</div>"
-                f"<div style='font-size:32px;font-weight:800;color:{color};margin-top:4px;'>{val}</div>"
-                f"</div>", unsafe_allow_html=True)
-
-
-def _recovery_trend(daily: pd.DataFrame, styler) -> None:
-    """Recovery-over-time line, coloured by band, styler-wrapped for dark mode."""
-    if alt is None:
-        return
-    d = daily.dropna(subset=["recovery"]).copy()
-    if d.empty:
-        return
-    d["date_s"] = d["date"].dt.strftime("%Y-%m-%d")
-    vals = d[["date_s", "recovery"]].to_dict("records")
-    base = alt.Chart(alt.Data(values=vals))
-    line = base.mark_line(color="#4800ff", strokeWidth=2, interpolate="monotone").encode(
-        x=alt.X("date_s:T", title="", axis=alt.Axis(labelColor="#94a3b8")),
-        y=alt.Y("recovery:Q", title="Recovery %", scale=alt.Scale(domain=[0, 100]),
-                axis=alt.Axis(labelColor="#94a3b8", titleColor="#94a3b8",
-                              grid=True, gridColor="#eef0f5")))
-    band = (alt.Chart(alt.Data(values=[{"y": 67}, {"y": 34}]))
-            .mark_rule(color="#cbd5e1", strokeDash=[4, 4]).encode(y="y:Q"))
-    st.altair_chart(styler(alt.layer(band, line).properties(height=260)),
-                    use_container_width=True)
+# --------------------------------------------------------------------------- #
+# edge-driver leaderboard: every metric ranked by its effect on R
+# --------------------------------------------------------------------------- #
+def _edge_drivers(merged: pd.DataFrame, min_trades: int = 8) -> pd.DataFrame:
+    """For each WHOOP metric, the avg-R gap between the trader's high-metric and
+    low-metric days (median split), ranked by magnitude. Positive = higher is
+    better; negative = higher hurts."""
+    r = pd.to_numeric(merged.get("R"), errors="coerce")
+    rows = []
+    for m in DRIVER_METRICS:
+        if m not in merged.columns:
+            continue
+        sub = pd.DataFrame({"v": pd.to_numeric(merged[m], errors="coerce"), "r": r}).dropna()
+        if len(sub) < min_trades or sub["v"].nunique() < 2:
+            continue
+        med = sub["v"].median()
+        lo = sub[sub["v"] <= med]["r"]
+        hi = sub[sub["v"] > med]["r"]
+        if len(lo) < 3 or len(hi) < 3:
+            continue
+        corr = sub["v"].corr(sub["r"])
+        rows.append({
+            "Metric": METRIC_LABELS.get(m, m),
+            "gap": float(hi.mean() - lo.mean()),
+            "Win %": float(100.0 * (sub["r"] > 0).mean()),
+            "Trades": int(len(sub)),
+            "r": round(float(corr), 2) if pd.notna(corr) else 0.0,
+        })
+    d = pd.DataFrame(rows)
+    if not d.empty:
+        d = d.reindex(d["gap"].abs().sort_values(ascending=False).index).reset_index(drop=True)
+    return d
 
 
 # --------------------------------------------------------------------------- #
@@ -140,13 +109,11 @@ def _recovery_trend(daily: pd.DataFrame, styler) -> None:
 def render_whoop_tab(df_all: pd.DataFrame, styler) -> None:
     token = st.session_state.get("whoop_at")
 
-    # --- not connected -----------------------------------------------------
     if not token:
         _section_header("Connect WHOOP")
         st.markdown(
-            "Link your WHOOP account to see whether your recovery, sleep and "
-            "strain line up with your trading edge — e.g. *your average R on "
-            "green-recovery days vs red days.*")
+            "Link WHOOP to see how your recovery, sleep and strain affect your "
+            "trading — which physiological signals go with your best and worst R.")
         url = st.session_state.get("whoop_auth_url")
         if url:
             st.link_button("Connect WHOOP", url, type="primary")
@@ -155,9 +122,8 @@ def render_whoop_tab(df_all: pd.DataFrame, styler) -> None:
                     "`WHOOP_CLIENT_SECRET` and `WHOOP_REDIRECT_URI` to the app secrets.")
         return
 
-    # --- connected ---------------------------------------------------------
-    top = st.columns([1, 1, 1, 1, 1])
-    with top[-1]:
+    cols = st.columns([4, 1])
+    with cols[1]:
         if st.button("Disconnect", key="whoop_disc"):
             st.session_state["whoop_logout"] = True
             st.rerun()
@@ -178,8 +144,7 @@ def render_whoop_tab(df_all: pd.DataFrame, styler) -> None:
     try:
         daily = whoop.cached_daily_df(token, start_iso, end_iso)
     except Exception as e:
-        msg = str(e)
-        if "401" in msg:
+        if "401" in str(e):
             st.warning("WHOOP session expired. Click Disconnect and reconnect.")
         else:
             st.error(f"Couldn't load WHOOP data: {e}")
@@ -189,34 +154,47 @@ def render_whoop_tab(df_all: pd.DataFrame, styler) -> None:
         st.info("No WHOOP data returned for your trading date range yet.")
         return
 
-    _summary_tiles(daily)
-    st.divider()
-    _section_header("Recovery over time")
-    _recovery_trend(daily, styler)
-    st.divider()
-
-    # ---- correlation to trade results ------------------------------------
     trades = _r_and_win(df_all)
     merged = trades.merge(daily, left_on="tdate", right_on="date", how="inner")
-
     if merged.empty or merged["R"].dropna().empty:
-        st.info("Not enough overlapping days between your trades and WHOOP data "
-                "yet to show correlations.")
+        st.info("Not enough overlapping days between your trades and WHOOP data yet.")
         st.caption("Trades are matched to WHOOP days by UTC calendar date.")
         return
 
-    _section_header("Does recovery predict your edge?")
-    st.caption("Every trade matched to that day's WHOOP recovery, by UTC date.")
+    st.caption(f"{len(merged)} trades across "
+               f"{merged['tdate'].nunique()} WHOOP-tracked days · matched by UTC date.")
+
+    # ---- headline: what moves your edge --------------------------------------
+    _section_header("What moves your edge")
+    st.markdown("Avg-R gap between your **high** and **low** days for each WHOOP "
+                "stat (median split). Green = higher helps · red = higher hurts.")
+    drivers = _edge_drivers(merged)
+    if drivers.empty:
+        st.info("Not enough overlapping data yet to rank drivers — this fills in "
+                "as more trades line up with WHOOP days.")
+    else:
+        try:
+            from edge_analysis.ui.tabs import _rank_dots
+            _rank_dots(drivers.head(12), "Metric", "gap", suffix="R")
+        except Exception:
+            show = drivers.head(12).copy()
+            show["Avg-R gap"] = show["gap"].map(lambda x: f"{x:+.2f}R")
+            st.dataframe(show[["Metric", "Avg-R gap", "r", "Trades"]],
+                         hide_index=True, use_container_width=True)
+
+    st.divider()
+    # ---- drill-downs on the three headline signals ---------------------------
+    _section_header("Recovery band vs edge")
     m = merged.copy()
     m["__band"] = m["recovery"].apply(_band_recovery)
     rec_rows = _agg_bands(m, ["Red (<34%)", "Yellow (34–66%)", "Green (67%+)"])
     if not rec_rows.empty:
         _tiles(rec_rows, styler)
     else:
-        st.info("No scored recovery days overlap your trades yet.")
+        st.caption("No scored recovery days overlap your trades yet.")
 
     st.divider()
-    _section_header("Sleep vs edge")
+    _section_header("Sleep performance vs edge")
     m["__band"] = m["sleep_perf"].apply(_band_sleep)
     sleep_rows = _agg_bands(m, ["Under 70%", "70–84%", "85%+"])
     if not sleep_rows.empty:

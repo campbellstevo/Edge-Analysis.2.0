@@ -1,8 +1,10 @@
-"""WHOOP API v2 integration — OAuth helpers + daily physiology DataFrame.
+"""WHOOP API v2 integration — OAuth helpers + full daily physiology DataFrame.
 
-Pure-ish module: OAuth URL building, token exchange/refresh, paginated data
-fetch, and a per-calendar-day DataFrame that can be joined to the trade journal
-on date. Streamlit is only imported for the cached fetch wrapper.
+Pulls every daily-resolution signal that could plausibly affect trading:
+recovery (score/HRV/RHR/SpO2/skin-temp), cycle (strain/energy/heart rate),
+sleep (performance/efficiency/consistency/stages/debt/need/respiration) and
+workouts, plus prior-day lag features. Streamlit is only imported for the
+cached fetch wrapper.
 """
 from __future__ import annotations
 
@@ -24,10 +26,56 @@ SCOPES = [
     "read:cycles",
     "read:workout",
     "read:profile",
+    "read:body_measurement",
     "offline",
 ]
 
 _TIMEOUT = 20
+_MS_PER_H = 3.6e6
+
+# Human labels for every daily metric we expose (used by the UI).
+METRIC_LABELS = {
+    "recovery": "Recovery %",
+    "hrv_ms": "HRV (ms)",
+    "rhr": "Resting HR",
+    "spo2": "Blood oxygen %",
+    "skin_temp": "Skin temp (°C)",
+    "day_strain": "Day strain",
+    "avg_hr": "Avg HR",
+    "max_hr": "Max HR",
+    "energy_kj": "Energy (kJ)",
+    "sleep_perf": "Sleep performance %",
+    "sleep_efficiency": "Sleep efficiency %",
+    "sleep_consistency": "Sleep consistency %",
+    "resp_rate": "Respiratory rate",
+    "sleep_hours": "Sleep (h)",
+    "rem_hours": "REM sleep (h)",
+    "deep_hours": "Deep sleep (h)",
+    "light_hours": "Light sleep (h)",
+    "awake_hours": "Awake in bed (h)",
+    "disturbances": "Sleep disturbances",
+    "sleep_cycles": "Sleep cycles",
+    "sleep_need_hours": "Sleep needed (h)",
+    "sleep_debt_hours": "Sleep debt (h)",
+    "sleep_vs_need": "Sleep vs need %",
+    "workout_count": "Workouts (count)",
+    "workout_strain": "Workout strain (max)",
+    "recovery_prev": "Recovery % (prev day)",
+    "day_strain_prev": "Day strain (prev day)",
+    "sleep_hours_prev": "Sleep h (prev day)",
+    "sleep_vs_need_prev": "Sleep vs need % (prev day)",
+}
+
+# Metrics carried into the "what moves your edge" correlation ranking.
+DRIVER_METRICS = [
+    "recovery", "hrv_ms", "rhr", "spo2", "skin_temp",
+    "day_strain", "energy_kj", "max_hr",
+    "sleep_perf", "sleep_efficiency", "sleep_consistency", "resp_rate",
+    "sleep_hours", "rem_hours", "deep_hours", "light_hours",
+    "awake_hours", "disturbances", "sleep_need_hours", "sleep_debt_hours",
+    "sleep_vs_need", "workout_strain",
+    "recovery_prev", "day_strain_prev", "sleep_hours_prev", "sleep_vs_need_prev",
+]
 
 
 # --------------------------------------------------------------------------- #
@@ -63,7 +111,7 @@ def exchange_code(code: str, client_id: str, client_secret: str,
 
 def refresh_tokens(refresh_token: str, client_id: str,
                    client_secret: str) -> dict:
-    """Exchange a refresh token for a fresh access/refresh token pair.
+    """Exchange a refresh token for a fresh access/refresh pair.
 
     WHOOP rotates the refresh token on every use — callers MUST persist the
     `refresh_token` from the response.
@@ -85,7 +133,7 @@ def refresh_tokens(refresh_token: str, client_id: str,
 # --------------------------------------------------------------------------- #
 def _get_collection(path: str, token: str, start: Optional[str] = None,
                     end: Optional[str] = None, limit: int = 25,
-                    max_pages: int = 80) -> list:
+                    max_pages: int = 100) -> list:
     """Fetch every record from a paginated v2 collection endpoint."""
     out: list = []
     next_token = None
@@ -110,20 +158,21 @@ def _get_collection(path: str, token: str, start: Optional[str] = None,
 
 
 def fetch_raw(token: str, start: Optional[str] = None,
-              end: Optional[str] = None) -> Tuple[list, list, list]:
-    """Return (cycles, recoveries, sleeps) for the given ISO time window."""
-    cycles = _get_collection("cycle", token, start, end)
-    recoveries = _get_collection("recovery", token, start, end)
-    sleeps = _get_collection("activity/sleep", token, start, end)
-    return cycles, recoveries, sleeps
+              end: Optional[str] = None) -> dict:
+    """Return {cycles, recoveries, sleeps, workouts} for the ISO time window."""
+    return {
+        "cycles": _get_collection("cycle", token, start, end),
+        "recoveries": _get_collection("recovery", token, start, end),
+        "sleeps": _get_collection("activity/sleep", token, start, end),
+        "workouts": _get_collection("activity/workout", token, start, end),
+    }
 
 
 def _local_date(iso_ts: str, tzoff: Optional[str]):
     """Calendar date of an ISO timestamp in the user's local (WHOOP) offset."""
     if not iso_ts:
         return None
-    dt = datetime.fromisoformat(iso_ts.replace("Z", "+00:00"))
-    dt = dt.astimezone(timezone.utc)
+    dt = datetime.fromisoformat(iso_ts.replace("Z", "+00:00")).astimezone(timezone.utc)
     if tzoff and tzoff not in ("Z", ""):
         sign = 1 if tzoff[0] == "+" else -1
         try:
@@ -134,18 +183,18 @@ def _local_date(iso_ts: str, tzoff: Optional[str]):
     return dt.date()
 
 
-def build_daily_df(cycles: list, recoveries: list, sleeps: list) -> pd.DataFrame:
-    """Merge cycle/recovery/sleep records into one row per calendar day.
+def _h(milli):
+    return round(milli / _MS_PER_H, 2) if milli else None
 
-    Columns: date, recovery, hrv_ms, rhr, day_strain, avg_hr, sleep_perf,
-    sleep_hours.
-    """
-    rec_by_cycle = {}
-    for r in recoveries:
-        cid = r.get("cycle_id")
-        if cid is not None and r.get("score_state") == "SCORED":
-            rec_by_cycle[cid] = r.get("score") or {}
 
+def build_daily_df(cycles: list, recoveries: list, sleeps: list,
+                   workouts: Optional[list] = None) -> pd.DataFrame:
+    """Merge cycle/recovery/sleep/workout records into one row per day."""
+    workouts = workouts or []
+
+    rec_by_cycle = {r.get("cycle_id"): (r.get("score") or {})
+                    for r in recoveries
+                    if r.get("cycle_id") is not None and r.get("score_state") == "SCORED"}
     sleep_by_cycle = {}
     for s in sleeps:
         if s.get("nap"):
@@ -154,42 +203,103 @@ def build_daily_df(cycles: list, recoveries: list, sleeps: list) -> pd.DataFrame
         if cid is not None and s.get("score_state") == "SCORED":
             sleep_by_cycle[cid] = s.get("score") or {}
 
+    # Aggregate workouts onto their local calendar day.
+    wk_by_day: dict = {}
+    for w in workouts:
+        day = _local_date(w.get("start"), w.get("timezone_offset"))
+        if day is None:
+            continue
+        ws = w.get("score") or {}
+        agg = wk_by_day.setdefault(day, {"count": 0, "strain": 0.0, "kj": 0.0})
+        agg["count"] += 1
+        agg["strain"] = max(agg["strain"], float(ws.get("strain") or 0.0))
+        agg["kj"] += float(ws.get("kilojoule") or 0.0)
+
     rows = []
     for c in cycles:
         day = _local_date(c.get("start"), c.get("timezone_offset"))
         if day is None:
             continue
-        cscore = c.get("score") or {}
-        rscore = rec_by_cycle.get(c.get("id"), {})
-        sscore = sleep_by_cycle.get(c.get("id"), {})
-        stage = sscore.get("stage_summary") or {}
+        cs = c.get("score") or {}
+        rs = rec_by_cycle.get(c.get("id"), {})
+        ss = sleep_by_cycle.get(c.get("id"), {})
+        stage = ss.get("stage_summary") or {}
+        need = ss.get("sleep_needed") or {}
 
         in_bed = stage.get("total_in_bed_time_milli")
         awake = stage.get("total_awake_time_milli") or 0
-        sleep_hours = round((in_bed - awake) / 3.6e6, 2) if in_bed else None
+        asleep_ms = (in_bed - awake) if in_bed else None
+        need_ms = None
+        if need:
+            need_ms = ((need.get("baseline_milli") or 0)
+                       + (need.get("need_from_sleep_debt_milli") or 0)
+                       + (need.get("need_from_recent_strain_milli") or 0)
+                       + (need.get("need_from_recent_nap_milli") or 0))
+        sleep_vs_need = (round(100.0 * asleep_ms / need_ms, 1)
+                         if asleep_ms and need_ms else None)
+        wk = wk_by_day.get(day, {})
 
         rows.append({
             "date": day,
-            "recovery": rscore.get("recovery_score"),
-            "hrv_ms": rscore.get("hrv_rmssd_milli"),
-            "rhr": rscore.get("resting_heart_rate"),
-            "day_strain": cscore.get("strain"),
-            "avg_hr": cscore.get("average_heart_rate"),
-            "sleep_perf": sscore.get("sleep_performance_percentage"),
-            "sleep_hours": sleep_hours,
+            # recovery
+            "recovery": rs.get("recovery_score"),
+            "hrv_ms": rs.get("hrv_rmssd_milli"),
+            "rhr": rs.get("resting_heart_rate"),
+            "spo2": rs.get("spo2_percentage"),
+            "skin_temp": rs.get("skin_temp_celsius"),
+            # cycle
+            "day_strain": cs.get("strain"),
+            "avg_hr": cs.get("average_heart_rate"),
+            "max_hr": cs.get("max_heart_rate"),
+            "energy_kj": cs.get("kilojoule"),
+            # sleep
+            "sleep_perf": ss.get("sleep_performance_percentage"),
+            "sleep_efficiency": ss.get("sleep_efficiency_percentage"),
+            "sleep_consistency": ss.get("sleep_consistency_percentage"),
+            "resp_rate": ss.get("respiratory_rate"),
+            "sleep_hours": _h(asleep_ms),
+            "rem_hours": _h(stage.get("total_rem_sleep_time_milli")),
+            "deep_hours": _h(stage.get("total_slow_wave_sleep_time_milli")),
+            "light_hours": _h(stage.get("total_light_sleep_time_milli")),
+            "awake_hours": _h(awake),
+            "disturbances": stage.get("disturbance_count"),
+            "sleep_cycles": stage.get("sleep_cycle_count"),
+            "sleep_need_hours": _h(need_ms),
+            "sleep_debt_hours": _h(need.get("need_from_sleep_debt_milli")),
+            "sleep_vs_need": sleep_vs_need,
+            # workouts
+            "workout_count": wk.get("count", 0),
+            "workout_strain": wk.get("strain") or None,
         })
 
     df = pd.DataFrame(rows)
-    if not df.empty:
-        df["date"] = pd.to_datetime(df["date"])
-        df = (df.sort_values("date")
-                .drop_duplicates("date", keep="last")
-                .reset_index(drop=True))
-    return df
+    if df.empty:
+        return df
+    df["date"] = pd.to_datetime(df["date"])
+    df = (df.sort_values("date")
+            .drop_duplicates("date", keep="last")
+            .reset_index(drop=True))
+    return add_lag_features(df)
+
+
+def add_lag_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Add prior-day carry-over signals (yesterday's load affects today)."""
+    if df.empty:
+        return df
+    d = df.sort_values("date").reset_index(drop=True).copy()
+    # Only treat as a real "previous day" when the gap is exactly one day.
+    prev_gap = d["date"].diff().dt.days
+    for src, dst in [("recovery", "recovery_prev"),
+                     ("day_strain", "day_strain_prev"),
+                     ("sleep_hours", "sleep_hours_prev"),
+                     ("sleep_vs_need", "sleep_vs_need_prev")]:
+        shifted = d[src].shift(1)
+        d[dst] = shifted.where(prev_gap == 1)
+    return d
 
 
 def get_profile(token: str) -> dict:
-    """Basic WHOOP profile (first name, email) — used to confirm connection."""
+    """Basic WHOOP profile — used to confirm connection."""
     try:
         r = requests.get(f"{API_BASE}/user/profile/basic",
                          headers={"Authorization": f"Bearer {token}"},
@@ -209,7 +319,8 @@ def cached_daily_df(token: str, start_iso: str, end_iso: str) -> pd.DataFrame:
 
     @st.cache_data(ttl=1800, show_spinner=False)
     def _run(_token: str, _start: str, _end: str) -> pd.DataFrame:
-        cycles, recoveries, sleeps = fetch_raw(_token, _start, _end)
-        return build_daily_df(cycles, recoveries, sleeps)
+        raw = fetch_raw(_token, _start, _end)
+        return build_daily_df(raw["cycles"], raw["recoveries"],
+                              raw["sleeps"], raw["workouts"])
 
     return _run(token, start_iso, end_iso)
