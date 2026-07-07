@@ -3704,10 +3704,19 @@ def _monthly_report_pdf(monthly, need_r, target_pct, risk_pct, records_rows) -> 
 
 # ─────────────────────────── 7-TAB LAYOUT ────────────────────────────────────
 def _whoop_enabled() -> bool:
-    """Recovery tab shows only when WHOOP OAuth credentials are configured."""
+    """Recovery tab shows only when WHOOP creds are set AND, if a
+    WHOOP_OWNER secret is configured, only for that owner (email or
+    Notion user id). No owner secret => visible to any user (opt-in)."""
     try:
         import streamlit as _st
-        return bool(_st.secrets.get("WHOOP_CLIENT_ID") and _st.secrets.get("WHOOP_CLIENT_SECRET"))
+        if not (_st.secrets.get("WHOOP_CLIENT_ID") and _st.secrets.get("WHOOP_CLIENT_SECRET")):
+            return False
+        owner = str(_st.secrets.get("WHOOP_OWNER") or "").strip().lower()
+        if not owner:
+            return True
+        email = str(_st.session_state.get("ea_user_email") or "").strip().lower()
+        uid = str(_st.session_state.get("ea_user_id") or "").strip().lower()
+        return owner in (email, uid)
     except Exception:
         return False
 

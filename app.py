@@ -367,6 +367,9 @@ def _complete_login_with_token(access_token: str, workspace_name: Optional[str] 
     if isinstance(person, dict):
         email = person.get("email")
 
+    st.session_state["ea_user_email"] = (email or "")
+    st.session_state["ea_user_id"] = str(user_id or "")
+
     if user_id:
         st.session_state[SessionKeys.USER_ID] = user_id
         upsert_user(user_id, name=name, email=email, workspace=workspace_name)
