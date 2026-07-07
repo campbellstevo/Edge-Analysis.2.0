@@ -110,6 +110,10 @@ def render_whoop_tab(df_all: pd.DataFrame, styler) -> None:
     token = st.session_state.get("whoop_at")
 
     if not token:
+        if st.session_state.get("whoop_boot") == "pending":
+            _section_header("WHOOP")
+            st.caption("Restoring your WHOOP connection…")
+            return
         _section_header("Connect WHOOP")
         st.markdown(
             "Link WHOOP to see how your recovery, sleep and strain affect your "

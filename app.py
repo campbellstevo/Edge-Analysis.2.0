@@ -1381,7 +1381,7 @@ def _whoop_client():
 
 
 def _store_whoop_tokens(data: dict) -> None:
-    """Persist tokens from a WHOOP token/refresh response into session + device."""
+    """Store tokens from a WHOOP token/refresh response into session + device."""
     at = data.get("access_token")
     rt = data.get("refresh_token")
     if at:
@@ -1389,25 +1389,33 @@ def _store_whoop_tokens(data: dict) -> None:
         st.session_state["whoop_at_exp"] = time.time() + int(data.get("expires_in", 3600)) - 120
     if rt:
         st.session_state["whoop_rt"] = rt
-        _whoop_persist_rt(rt)
+    if at or rt:
+        _whoop_persist()
 
 
-def _whoop_persist_rt(rt: str) -> None:
-    """Save the (rotating) refresh token to this device so it survives reloads."""
-    if st.session_state.get("whoop_rt_saved") == rt[-12:]:
+def _whoop_persist() -> None:
+    """Save {refresh, access, expiry} to this device so the session survives
+    reloads, reboots and Community-Cloud sleep — a still-valid access token can
+    then be reused with no (rotation-prone) refresh call at all."""
+    at = st.session_state.get("whoop_at") or ""
+    rt = st.session_state.get("whoop_rt") or ""
+    exp = st.session_state.get("whoop_at_exp", 0)
+    sig = f"{at[-10:]}|{rt[-10:]}|{int(exp)}"
+    if st.session_state.get("whoop_saved_sig") == sig:
         return
-    st.session_state["whoop_rt_saved"] = rt[-12:]
-    _js_eval("localStorage.setItem('ea_whoop', " + json.dumps(rt) + ")",
-             key="whoop_rt_save")
+    st.session_state["whoop_saved_sig"] = sig
+    blob = json.dumps({"rt": rt, "at": at, "exp": exp})
+    _js_eval("localStorage.setItem('ea_whoop', " + json.dumps(blob) + ")",
+             key="whoop_save")
 
 
 def _handle_whoop_logout() -> None:
     if not st.session_state.pop("whoop_logout", False):
         return
     for k in ("whoop_at", "whoop_rt", "whoop_at_exp", "whoop_state",
-              "whoop_auth_url", "whoop_rt_saved"):
+              "whoop_auth_url", "whoop_saved_sig", "whoop_boot"):
         st.session_state.pop(k, None)
-    _js_eval("localStorage.removeItem('ea_whoop')", key="whoop_rt_clear")
+    _js_eval("localStorage.removeItem('ea_whoop')", key="whoop_clear")
     _st_rerun()
 
 
@@ -1418,7 +1426,6 @@ def _handle_whoop_callback() -> None:
     rstate = qp.get("state")[0] if isinstance(qp.get("state"), list) else qp.get("state")
     if not code or not rstate or not str(rstate).startswith(WHOOP_STATE_PREFIX):
         return
-    # Best-effort CSRF check.
     expected = st.session_state.get("whoop_state")
     if expected and rstate != expected:
         return
@@ -1436,37 +1443,86 @@ def _handle_whoop_callback() -> None:
         _st_rerun()
 
 
+def _whoop_load_blob(key: str):
+    """Return device-stored WHOOP creds: None while pending, {} if none, else
+    {rt, at, exp}. Tolerates the legacy bare-refresh-token format."""
+    raw = _js_eval("localStorage.getItem('ea_whoop') || ''", key=key)
+    if raw is None:
+        return None
+    if not raw:
+        return {}
+    try:
+        blob = json.loads(raw)
+    except Exception:
+        return {"rt": raw}  # legacy: value was a bare refresh token
+    return blob if isinstance(blob, dict) else {}
+
+
 def _whoop_bootstrap() -> None:
-    """Restore/refresh the WHOOP token each run and prepare the connect URL."""
+    """Keep the WHOOP session alive across reloads. Reuses a still-valid access
+    token from the device; only refreshes when it has actually expired; never
+    drops the session on a transient error."""
     cid, csec, ruri = _whoop_client()
     if not (cid and csec and ruri):
         return
 
-    # Restore a saved refresh token from this device if we have none.
+    # Already have a live access token — nothing to do.
+    if st.session_state.get("whoop_at") and time.time() < st.session_state.get("whoop_at_exp", 0):
+        st.session_state["whoop_boot"] = "ready"
+        return
+
+    # No creds in this session yet: restore them from the device.
     if not st.session_state.get("whoop_rt") and not st.session_state.get("whoop_at"):
-        saved = _js_eval("localStorage.getItem('ea_whoop') || ''", key="whoop_rt_load")
-        if saved:
-            st.session_state["whoop_rt"] = saved
+        blob = _whoop_load_blob("whoop_load")
+        if blob is None:
+            st.session_state["whoop_boot"] = "pending"  # still resolving — don't show Connect
+            return
+        if blob.get("at"):
+            st.session_state["whoop_at"] = blob["at"]
+            st.session_state["whoop_at_exp"] = blob.get("exp", 0)
+        if blob.get("rt"):
+            st.session_state["whoop_rt"] = blob["rt"]
 
-    connected = bool(st.session_state.get("whoop_at"))
-    expired = time.time() > st.session_state.get("whoop_at_exp", 0)
-    if (not connected or expired) and st.session_state.get("whoop_rt"):
+    # Restored access token still valid → done, no network call.
+    if st.session_state.get("whoop_at") and time.time() < st.session_state.get("whoop_at_exp", 0):
+        st.session_state["whoop_boot"] = "ready"
+        return
+
+    # Access token expired → refresh (once per run) using the refresh token.
+    rt = st.session_state.get("whoop_rt")
+    if rt:
         try:
-            data = whoop.refresh_tokens(st.session_state["whoop_rt"], cid, csec)
-            _store_whoop_tokens(data)
-            connected = True
+            _store_whoop_tokens(whoop.refresh_tokens(rt, cid, csec))
+            st.session_state["whoop_boot"] = "ready"
+            return
+        except requests.exceptions.HTTPError as e:
+            code = getattr(e.response, "status_code", None)
+            if code in (400, 401):
+                # Refresh token dead. Another tab may have rotated it — retry
+                # once with whatever the device now holds before giving up.
+                blob = _whoop_load_blob("whoop_reload") or {}
+                newrt = blob.get("rt")
+                if newrt and newrt != rt:
+                    try:
+                        _store_whoop_tokens(whoop.refresh_tokens(newrt, cid, csec))
+                        st.session_state["whoop_boot"] = "ready"
+                        return
+                    except Exception:
+                        pass
+                for k in ("whoop_at", "whoop_rt", "whoop_at_exp"):
+                    st.session_state.pop(k, None)
+            # Non-4xx (network/5xx): keep tokens and try again next load.
         except Exception:
-            for k in ("whoop_at", "whoop_rt", "whoop_at_exp"):
-                st.session_state.pop(k, None)
-            connected = False
+            pass  # transient — keep tokens
 
-    if not connected:
+    # Genuinely not connected → prepare the consent URL.
+    st.session_state["whoop_boot"] = "ready"
+    if not st.session_state.get("whoop_at"):
         state = st.session_state.get("whoop_state")
         if not state:
             state = WHOOP_STATE_PREFIX + secrets.token_urlsafe(12)
             st.session_state["whoop_state"] = state
         st.session_state["whoop_auth_url"] = whoop.authorize_url(cid, ruri, state)
-
 
 def main() -> None:
     """Main application entry point."""
