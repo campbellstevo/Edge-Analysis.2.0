@@ -3703,16 +3703,30 @@ def _monthly_report_pdf(monthly, need_r, target_pct, risk_pct, records_rows) -> 
 
 
 # ─────────────────────────── 7-TAB LAYOUT ────────────────────────────────────
+def _whoop_enabled() -> bool:
+    """Recovery tab shows only when WHOOP OAuth credentials are configured."""
+    try:
+        import streamlit as _st
+        return bool(_st.secrets.get("WHOOP_CLIENT_ID") and _st.secrets.get("WHOOP_CLIENT_SECRET"))
+    except Exception:
+        return False
+
+
 def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, hero_fn=None):
     f_perf = _prep_perf_df(f)
     df_all_safe = df_all.copy() if df_all is not None else df_all
 
     _labels = ["Performance", "Setup", "Timing", "Psychology", "Conditions", "Targets", "Plan", "Review", "Projections", "Refinements"]
+    _whoop_on = _whoop_enabled()
+    if _whoop_on:
+        _labels.append("Recovery")
     _show_mt5 = _get_schema() == "mt5" or _df_is_mt5(df_all_safe)
     if _show_mt5:
         _labels.append("MT5")
         _labels.append("Pro")
     _tab_objs = st.tabs(_labels)
+    _recovery_idx = 10 if _whoop_on else None
+    _mt5_base = 10 + (1 if _whoop_on else 0)
     (t_performance, t_setup, t_timing, t_psychology, t_externals, t_targets,
      t_plan, t_review, t_projections, t_refinements) = _tab_objs[:10]
 
@@ -3784,11 +3798,17 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
     with t_refinements:
         _refinements_tab(f_perf, df_all_safe, styler)
 
+    # ── Recovery (WHOOP) ──────────────────────────────────────────────────────
+    if _whoop_on:
+        with _tab_objs[_recovery_idx]:
+            from edge_analysis.ui.whoop_tab import render_whoop_tab
+            render_whoop_tab(df_all_safe, styler)
+
     # MT5 + Pro analytics (only when the MT5 Trade Log is connected)
     if _show_mt5:
-        with _tab_objs[10]:
+        with _tab_objs[_mt5_base]:
             from edge_analysis.ui.mt5_tabs import render_mt5_tab
             render_mt5_tab(f_perf, df_all_safe, styler)
-        with _tab_objs[11]:
+        with _tab_objs[_mt5_base + 1]:
             from edge_analysis.ui.pro_tabs import render_pro_tab
             render_pro_tab(f_perf, df_all_safe, styler)

@@ -170,6 +170,7 @@ from edge_analysis.core.constants import MODEL_SET, SESSION_CANONICAL
 from edge_analysis.ui.components import show_light_table
 from edge_analysis.ui.tabs import render_all_tabs, generate_overall_stats
 from edge_analysis.user_store import get_user, upsert_user, set_user_db
+from edge_analysis.data import whoop
 
 
 # --------------------------- UI helpers ---------------------------------------
@@ -420,6 +421,9 @@ def _handle_oauth_callback() -> bool:
     rstate = qp.get("state")[0] if isinstance(qp.get("state"), list) else qp.get("state")
 
     if not code or not rstate:
+        return False
+
+    if str(rstate).startswith(WHOOP_STATE_PREFIX):
         return False
 
     rec = _oauth_pop(rstate)
@@ -1032,7 +1036,9 @@ def _clear_device_auth() -> None:
 def _require_notion_login():
     """Enforce Notion OAuth login before accessing main app."""
     qp = _get_all_query_params()
-    if qp.get("code") and qp.get("state"):
+    _rs = qp.get("state")
+    _rs = _rs[0] if isinstance(_rs, list) else _rs
+    if qp.get("code") and qp.get("state") and not str(_rs or "").startswith(WHOOP_STATE_PREFIX):
         _handle_oauth_callback()
         return
 
@@ -1358,8 +1364,113 @@ def _detect_default_layout_index() -> int:
     return 0
 
 
+# ----------------------------- WHOOP integration ------------------------------
+WHOOP_STATE_PREFIX = "whoop"
+
+
+def _whoop_client():
+    """(client_id, client_secret, redirect_uri) for the WHOOP OAuth app."""
+    return (
+        _runtime_secret("WHOOP_CLIENT_ID"),
+        _runtime_secret("WHOOP_CLIENT_SECRET"),
+        _runtime_secret("WHOOP_REDIRECT_URI"),
+    )
+
+
+def _store_whoop_tokens(data: dict) -> None:
+    """Persist tokens from a WHOOP token/refresh response into session + device."""
+    at = data.get("access_token")
+    rt = data.get("refresh_token")
+    if at:
+        st.session_state["whoop_at"] = at
+        st.session_state["whoop_at_exp"] = time.time() + int(data.get("expires_in", 3600)) - 120
+    if rt:
+        st.session_state["whoop_rt"] = rt
+        _whoop_persist_rt(rt)
+
+
+def _whoop_persist_rt(rt: str) -> None:
+    """Save the (rotating) refresh token to this device so it survives reloads."""
+    if st.session_state.get("whoop_rt_saved") == rt[-12:]:
+        return
+    st.session_state["whoop_rt_saved"] = rt[-12:]
+    _js_eval("localStorage.setItem('ea_whoop', " + json.dumps(rt) + ")",
+             key="whoop_rt_save")
+
+
+def _handle_whoop_logout() -> None:
+    if not st.session_state.pop("whoop_logout", False):
+        return
+    for k in ("whoop_at", "whoop_rt", "whoop_at_exp", "whoop_state",
+              "whoop_auth_url", "whoop_rt_saved"):
+        st.session_state.pop(k, None)
+    _js_eval("localStorage.removeItem('ea_whoop')", key="whoop_rt_clear")
+    _st_rerun()
+
+
+def _handle_whoop_callback() -> None:
+    """Process the WHOOP OAuth redirect (?code&state where state starts 'whoop')."""
+    qp = _get_all_query_params()
+    code = qp.get("code")[0] if isinstance(qp.get("code"), list) else qp.get("code")
+    rstate = qp.get("state")[0] if isinstance(qp.get("state"), list) else qp.get("state")
+    if not code or not rstate or not str(rstate).startswith(WHOOP_STATE_PREFIX):
+        return
+    # Best-effort CSRF check.
+    expected = st.session_state.get("whoop_state")
+    if expected and rstate != expected:
+        return
+    cid, csec, ruri = _whoop_client()
+    if not (cid and csec and ruri):
+        return
+    try:
+        data = whoop.exchange_code(code, cid, csec, ruri)
+        _store_whoop_tokens(data)
+        st.session_state["whoop_just_connected"] = True
+    except Exception as e:
+        st.session_state["whoop_error"] = str(e)
+    finally:
+        _clear_query_params()
+        _st_rerun()
+
+
+def _whoop_bootstrap() -> None:
+    """Restore/refresh the WHOOP token each run and prepare the connect URL."""
+    cid, csec, ruri = _whoop_client()
+    if not (cid and csec and ruri):
+        return
+
+    # Restore a saved refresh token from this device if we have none.
+    if not st.session_state.get("whoop_rt") and not st.session_state.get("whoop_at"):
+        saved = _js_eval("localStorage.getItem('ea_whoop') || ''", key="whoop_rt_load")
+        if saved:
+            st.session_state["whoop_rt"] = saved
+
+    connected = bool(st.session_state.get("whoop_at"))
+    expired = time.time() > st.session_state.get("whoop_at_exp", 0)
+    if (not connected or expired) and st.session_state.get("whoop_rt"):
+        try:
+            data = whoop.refresh_tokens(st.session_state["whoop_rt"], cid, csec)
+            _store_whoop_tokens(data)
+            connected = True
+        except Exception:
+            for k in ("whoop_at", "whoop_rt", "whoop_at_exp"):
+                st.session_state.pop(k, None)
+            connected = False
+
+    if not connected:
+        state = st.session_state.get("whoop_state")
+        if not state:
+            state = WHOOP_STATE_PREFIX + secrets.token_urlsafe(12)
+            st.session_state["whoop_state"] = state
+        st.session_state["whoop_auth_url"] = whoop.authorize_url(cid, ruri, state)
+
+
 def main() -> None:
     """Main application entry point."""
+    # WHOOP OAuth: handle logout + redirect before the Notion login gate
+    _handle_whoop_logout()
+    _handle_whoop_callback()
+
     # Require login
     _require_notion_login()
 
@@ -1380,6 +1491,9 @@ def main() -> None:
 
     # Remember this login on the device (phones especially)
     _sync_device_auth()
+
+    # WHOOP: restore/refresh token and prepare connect URL
+    _whoop_bootstrap()
 
     # Initialize session state from query params
     if SessionKeys.LAYOUT not in st.session_state:
