@@ -105,7 +105,9 @@ def exchange_code(code: str, client_id: str, client_secret: str,
         "redirect_uri": redirect_uri,
     }
     r = requests.post(TOKEN_URL, data=data, timeout=_TIMEOUT)
-    r.raise_for_status()
+    if not r.ok:
+        raise requests.exceptions.HTTPError(
+            f"{r.status_code}: {r.text[:300]}", response=r)
     return r.json()
 
 
@@ -124,7 +126,9 @@ def refresh_tokens(refresh_token: str, client_id: str,
         "scope": "offline",
     }
     r = requests.post(TOKEN_URL, data=data, timeout=_TIMEOUT)
-    r.raise_for_status()
+    if not r.ok:
+        raise requests.exceptions.HTTPError(
+            f"{r.status_code}: {r.text[:300]}", response=r)
     return r.json()
 
 

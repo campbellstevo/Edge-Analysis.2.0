@@ -1389,8 +1389,6 @@ def _store_whoop_tokens(data: dict) -> None:
         st.session_state["whoop_at_exp"] = time.time() + int(data.get("expires_in", 3600)) - 120
     if rt:
         st.session_state["whoop_rt"] = rt
-    if at or rt:
-        _whoop_persist()
 
 
 def _whoop_persist() -> None:
@@ -1466,9 +1464,10 @@ def _whoop_bootstrap() -> None:
     if not (cid and csec and ruri):
         return
 
-    # Already have a live access token — nothing to do.
+    # Already have a live access token — make sure the device copy is current.
     if st.session_state.get("whoop_at") and time.time() < st.session_state.get("whoop_at_exp", 0):
         st.session_state["whoop_boot"] = "ready"
+        _whoop_persist()
         return
 
     # No creds in this session yet: restore them from the device.
@@ -1486,6 +1485,7 @@ def _whoop_bootstrap() -> None:
     # Restored access token still valid → done, no network call.
     if st.session_state.get("whoop_at") and time.time() < st.session_state.get("whoop_at_exp", 0):
         st.session_state["whoop_boot"] = "ready"
+        _whoop_persist()
         return
 
     # Access token expired → refresh (once per run) using the refresh token.
@@ -1494,6 +1494,7 @@ def _whoop_bootstrap() -> None:
         try:
             _store_whoop_tokens(whoop.refresh_tokens(rt, cid, csec))
             st.session_state["whoop_boot"] = "ready"
+            _whoop_persist()
             return
         except requests.exceptions.HTTPError as e:
             code = getattr(e.response, "status_code", None)
@@ -1506,6 +1507,7 @@ def _whoop_bootstrap() -> None:
                     try:
                         _store_whoop_tokens(whoop.refresh_tokens(newrt, cid, csec))
                         st.session_state["whoop_boot"] = "ready"
+                        _whoop_persist()
                         return
                     except Exception:
                         pass

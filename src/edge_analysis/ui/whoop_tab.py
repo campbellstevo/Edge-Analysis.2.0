@@ -118,6 +118,12 @@ def render_whoop_tab(df_all: pd.DataFrame, styler) -> None:
         st.markdown(
             "Link WHOOP to see how your recovery, sleep and strain affect your "
             "trading — which physiological signals go with your best and worst R.")
+        _err = st.session_state.get("whoop_error")
+        if _err:
+            st.error("WHOOP connection failed — " + str(_err))
+            if "redirect" in str(_err).lower():
+                st.caption("WHOOP_REDIRECT_URI must exactly match the Redirect URL "
+                           "in your WHOOP app, including the trailing slash.")
         url = st.session_state.get("whoop_auth_url")
         if url:
             st.link_button("Connect WHOOP", url, type="primary")
