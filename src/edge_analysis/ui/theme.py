@@ -1009,13 +1009,13 @@ def inject_theme():
         }}
     }}
 
-    /* While rerunning, hide the stale previous render instead of ghosting it */
+    /* While rerunning, fully remove the stale previous render so duplicate
+       tab strips / ghosts never paint (visibility:hidden still reserved
+       layout space and left faded strips). */
     div[data-stale="true"], [data-stale="true"], .stale-element,
-    [data-testid="stAppViewContainer"] .element-container.stale-element {{
-        opacity: 0 !important;
-        visibility: hidden !important;
-        transition: none !important;
-        pointer-events: none !important;
+    [data-testid="stAppViewContainer"] .element-container.stale-element,
+    [data-stale="true"] .stTabs, [data-stale="true"] [data-baseweb="tab-list"] {{
+        display: none !important;
     }}
 
     /* No copy-link icons on heading hover */

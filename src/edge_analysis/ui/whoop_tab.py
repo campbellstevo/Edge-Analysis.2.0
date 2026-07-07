@@ -155,7 +155,10 @@ def render_whoop_tab(df_all: pd.DataFrame, styler) -> None:
     _mn = dates.min()
     _mn = _mn.tz_localize("UTC") if _mn.tzinfo is None else _mn.tz_convert("UTC")
     start_iso = _mn.strftime("%Y-%m-%dT%H:%M:%S.000Z")
-    end_iso = pd.Timestamp.utcnow().tz_localize(None).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    # Day-stable end bound so the 30-min cache key stops changing every rerun
+    # (was utcnow()-to-the-second, which re-fetched all WHOOP data each interaction).
+    _end = pd.Timestamp.utcnow().tz_localize(None).normalize() + pd.Timedelta(days=1)
+    end_iso = _end.strftime("%Y-%m-%dT00:00:00.000Z")
 
     try:
         daily = whoop.cached_daily_df(token, start_iso, end_iso)
