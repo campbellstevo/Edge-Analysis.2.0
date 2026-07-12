@@ -185,16 +185,33 @@ def render_whoop_tab(df_all: pd.DataFrame, styler) -> None:
 
     # ---- headline: what moves your edge --------------------------------------
     _section_header("What moves your edge")
-    st.markdown("Avg-R gap between your **high** and **low** days for each WHOOP "
-                "stat (median split). Green = higher helps · red = higher hurts.")
+    st.caption(
+        "For each WHOOP stat, your days are split into higher-than-usual and "
+        "lower-than-usual halves. The number is how much more (or less) R you average "
+        "per trade on the HIGH days. Example: 'Higher Sleep performance +0.40R' means "
+        "well-slept days pay you 0.40R more per trade. Green = more of it helps; "
+        "red = more of it hurts."
+    )
     drivers = _edge_drivers(merged)
     if drivers.empty:
         st.info("Not enough overlapping data yet to rank drivers — this fills in "
                 "as more trades line up with WHOOP days.")
     else:
         try:
-            from edge_analysis.ui.tabs import _rank_dots
-            _rank_dots(drivers.head(12), "Metric", "gap", suffix="R")
+            from edge_analysis.ui.tabs import _rank_dots, _insight_box
+            _show = drivers.head(12).copy()
+            _show["Metric"] = "Higher " + _show["Metric"].astype(str)
+            _rank_dots(_show, "Metric", "gap", suffix="R")
+            _best = drivers.iloc[drivers["gap"].idxmax()]
+            _worst = drivers.iloc[drivers["gap"].idxmin()]
+            if float(_best["gap"]) > 0.1:
+                _insight_box(
+                    f"Your strongest body-signal: <b>{_best['Metric']}</b> — on your better "
+                    f"{_best['Metric'].lower()} days you average <b>{_best['gap']:+.2f}R more per trade</b> "
+                    f"({int(_best['Trades'])} matched trades)."
+                    + (f" Watch <b>{_worst['Metric']}</b>: higher readings cost you "
+                       f"<b>{abs(_worst['gap']):.2f}R</b> per trade." if float(_worst['gap']) < -0.1 else ""),
+                    "info")
         except Exception:
             show = drivers.head(12).copy()
             show["Avg-R gap"] = show["gap"].map(lambda x: f"{x:+.2f}R")
@@ -204,6 +221,8 @@ def render_whoop_tab(df_all: pd.DataFrame, styler) -> None:
     st.divider()
     # ---- drill-downs on the three headline signals ---------------------------
     _section_header("Recovery band vs edge")
+    st.caption("WHOOP recovery = how ready your body is, 0–100%. "
+               "Each card: your average R per trade on red, yellow and green days.")
     m = merged.copy()
     m["__band"] = m["recovery"].apply(_band_recovery)
     rec_rows = _agg_bands(m, ["Red (<34%)", "Yellow (34–66%)", "Green (67%+)"])
@@ -214,6 +233,8 @@ def render_whoop_tab(df_all: pd.DataFrame, styler) -> None:
 
     st.divider()
     _section_header("Sleep performance vs edge")
+    st.caption("Sleep performance = sleep you got vs what your body needed. "
+               "The line shows your average R per trade at each level.")
     m["__band"] = m["sleep_perf"].apply(_band_sleep)
     sleep_rows = _agg_bands(m, ["Under 70%", "70–84%", "85%+"])
     if not sleep_rows.empty:
@@ -225,6 +246,8 @@ def render_whoop_tab(df_all: pd.DataFrame, styler) -> None:
 
     st.divider()
     _section_header("Day strain vs edge")
+    st.caption("Day strain = WHOOP's 0–21 measure of physical exertion that day. "
+               "The line shows your average R per trade at each level.")
     m["__band"] = m["day_strain"].apply(_band_strain)
     strain_rows = _agg_bands(m, ["Low (<10)", "Moderate (10–15)", "High (15+)"])
     if not strain_rows.empty:

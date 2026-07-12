@@ -1067,6 +1067,18 @@ def inject_theme():
         display: none !important;
     }}
 
+    /* If two tab strips ever coexist mid-rerun, hide the older sibling */
+    div[data-testid="stTabs"]:has(~ div[data-testid="stTabs"]) {{ display: none !important; }}
+
+    /* Inside forms, dragging needs feedback before Run is pressed */
+    [data-testid="stForm"] [data-testid="stSliderThumbValue"] {{
+        display: block !important;
+        color: #4800ff !important;
+        font-size: 12px !important;
+        font-weight: 700 !important;
+    }}
+    [data-testid="stForm"] {{ border: none !important; padding: 0 !important; }}
+
     /* Tabs as pills */
     .stTabs [data-baseweb="tab-list"] {{ gap: 8px !important; }}
     .stTabs button[role="tab"] {{

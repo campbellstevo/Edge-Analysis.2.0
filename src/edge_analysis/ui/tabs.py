@@ -2063,7 +2063,16 @@ def _parse_rr_value(v):
 
 
 def _slider_row(label: str, fmt, make_widget):
-    """One clean settings row: label left, bare slider middle, bold value right."""
+    """One clean settings row: label left, bare slider middle, bold value right.
+    On phones: stacked single-column so nothing overlaps."""
+    if st.session_state.get("layout_mode") == "mobile":
+        st.markdown(f"<div style='font-size:13px;color:#64748b;'>{label}</div>",
+                    unsafe_allow_html=True)
+        val = make_widget()
+        st.markdown(f"<div style='text-align:right;font-size:13px;font-weight:700;"
+                    f"color:#4800ff;margin-top:-8px;'>{fmt(val)}</div>",
+                    unsafe_allow_html=True)
+        return val
     c1, c2, c3 = st.columns([2.6, 5.4, 1.6], vertical_alignment="center")
     with c1:
         st.markdown(f"<div style='font-size:13px;color:#64748b;'>{label}</div>",
@@ -2612,42 +2621,44 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
         f"Est. trades/month: **{base_trades_per_month}**"
     )
 
-    # ── Inputs ────────────────────────────────────────────────────────────────
-    starting_balance = _slider_row(
-        "Starting balance", lambda v: f"${v:,.0f}",
-        lambda: st.slider("Starting balance", min_value=1_000, max_value=200_000,
-                          value=10_000, step=1_000, key="proj_balance",
-                          label_visibility="collapsed"))
-    risk_pct = _slider_row(
-        "Risk per trade", lambda v: f"{v:.2f}%",
-        lambda: st.slider("Risk per trade", min_value=0.25, max_value=10.0,
-                          value=1.0, step=0.25, key="proj_risk",
-                          label_visibility="collapsed"))
-    win_rate_input = _slider_row(
-        "Winning trades", lambda v: f"{v}%",
-        lambda: st.slider("Winning trades", min_value=10, max_value=90,
-                          value=int(min(90, max(10, base_wr * 100))), step=1,
-                          key="proj_wr", label_visibility="collapsed"))
-    be_rate_input = _slider_row(
-        "Break-even trades", lambda v: f"{v}%",
-        lambda: st.slider("Break-even trades", min_value=0, max_value=60,
-                          value=int(min(60, max(0, round(base_be * 100)))), step=1,
-                          key="proj_be", label_visibility="collapsed"))
-    avg_win_rr = _slider_row(
-        "Average win", lambda v: f"{v:.1f}R",
-        lambda: st.slider("Average win", min_value=0.1, max_value=15.0,
-                          value=float(min(15.0, max(0.1, base_avg_win_rr))), step=0.1,
-                          key="proj_win_rr", label_visibility="collapsed"))
-    trades_per_month = _slider_row(
-        "Trades per month", lambda v: f"{v}",
-        lambda: st.slider("Trades per month", min_value=1, max_value=200,
-                          value=int(min(200, max(1, base_trades_per_month))), step=1,
-                          key="proj_tpm", label_visibility="collapsed"))
-    total_months = _slider_row(
-        "Months to project", lambda v: f"{v} mo",
-        lambda: st.slider("Months to project", min_value=1, max_value=120,
-                          value=24, step=1, key="proj_months",
-                          label_visibility="collapsed"))
+    # ── Inputs (applied when you press Run) ──────────────────────────────────
+    with st.form("proj_settings", border=False):
+        starting_balance = _slider_row(
+            "Starting balance", lambda v: f"${v:,.0f}",
+            lambda: st.slider("Starting balance", min_value=1_000, max_value=200_000,
+                              value=10_000, step=1_000, key="proj_balance",
+                              label_visibility="collapsed"))
+        risk_pct = _slider_row(
+            "Risk per trade", lambda v: f"{v:.2f}%",
+            lambda: st.slider("Risk per trade", min_value=0.25, max_value=10.0,
+                              value=1.0, step=0.25, key="proj_risk",
+                              label_visibility="collapsed"))
+        win_rate_input = _slider_row(
+            "Winning trades", lambda v: f"{v}%",
+            lambda: st.slider("Winning trades", min_value=10, max_value=90,
+                              value=int(min(90, max(10, base_wr * 100))), step=1,
+                              key="proj_wr", label_visibility="collapsed"))
+        be_rate_input = _slider_row(
+            "Break-even trades", lambda v: f"{v}%",
+            lambda: st.slider("Break-even trades", min_value=0, max_value=60,
+                              value=int(min(60, max(0, round(base_be * 100)))), step=1,
+                              key="proj_be", label_visibility="collapsed"))
+        avg_win_rr = _slider_row(
+            "Average win", lambda v: f"{v:.1f}R",
+            lambda: st.slider("Average win", min_value=0.1, max_value=15.0,
+                              value=float(min(15.0, max(0.1, base_avg_win_rr))), step=0.1,
+                              key="proj_win_rr", label_visibility="collapsed"))
+        trades_per_month = _slider_row(
+            "Trades per month", lambda v: f"{v}",
+            lambda: st.slider("Trades per month", min_value=1, max_value=200,
+                              value=int(min(200, max(1, base_trades_per_month))), step=1,
+                              key="proj_tpm", label_visibility="collapsed"))
+        total_months = _slider_row(
+            "Months to project", lambda v: f"{v} mo",
+            lambda: st.slider("Months to project", min_value=1, max_value=120,
+                              value=24, step=1, key="proj_months",
+                              label_visibility="collapsed"))
+        st.form_submit_button("Run projection", type="primary")
 
     # ── Run simulation ────────────────────────────────────────────────────────
     N_PATHS      = 500
@@ -3463,14 +3474,16 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
         g["__usd"] = usd
 
     st.caption("Set your target and risk — everything below updates from your live journal.")
-    target_pct = _slider_row(
-        "Monthly target", lambda v: f"{v:.0f}%",
-        lambda: st.slider("Monthly target", min_value=1, max_value=20, value=5, step=1,
-                          key="tgt_pct", label_visibility="collapsed"))
-    risk_pct = _slider_row(
-        "Risk per trade", lambda v: f"{v:.2f}%",
-        lambda: st.slider("Risk per trade", min_value=0.25, max_value=5.0, value=1.0, step=0.25,
-                          key="tgt_risk", label_visibility="collapsed"))
+    with st.form("targets_settings", border=False):
+        target_pct = _slider_row(
+            "Monthly target", lambda v: f"{v:.0f}%",
+            lambda: st.slider("Monthly target", min_value=1, max_value=20, value=5, step=1,
+                              key="tgt_pct", label_visibility="collapsed"))
+        risk_pct = _slider_row(
+            "Risk per trade", lambda v: f"{v:.2f}%",
+            lambda: st.slider("Risk per trade", min_value=0.25, max_value=5.0, value=1.0, step=0.25,
+                              key="tgt_risk", label_visibility="collapsed"))
+        st.form_submit_button("Update", type="primary")
 
     need_r = float(target_pct) / float(risk_pct)
     now = pd.Timestamp.now()
