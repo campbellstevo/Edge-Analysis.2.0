@@ -185,23 +185,46 @@ def render_whoop_tab(df_all: pd.DataFrame, styler) -> None:
 
     # ---- headline: what moves your edge --------------------------------------
     _section_header("What moves your edge")
-    st.caption(
-        "For each WHOOP stat, your days are split into higher-than-usual and "
-        "lower-than-usual halves. The number is how much more (or less) R you average "
-        "per trade on the HIGH days. Example: 'Higher Sleep performance +0.40R' means "
-        "well-slept days pay you 0.40R more per trade. Green = more of it helps; "
-        "red = more of it hurts."
-    )
+    st.caption("Your average R per trade on days each stat runs high, compared to your normal.")
     drivers = _edge_drivers(merged)
     if drivers.empty:
         st.info("Not enough overlapping data yet to rank drivers — this fills in "
                 "as more trades line up with WHOOP days.")
     else:
         try:
-            from edge_analysis.ui.tabs import _rank_dots, _insight_box
-            _show = drivers.head(12).copy()
-            _show["Metric"] = "Higher " + _show["Metric"].astype(str)
-            _rank_dots(_show, "Metric", "gap", suffix="R")
+            from edge_analysis.ui.tabs import _insight_box
+
+            def _dlist(title, items, good):
+                col = "#16a34a" if good else "#ef4444"
+                sym = "✓" if good else "✕"
+                rows = "".join(
+                    f"<div style='display:flex;justify-content:space-between;gap:10px;"
+                    f"padding:10px 16px;border-bottom:1px solid rgba(148,163,184,0.15);"
+                    f"font-size:14px;'><span style='color:#334155;'>"
+                    f"<span style='color:{col};font-weight:800;'>{sym}</span>  High "
+                    f"{m} days <span style='color:#94a3b8;font-size:12px;'>({n} trades)</span></span>"
+                    f"<span style='font-weight:800;color:{col};'>{g:+.2f}R</span></div>"
+                    for m, g, n in items)
+                return (f"<div style='flex:1;min-width:290px;background:#fff;"
+                        f"border:1px solid rgba(0,0,0,0.06);border-radius:12px;"
+                        f"box-shadow:0 2px 10px rgba(0,0,0,0.04);overflow:hidden;'>"
+                        f"<div style='padding:11px 16px;font-size:12px;font-weight:700;"
+                        f"letter-spacing:0.08em;color:{col};'>{title}</div>{rows}</div>")
+
+            _items = [(r["Metric"], float(r["gap"]), int(r["Trades"]))
+                      for _, r in drivers.iterrows()]
+            _helps = [(m, g, n) for m, g, n in _items if g > 0.1][:6]
+            _hurts = sorted([(m, g, n) for m, g, n in _items if g < -0.1],
+                            key=lambda x: x[1])[:6]
+            st.markdown(
+                "<div style='display:flex;gap:14px;flex-wrap:wrap;margin:4px 0 10px;'>"
+                + _dlist("YOU TRADE BETTER WHEN THESE ARE HIGH", _helps, True)
+                + _dlist("BE CAREFUL WHEN THESE ARE HIGH", _hurts, False)
+                + "</div>", unsafe_allow_html=True)
+            if len(merged) < 30:
+                st.caption(f"Early signal only — {len(merged)} matched trades. "
+                           "Surprising results at this sample size are usually noise; "
+                           "trust a signal once it holds past 30+ trades.")
             _best = drivers.iloc[drivers["gap"].idxmax()]
             _worst = drivers.iloc[drivers["gap"].idxmin()]
             if float(_best["gap"]) > 0.1:

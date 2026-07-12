@@ -1073,9 +1073,14 @@ def inject_theme():
     /* Inside forms, dragging needs feedback before Run is pressed */
     [data-testid="stForm"] [data-testid="stSliderThumbValue"] {{
         display: block !important;
-        color: #4800ff !important;
+        font-family: "Source Sans Pro", -apple-system, sans-serif !important;
         font-size: 12px !important;
         font-weight: 700 !important;
+        background: #4800ff !important;
+        color: #ffffff !important;
+        padding: 1px 9px !important;
+        border-radius: 999px !important;
+        top: -26px !important;
     }}
     [data-testid="stForm"] {{ border: none !important; padding: 0 !important; }}
 
