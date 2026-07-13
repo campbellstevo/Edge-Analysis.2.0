@@ -3755,7 +3755,7 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
     _data = f_perf if (f_perf is not None and not f_perf.empty) else df_all_safe
 
     t_results, t_entry, t_ext, t_psych, t_plan, t_review = st.tabs(
-        ["Results", "Entry", "Externals", "Psychology", "Plan", "Review"]
+        ["Performance", "Entry", "Externals", "Psychology", "Plan", "Review"]
     )
 
     # ── Results: how you are doing ────────────────────────────────────────
@@ -3775,6 +3775,10 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
             _account_comparison_tab(f_perf, styler)
         else:
             _early_close_tab_salty(df_all_safe, styler)
+        _section_header("Targets")
+        _targets_tab(df_all_safe, styler)
+        _section_header("Projections")
+        _projections_tab(df_all_safe, styler)
 
     # ── Entry: what you trade, when, and how you manage it ───────────────
     with t_entry:
@@ -3833,10 +3837,6 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
             _spread_section(_data, styler)
             st.divider()
             _cost_drag(_data, styler)
-        if _whoop_on:
-            _section_header("Recovery (WHOOP)")
-            from edge_analysis.ui.whoop_tab import render_whoop_tab
-            render_whoop_tab(df_all_safe, styler)
 
     # ── Psychology: discipline, tilt and mistakes ─────────────────────────
     with t_psych:
@@ -3850,13 +3850,13 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
             _mistake_section(_data, styler)
             st.divider()
             _discipline_section(_data, styler)
+        if _whoop_on:
+            _section_header("Recovery (WHOOP)")
+            from edge_analysis.ui.whoop_tab import render_whoop_tab
+            render_whoop_tab(df_all_safe, styler)
 
     # ── Plan: targets, projections, plan and refinements ─────────────────
     with t_plan:
-        _targets_tab(df_all_safe, styler)
-        _section_header("Projections")
-        _projections_tab(df_all_safe, styler)
-        st.divider()
         render_plan_tab(df_all_safe, styler)
         _section_header("Refinements")
         _refinements_tab(f_perf, df_all_safe, styler)
