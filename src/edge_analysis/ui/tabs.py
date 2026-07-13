@@ -3738,21 +3738,16 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
     f_perf = _prep_perf_df(f)
     df_all_safe = df_all.copy() if df_all is not None else df_all
 
-    _labels = ["Performance", "Setup", "Timing", "Psychology", "Conditions", "Targets", "Plan", "Review", "Projections", "Refinements"]
+    _labels = ["Performance", "Edge", "Psychology", "Targets", "Plan", "Review"]
     _whoop_on = _whoop_enabled()
-    if _whoop_on:
-        _labels.append("Recovery")
     _show_mt5 = _get_schema() == "mt5" or _df_is_mt5(df_all_safe)
     if _show_mt5:
         _labels.append("MT5")
         _labels.append("Pro")
     _tab_objs = st.tabs(_labels)
-    _recovery_idx = 10 if _whoop_on else None
-    _mt5_base = 10 + (1 if _whoop_on else 0)
-    (t_performance, t_setup, t_timing, t_psychology, t_externals, t_targets,
-     t_plan, t_review, t_projections, t_refinements) = _tab_objs[:10]
+    (t_performance, t_edge, t_psychology, t_targets, t_plan, t_review) = _tab_objs[:6]
 
-    # ── Tab 1: Performance ────────────────────────────────────────────────────
+    # ── Performance ───────────────────────────────────────────────────────────
     with t_performance:
         if hero_fn is not None:
             hero_fn()
@@ -3767,9 +3762,9 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
         else:
             _early_close_tab_salty(df_all_safe, styler)
 
-
-    # ── Tab 2: Setup ──────────────────────────────────────────────────────────
-    with t_setup:
+    # ── Edge: setup, timing and conditions in one place ──────────────────────
+    with t_edge:
+        _section_header("Setup")
         _entry_models_tab(f_perf, show_table)
         st.divider()
         _confluences_tab(f_perf, show_table)
@@ -3779,8 +3774,7 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
             st.divider()
             _salty_execution_quality_tab(f_perf)
 
-    # ── Tab 3: Timing ─────────────────────────────────────────────────────────
-    with t_timing:
+        _section_header("Timing")
         _hourly_expectancy_clock(df_all_safe)
         st.divider()
         _sessions_tab(f_perf, show_table)
@@ -3789,48 +3783,43 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
         st.divider()
         _timeframes_tab(f_perf, show_table)
 
-    # ── Tab 4: Psychology ─────────────────────────────────────────────────────
-    with t_psychology:
-        _psychology_tab(f_perf, df_all_safe, styler)
-        st.divider()
-        _loss_postmortem(f_perf)
-
-    # ── Tab 5: Externals ──────────────────────────────────────────────────────
-    with t_externals:
+        _section_header("Conditions")
         _conditions_tab(f_perf, show_table)
         st.divider()
         _confluence_board(f_perf)
 
-    # ── Targets tab ───────────────────────────────────────────────────────────
-    with t_targets:
-        _targets_tab(df_all_safe, styler)
-
-    # ── Trading Plan + Weekly Review ──────────────────────────────────────────
-    from edge_analysis.ui.plan_tabs import render_plan_tab, render_review_tab
-    with t_plan:
-        render_plan_tab(df_all_safe, styler)
-    with t_review:
-        render_review_tab(df_all_safe, styler)
-
-    # ── Tab 6: Projections ────────────────────────────────────────────────────
-    with t_projections:
-        _projections_tab(df_all_safe, styler)
-
-    # ── Tab 7: Refinements ────────────────────────────────────────────────────
-    with t_refinements:
-        _refinements_tab(f_perf, df_all_safe, styler)
-
-    # ── Recovery (WHOOP) ──────────────────────────────────────────────────────
-    if _whoop_on:
-        with _tab_objs[_recovery_idx]:
+    # ── Psychology (+ body signals when WHOOP is connected) ──────────────────
+    with t_psychology:
+        _psychology_tab(f_perf, df_all_safe, styler)
+        st.divider()
+        _loss_postmortem(f_perf)
+        if _whoop_on:
+            _section_header("Recovery (WHOOP)")
             from edge_analysis.ui.whoop_tab import render_whoop_tab
             render_whoop_tab(df_all_safe, styler)
 
-    # MT5 + Pro analytics (only when the MT5 Trade Log is connected)
+    # ── Targets (+ projections) ───────────────────────────────────────────────
+    with t_targets:
+        _targets_tab(df_all_safe, styler)
+        _section_header("Projections")
+        _projections_tab(df_all_safe, styler)
+
+    # ── Plan (+ refinements) ──────────────────────────────────────────────────
+    from edge_analysis.ui.plan_tabs import render_plan_tab, render_review_tab
+    with t_plan:
+        render_plan_tab(df_all_safe, styler)
+        _section_header("Refinements")
+        _refinements_tab(f_perf, df_all_safe, styler)
+
+    # ── Weekly Review ─────────────────────────────────────────────────────────
+    with t_review:
+        render_review_tab(df_all_safe, styler)
+
+    # ── MT5 + Pro analytics (only when the MT5 Trade Log is connected) ───────
     if _show_mt5:
-        with _tab_objs[_mt5_base]:
+        with _tab_objs[6]:
             from edge_analysis.ui.mt5_tabs import render_mt5_tab
             render_mt5_tab(f_perf, df_all_safe, styler)
-        with _tab_objs[_mt5_base + 1]:
+        with _tab_objs[7]:
             from edge_analysis.ui.pro_tabs import render_pro_tab
             render_pro_tab(f_perf, df_all_safe, styler)
