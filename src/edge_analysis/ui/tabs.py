@@ -2315,11 +2315,13 @@ def _edge_wheel(rows, cat_col, val_col, fmt="+.2f") -> None:
         vx, vy = _p(rr + 15, am)
         parts.append(f'<text x="{vx:.1f}" y="{vy:.1f}" class="ea-ew-val" fill="{c}" '
                      f'text-anchor="middle" dominant-baseline="middle">{v:{fmt}}</text>')
-        lx, ly = _p(204, am)
+        lx, ly = _p(206, am)
+        cs = math.cos(am)
+        anch = "start" if cs > 0.25 else ("end" if cs < -0.25 else "middle")
         short = str(r[cat_col])
-        short = short[:22] + "\u2026" if len(short) > 23 else short
+        short = short[:24] + "\u2026" if len(short) > 25 else short
         parts.append(f'<text x="{lx:.1f}" y="{ly:.1f}" class="ea-ew-name" '
-                     f'text-anchor="middle" dominant-baseline="middle">{_h.escape(short)}'
+                     f'text-anchor="{anch}" dominant-baseline="middle">{_h.escape(short)}'
                      f'<title>{tip}</title></text>')
     best = d.iloc[0]
     bc = _edge_color(float(best["__v"]))
