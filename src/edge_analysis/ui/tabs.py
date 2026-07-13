@@ -2198,7 +2198,7 @@ _EA_VIZ_CSS = """<style>
 .ea-et-meter{height:4px;background:#f1f5f9;border-radius:2px;overflow:hidden;}
 .ea-et-meter div{height:4px;border-radius:2px;}
 .ea-et-meta{font-size:11px;color:#94a3b8;margin-top:7px;}
-.ea-ew-wrap{max-width:500px;margin:0 auto;}
+.ea-ew-wrap{max-width:600px;margin:0 auto;}
 .ea-ew-wrap svg{width:100%;height:auto;display:block;}
 .ea-ew-val{font-size:10.5px;font-weight:700;}
 .ea-ew-name{font-size:9px;fill:#64748b;}
@@ -2290,7 +2290,7 @@ def _edge_wheel(rows, cat_col, val_col, fmt="+.2f") -> None:
     if len(d) > 16:
         d = pd.concat([d.head(8), d.tail(8)]).reset_index(drop=True)
     mx = max(abs(float(d["__v"].max())), abs(float(d["__v"].min())), 1e-9)
-    n = len(d); cx = cy = 230.0; r0 = 56.0; rmax = 156.0
+    n = len(d); cx = 285.0; cy = 235.0; r0 = 56.0; rmax = 156.0
 
     def _p(rad, a):
         return (cx + rad * math.cos(a), cy + rad * math.sin(a))
@@ -2300,7 +2300,7 @@ def _edge_wheel(rows, cat_col, val_col, fmt="+.2f") -> None:
         v = float(r["__v"]); c = _edge_color(v)
         a0 = (i / n) * 2 * math.pi - math.pi / 2 + 0.025
         a1 = ((i + 1) / n) * 2 * math.pi - math.pi / 2 - 0.025
-        rr = r0 + max(abs(v) / mx, 0.06) * (rmax - r0)
+        rr = r0 + max(abs(v) / mx, 0.10) * (rmax - r0)
         x0, y0 = _p(r0, a0); x1, y1 = _p(r0, a1)
         x2, y2 = _p(rr, a1); x3, y3 = _p(rr, a0)
         name = _h.escape(str(r[cat_col]))
@@ -2315,9 +2315,9 @@ def _edge_wheel(rows, cat_col, val_col, fmt="+.2f") -> None:
         vx, vy = _p(rr + 15, am)
         parts.append(f'<text x="{vx:.1f}" y="{vy:.1f}" class="ea-ew-val" fill="{c}" '
                      f'text-anchor="middle" dominant-baseline="middle">{v:{fmt}}</text>')
-        lx, ly = _p(202, am)
+        lx, ly = _p(204, am)
         short = str(r[cat_col])
-        short = short[:16] + "\u2026" if len(short) > 17 else short
+        short = short[:22] + "\u2026" if len(short) > 23 else short
         parts.append(f'<text x="{lx:.1f}" y="{ly:.1f}" class="ea-ew-name" '
                      f'text-anchor="middle" dominant-baseline="middle">{_h.escape(short)}'
                      f'<title>{tip}</title></text>')
@@ -2328,7 +2328,7 @@ def _edge_wheel(rows, cat_col, val_col, fmt="+.2f") -> None:
                  f'class="ea-ew-hublab">best flag</text>')
     parts.append(f'<text x="{cx:.0f}" y="{cy + 13:.0f}" text-anchor="middle" '
                  f'class="ea-ew-hubval" fill="{bc}">{float(best["__v"]):{fmt}}R</text>')
-    st.markdown(_EA_VIZ_CSS + '<div class="ea-ew-wrap"><svg viewBox="0 0 460 460" '
+    st.markdown(_EA_VIZ_CSS + '<div class="ea-ew-wrap"><svg viewBox="0 0 570 470" '
                 'role="img">' + "".join(parts) + "</svg></div>", unsafe_allow_html=True)
 
 
