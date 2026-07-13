@@ -3735,6 +3735,7 @@ def _whoop_enabled() -> bool:
 
 
 def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, hero_fn=None):
+    from edge_analysis.ui.mt5_tabs import _section_header
     f_perf = _prep_perf_df(f)
     df_all_safe = df_all.copy() if df_all is not None else df_all
 
