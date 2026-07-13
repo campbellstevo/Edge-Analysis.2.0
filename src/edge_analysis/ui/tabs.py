@@ -1507,7 +1507,7 @@ def _entry_models_tab(f: pd.DataFrame, show_table):
         df_em = pd.DataFrame(rates).sort_values("Win %", ascending=False)
         st.markdown("### Entry Model Expectancy")
         st.caption("Average R per trade by entry model — ranked best → worst.")
-        _rank_dots(df_em, "Entry_Model", "Expectancy (R)")
+        _edge_tiles(df_em, "Entry_Model", "Expectancy (R)")
         render_entry_model_table(df_em, title="Entry Model Performance")
         if not df_em.empty:
             best_em = df_em.iloc[0]
@@ -2141,7 +2141,7 @@ def _confluence_board(f: pd.DataFrame) -> None:
     d = pd.DataFrame(rows).sort_values("Avg R", ascending=False)
     if len(d) > 18:
         d = pd.concat([d.head(9), d.tail(9)])
-    _rank_dots(d, "Category", "Avg R")
+    _edge_wheel(d, "Category", "Avg R")
     best, worst = d.iloc[0], d.iloc[-1]
     _insight_box(
         f"Strongest confluence: <b>{best['Category']}</b> ({best['Avg R']:+.2f}R over {int(best['Trades'])}). "
@@ -2170,56 +2170,166 @@ def _loss_postmortem(f: pd.DataFrame) -> None:
         rows.append({"Category": why[:36], "Avg R": round(float(sub["__rr"].mean()), 2),
                      "Trades": len(sub), "Net R": round(float(sub["__rr"].sum()), 1)})
     d = pd.DataFrame(rows).sort_values("Net R")
-    _rank_dots(d, "Category", "Net R", fmt="+.1f")
+    _edge_tiles(d, "Category", "Net R", fmt="+.1f")
     worst = d.iloc[0]
     _insight_box(f"<b>{worst['Category']}</b> is your most expensive failure mode: "
                  f"<b>{worst['Net R']:+.1f}R</b> across {int(worst['Trades'])} losses. "
                  f"One rule that eliminates it is worth more than a new setup.", "bad")
 
 
-def _rank_dots(rows, cat_col, val_col, fmt="+.2f", suffix="R") -> None:
-    """House-style ranked dot chart: dashed zero rule, green/red dots, bold labels."""
+_EA_GREEN, _EA_RED, _EA_GREY = "#16a34a", "#ef4444", "#9ca3af"
+
+_EA_VIZ_CSS = """<style>
+.ea-pb{display:flex;flex-direction:column;gap:7px;margin:6px 0 10px;}
+.ea-pb-row{display:flex;align-items:center;gap:10px;}
+.ea-pb-lab{flex:0 0 34%;max-width:230px;text-align:right;font-size:13px;font-weight:600;
+  color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ea-pb-n{color:#94a3b8;font-weight:500;font-size:11px;margin-left:6px;}
+.ea-pb-track{flex:1;position:relative;background:#f8fafc;border-radius:7px;height:14px;}
+.ea-pb-bar{height:14px;}
+.ea-pb-zero{position:absolute;left:50%;top:-3px;bottom:-3px;border-left:1.5px dashed #cbd5e1;}
+.ea-pb-val{flex:0 0 62px;font-size:12.5px;font-weight:700;}
+@media (max-width:640px){.ea-pb-lab{flex-basis:40%;font-size:12px;}}
+.ea-et-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:6px 0 10px;}
+.ea-et{background:#ffffff;border:1px solid #eef0f4;border-left:4px solid #9ca3af;
+  border-radius:0 10px 10px 0;padding:10px 12px;}
+.ea-et-lab{font-size:11.5px;color:#64748b;min-height:30px;line-height:1.3;}
+.ea-et-val{font-size:19px;font-weight:700;margin:2px 0 7px;}
+.ea-et-meter{height:4px;background:#f1f5f9;border-radius:2px;overflow:hidden;}
+.ea-et-meter div{height:4px;border-radius:2px;}
+.ea-et-meta{font-size:11px;color:#94a3b8;margin-top:7px;}
+.ea-ew-wrap{max-width:500px;margin:0 auto;}
+.ea-ew-wrap svg{width:100%;height:auto;display:block;}
+.ea-ew-val{font-size:10.5px;font-weight:700;}
+.ea-ew-name{font-size:9px;fill:#64748b;}
+.ea-ew-hub{fill:#f8fafc;}
+.ea-ew-hublab{font-size:11px;fill:#64748b;}
+.ea-ew-hubval{font-size:15px;font-weight:700;}
+</style>"""
+
+
+def _edge_color(v: float) -> str:
+    if v > 0.005:
+        return _EA_GREEN
+    if v < -0.005:
+        return _EA_RED
+    return _EA_GREY
+
+
+def _rank_frame(rows, cat_col, val_col):
     d = pd.DataFrame(rows).copy()
     d["__v"] = pd.to_numeric(d[val_col], errors="coerce")
-    d = d[d["__v"].notna()].sort_values("__v", ascending=False).reset_index(drop=True)
+    return d[d["__v"].notna()].sort_values("__v", ascending=False).reset_index(drop=True)
+
+
+def _rank_dots(rows, cat_col, val_col, fmt="+.2f", suffix="R") -> None:
+    """House power bars: diverging from a dashed zero line, green right / red left."""
+    import html as _h
+    d = _rank_frame(rows, cat_col, val_col)
     if d.empty:
         return
-    d["__cat"] = d[cat_col].astype(str)
-    d["__c"] = d["__v"].apply(lambda x: "good" if x >= 0 else "bad")
-    d["__lab"] = d["__v"].apply(lambda v: f"{v:{fmt}}{suffix}")
-    d["__ord"] = range(len(d))
-    lo = min(float(d["__v"].min()), 0.0); hi = max(float(d["__v"].max()), 0.0)
-    span = max(hi - lo, 0.4)
-    dom = [lo - span * 0.30, hi + span * 0.45]
-    tip = [alt.Tooltip("__cat:N", title=" "), alt.Tooltip("__v:Q", title=val_col, format=fmt)]
-    if "Trades" in d.columns:
-        tip.append(alt.Tooltip("Trades:Q"))
-    if "Win %" in d.columns:
-        tip.append(alt.Tooltip("Win %:Q"))
-    base = alt.Chart(alt.Data(values=_to_alt_values(d))).encode(
-        y=alt.Y("__cat:N", sort=alt.EncodingSortField(field="__ord", order="ascending"),
-                title=None,
-                axis=alt.Axis(labelFontSize=13, labelColor="#0f172a", ticks=False,
-                              domain=False, labelLimit=200,
-                              grid=True, gridColor="#f1f5f9")),
-        x=alt.X("__v:Q", title=None, scale=alt.Scale(domain=dom),
-                axis=alt.Axis(format="+.1f", grid=True, gridColor="#eef0f5",
-                              labelColor="#94a3b8", tickCount=5)),
-    )
-    pts = base.mark_circle(size=150, opacity=0.9, stroke="#ffffff", strokeWidth=2).encode(
-        color=alt.Color("__c:N", legend=None,
-                        scale=alt.Scale(domain=["good", "bad"], range=["#16a34a", "#ef4444"])),
-        tooltip=tip)
-    text = base.mark_text(
-        align=alt.expr(alt.expr.if_(alt.datum.__v >= 0, "left", "right")),
-        dx=alt.expr(alt.expr.if_(alt.datum.__v >= 0, 12, -12)),
-        fontSize=12, fontWeight="bold", color="#334155").encode(text="__lab:N")
-    rule = (alt.Chart(alt.Data(values=[{"x": 0}]))
-            .mark_rule(color="#cbd5e1", strokeDash=[4, 4], strokeWidth=1.5)
-            .encode(x=alt.X("x:Q", title=None)))
-    from edge_analysis.ui.theme import get_chart_styler
-    st.altair_chart(get_chart_styler()(alt.layer(rule, pts, text).properties(
-        height=max(140, len(d) * 40))), use_container_width=True)
+    mx = max(abs(float(d["__v"].max())), abs(float(d["__v"].min())), 1e-9)
+    out = [_EA_VIZ_CSS, '<div class="ea-pb">']
+    for _, r in d.iterrows():
+        v = float(r["__v"]); c = _edge_color(v)
+        w = max(3.0, abs(v) / mx * 50.0)
+        chip = ""
+        if "Trades" in d.columns and pd.notna(r.get("Trades")):
+            chip = f'<span class="ea-pb-n">{int(r["Trades"])}</span>'
+        name = _h.escape(str(r[cat_col]))
+        if v >= 0:
+            bar = (f'<div class="ea-pb-bar" style="margin-left:50%;width:{w:.1f}%;'
+                   f'background:{c};border-radius:0 7px 7px 0;"></div>')
+        else:
+            bar = (f'<div class="ea-pb-bar" style="margin-left:{50 - w:.1f}%;width:{w:.1f}%;'
+                   f'background:{c};border-radius:7px 0 0 7px;"></div>')
+        out.append(
+            f'<div class="ea-pb-row"><div class="ea-pb-lab" title="{name}">{name}{chip}</div>'
+            f'<div class="ea-pb-track">{bar}<div class="ea-pb-zero"></div></div>'
+            f'<div class="ea-pb-val" style="color:{c};">{v:{fmt}}{suffix}</div></div>')
+    out.append("</div>")
+    st.markdown("".join(out), unsafe_allow_html=True)
+
+
+def _edge_tiles(rows, cat_col, val_col, fmt="+.2f", suffix="R") -> None:
+    """Card grid: one striped tile per category with the value and a magnitude meter."""
+    import html as _h
+    d = _rank_frame(rows, cat_col, val_col)
+    if d.empty:
+        return
+    mx = max(abs(float(d["__v"].max())), abs(float(d["__v"].min())), 1e-9)
+    out = [_EA_VIZ_CSS, '<div class="ea-et-grid">']
+    for _, r in d.iterrows():
+        v = float(r["__v"]); c = _edge_color(v)
+        w = max(4, int(round(abs(v) / mx * 100)))
+        name = _h.escape(str(r[cat_col]))
+        meta = []
+        if "Win %" in d.columns and pd.notna(r.get("Win %")):
+            meta.append(f'{float(r["Win %"]):.0f}% win')
+        if "Trades" in d.columns and pd.notna(r.get("Trades")):
+            meta.append(f'{int(r["Trades"])} trades')
+        meta_html = f'<div class="ea-et-meta">{" &middot; ".join(meta)}</div>' if meta else ""
+        out.append(
+            f'<div class="ea-et" style="border-left-color:{c};">'
+            f'<div class="ea-et-lab" title="{name}">{name}</div>'
+            f'<div class="ea-et-val" style="color:{c};">{v:{fmt}}{suffix}</div>'
+            f'<div class="ea-et-meter"><div style="width:{w}%;background:{c};"></div></div>'
+            f'{meta_html}</div>')
+    out.append("</div>")
+    st.markdown("".join(out), unsafe_allow_html=True)
+
+
+def _edge_wheel(rows, cat_col, val_col, fmt="+.2f") -> None:
+    """Radial edge wheel (hourly-clock style): one wedge per flag, length = magnitude."""
+    import html as _h
+    import math
+    d = _rank_frame(rows, cat_col, val_col)
+    if len(d) < 5:
+        _rank_dots(rows, cat_col, val_col, fmt=fmt)
+        return
+    if len(d) > 16:
+        d = pd.concat([d.head(8), d.tail(8)]).reset_index(drop=True)
+    mx = max(abs(float(d["__v"].max())), abs(float(d["__v"].min())), 1e-9)
+    n = len(d); cx = cy = 230.0; r0 = 56.0; rmax = 156.0
+
+    def _p(rad, a):
+        return (cx + rad * math.cos(a), cy + rad * math.sin(a))
+
+    parts = []
+    for i, (_, r) in enumerate(d.iterrows()):
+        v = float(r["__v"]); c = _edge_color(v)
+        a0 = (i / n) * 2 * math.pi - math.pi / 2 + 0.025
+        a1 = ((i + 1) / n) * 2 * math.pi - math.pi / 2 - 0.025
+        rr = r0 + max(abs(v) / mx, 0.06) * (rmax - r0)
+        x0, y0 = _p(r0, a0); x1, y1 = _p(r0, a1)
+        x2, y2 = _p(rr, a1); x3, y3 = _p(rr, a0)
+        name = _h.escape(str(r[cat_col]))
+        tip = f"{name}: {v:{fmt}}R"
+        if "Trades" in d.columns and pd.notna(r.get("Trades")):
+            tip += f" &middot; {int(r['Trades'])} trades"
+        parts.append(
+            f'<path d="M{x0:.1f},{y0:.1f} A{r0:.0f},{r0:.0f} 0 0 1 {x1:.1f},{y1:.1f} '
+            f'L{x2:.1f},{y2:.1f} A{rr:.1f},{rr:.1f} 0 0 0 {x3:.1f},{y3:.1f} Z" '
+            f'fill="{c}" opacity="0.92"><title>{tip}</title></path>')
+        am = (a0 + a1) / 2
+        vx, vy = _p(rr + 15, am)
+        parts.append(f'<text x="{vx:.1f}" y="{vy:.1f}" class="ea-ew-val" fill="{c}" '
+                     f'text-anchor="middle" dominant-baseline="middle">{v:{fmt}}</text>')
+        lx, ly = _p(202, am)
+        short = str(r[cat_col])
+        short = short[:16] + "\u2026" if len(short) > 17 else short
+        parts.append(f'<text x="{lx:.1f}" y="{ly:.1f}" class="ea-ew-name" '
+                     f'text-anchor="middle" dominant-baseline="middle">{_h.escape(short)}'
+                     f'<title>{tip}</title></text>')
+    best = d.iloc[0]
+    bc = _edge_color(float(best["__v"]))
+    parts.append(f'<circle cx="{cx:.0f}" cy="{cy:.0f}" r="{r0 - 9:.0f}" class="ea-ew-hub"/>')
+    parts.append(f'<text x="{cx:.0f}" y="{cy - 8:.0f}" text-anchor="middle" '
+                 f'class="ea-ew-hublab">best flag</text>')
+    parts.append(f'<text x="{cx:.0f}" y="{cy + 13:.0f}" text-anchor="middle" '
+                 f'class="ea-ew-hubval" fill="{bc}">{float(best["__v"]):{fmt}}R</text>')
+    st.markdown(_EA_VIZ_CSS + '<div class="ea-ew-wrap"><svg viewBox="0 0 460 460" '
+                'role="img">' + "".join(parts) + "</svg></div>", unsafe_allow_html=True)
 
 
 def _conditions_tab(f: pd.DataFrame, show_table):

@@ -1328,6 +1328,17 @@ def inject_dark_overlay():
         color: #e8ebf1 !important;
     }
     .stTabs [data-baseweb="tab-list"] { background: transparent !important; }
+    .ea-pb-lab { color: #e5e7eb !important; }
+    .ea-pb-n { color: #6b7280 !important; }
+    .ea-pb-track { background: #1a1f2b !important; }
+    .ea-pb-zero { border-left-color: #3a4356 !important; }
+    .ea-et { background: #161b27 !important; border-color: rgba(255,255,255,0.09) !important; }
+    .ea-et-lab { color: #9aa3b5 !important; }
+    .ea-et-meter { background: #232937 !important; }
+    .ea-et-meta { color: #6b7280 !important; }
+    .ea-ew-hub { fill: #1a1f2b !important; }
+    .ea-ew-hublab { fill: #8b94a3 !important; }
+    .ea-ew-name { fill: #8b94a3 !important; }
     </style>
     """, unsafe_allow_html=True)
 
