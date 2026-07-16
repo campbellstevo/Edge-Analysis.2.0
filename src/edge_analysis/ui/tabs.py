@@ -2198,6 +2198,49 @@ def _flag_verdicts(f: pd.DataFrame, scope: str = "entry"):
     return rows
 
 
+def _obos_section(f: pd.DataFrame) -> None:
+    """Overbought/Oversold extreme vs not — expectancy head to head."""
+    if f is None or f.empty or "Oversold or Overbought?" not in f.columns:
+        return
+    g = f.copy()
+    rr_col = next((c for c in ["Closed RR", "RR", "Closed R"] if c in g.columns), None)
+    if rr_col is None:
+        return
+    g["__rr"] = pd.to_numeric(g[rr_col], errors="coerce")
+    g = g[g["__rr"].notna()]
+    if len(g) < 8:
+        return
+    raw = g["Oversold or Overbought?"].astype(str).str.strip().str.lower()
+    yes = raw.isin(["yes", "true", "__yes__", "1"])
+    known = raw.isin(["yes", "no", "true", "false", "__yes__", "__no__", "1", "0"])
+
+    def _stats(mask):
+        sub = g.loc[mask, "__rr"]
+        if len(sub) < 3:
+            return None
+        return dict(n=int(len(sub)), avg=float(sub.mean()),
+                    win=100.0 * float((sub > 0.15).sum()) / len(sub))
+
+    y, n_ = _stats(yes & known), _stats(~yes & known)
+    if y is None and n_ is None:
+        return
+    st.markdown("### Overbought / Oversold")
+    st.caption("Entering at an OB/OS extreme vs not \u2014 what each is worth per trade.")
+    rows = []
+    if y:
+        rows.append({"Category": "At OB/OS extreme", "Avg R": round(y["avg"], 2),
+                     "Trades": y["n"], "Win %": y["win"]})
+    if n_:
+        rows.append({"Category": "Not at extreme", "Avg R": round(n_["avg"], 2),
+                     "Trades": n_["n"], "Win %": n_["win"]})
+    _edge_tiles(rows, "Category", "Avg R")
+    if y and n_:
+        diff = y["avg"] - n_["avg"]
+        lead = "OB/OS extremes are paying you" if diff > 0 else "OB/OS extremes are costing you"
+        _insight_box(f"{lead}: <b>{diff:+.2f}R per trade</b> versus entries away from an extreme "
+                     f"({y['avg']:+.2f}R over {y['n']} vs {n_['avg']:+.2f}R over {n_['n']}).")
+
+
 def _confluence_board(f: pd.DataFrame, scope: str = "entry") -> None:
     """Ranked board of flag verdicts (used for the Externals factors board)."""
     rows = _flag_verdicts(f, scope)
@@ -4042,6 +4085,8 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
     with t_ext:
         _section_header("Market conditions", "The market around your trades — trend, volatility, news and gaps.")
         _conditions_tab(f_perf, show_table)
+        _gap()
+        _obos_section(f_perf)
         _gap()
         _confluence_board(f_perf, scope="external")
         if _mt5:
