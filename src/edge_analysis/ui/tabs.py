@@ -2543,7 +2543,6 @@ def _render_data_completeness_by_instrument(f_all: pd.DataFrame):
 
 def _data_tab(f_all: pd.DataFrame, show_table):
     st.markdown('<div class="section">', unsafe_allow_html=True)
-    _render_data_completeness_by_instrument(f_all)
     st.markdown("</div>", unsafe_allow_html=True)
 
 
