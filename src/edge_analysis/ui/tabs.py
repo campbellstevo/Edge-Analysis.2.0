@@ -2115,8 +2115,7 @@ def _div_vs_sweep(f: pd.DataFrame) -> None:
     if d_s is None and s_s is None:
         return
     st.markdown("### DIV vs Sweep")
-    st.caption("Your two entry criteria head to head \u2014 average R per trade when each is present, "
-               "plus every combination.")
+    st.caption("Your two entry criteria head to head \u2014 average R per trade when each is present.")
     head = []
     if d_s:
         head.append({"Category": "Divergence \u00b7 yes", "Avg R": round(d_s["avg"], 2),
@@ -2132,8 +2131,6 @@ def _div_vs_sweep(f: pd.DataFrame) -> None:
         if s_:
             combos.append({"Category": lab, "Avg R": round(s_["avg"], 2),
                            "Trades": s_["n"], "Win %": s_["win"]})
-    if combos:
-        _rank_dots(combos, "Category", "Avg R")
     if d_s and s_s:
         better = "Divergence" if d_s["avg"] > s_s["avg"] else "Sweep"
         worse = "Sweep" if better == "Divergence" else "Divergence"
