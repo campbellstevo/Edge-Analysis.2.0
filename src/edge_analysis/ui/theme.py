@@ -1014,9 +1014,20 @@ def inject_theme():
        layout space and left faded strips). */
     div[data-stale="true"], [data-stale="true"], .stale-element,
     [data-testid="stAppViewContainer"] .element-container.stale-element,
-    [data-stale="true"] .stTabs, [data-stale="true"] [data-baseweb="tab-list"] {{
+    [data-stale="true"] .stTabs, [data-stale="true"] [data-baseweb="tab-list"],
+    [data-stale="true"] iframe, [data-stale="true"] svg, [data-stale="true"] canvas {{
         display: none !important;
     }}
+
+    /* Kill the rerun cross-fade entirely: no half-transparent ghost frame
+       while Streamlit swaps old render for new. */
+    [data-testid="stAppViewContainer"] .element-container,
+    [data-testid="stVerticalBlock"], [data-testid="stMarkdown"],
+    .stTabs, [data-baseweb="tab-panel"] {{
+        transition: none !important;
+        animation: none !important;
+    }}
+    [data-testid="stAppViewContainer"] {{ opacity: 1 !important; }}
 
     /* No copy-link icons on heading hover */
     [data-testid="stHeaderActionElements"] {{ display: none !important; }}
