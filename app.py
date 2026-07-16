@@ -1398,10 +1398,9 @@ def _whoop_persist() -> None:
     at = st.session_state.get("whoop_at") or ""
     rt = st.session_state.get("whoop_rt") or ""
     exp = st.session_state.get("whoop_at_exp", 0)
-    sig = f"{at[-10:]}|{rt[-10:]}|{int(exp)}"
-    if st.session_state.get("whoop_saved_sig") == sig:
-        return
-    st.session_state["whoop_saved_sig"] = sig
+    # No dedupe gate: re-render the write component EVERY run. If a rerun
+    # killed the component before its localStorage.setItem executed, the next
+    # run re-issues it — a rotated refresh token can never be lost again.
     blob = json.dumps({"rt": rt, "at": at, "exp": exp})
     _js_eval("localStorage.setItem('ea_whoop', " + json.dumps(blob) + ")",
              key="whoop_save")
