@@ -2144,8 +2144,9 @@ def _div_vs_sweep(f: pd.DataFrame) -> None:
                f"({max(combos, key=lambda r: r['Avg R'])['Avg R']:+.2f}R)." if combos else ""))
 
 
-def _confluence_board(f: pd.DataFrame) -> None:
-    """Every logged confluence/flag ranked by average R — one board."""
+def _confluence_board(f: pd.DataFrame, scope: str = "entry") -> None:
+    """Logged flags ranked by average R. scope='entry' = entry criteria only;
+    scope='external' = market externals (volatility, news, gap)."""
     if f is None or f.empty:
         return
     g = f.copy()
@@ -2161,12 +2162,15 @@ def _confluence_board(f: pd.DataFrame) -> None:
         return g[col].astype(str).str.strip().str.lower().isin(["yes", "true", "__yes__", "1"])
 
     rows = []
-    checkbox = [("Clear Bias/Prepared", "Prepared / clear bias"),
-                ("Opposing Weak Structure?", "Opposing weak structure"),
-                ("Oversold or Overbought?", "OB/OS extreme"),
-                ("Sweep?", "Sweep"), ("DIV?", "Divergence"),
-                ("True Break?", "True break"),
-                ("Multi Entry Model Setup", "Multi-entry")]
+    if scope == "entry":
+        checkbox = [("Clear Bias/Prepared", "Prepared / clear bias"),
+                    ("Opposing Weak Structure?", "Opposing weak structure"),
+                    ("Oversold or Overbought?", "OB/OS extreme"),
+                    ("Sweep?", "Sweep"), ("DIV?", "Divergence"),
+                    ("True Break?", "True break"),
+                    ("Multi Entry Model Setup", "Multi-entry")]
+    else:
+        checkbox = []
     for col, label in checkbox:
         if col not in g.columns:
             continue
@@ -2178,8 +2182,11 @@ def _confluence_board(f: pd.DataFrame) -> None:
             if n >= 3:
                 rows.append({"Category": lab, "Avg R": round(float(g.loc[mask, "__rr"].mean()), 2),
                              "Trades": n})
-    cats = ["Volatility", "News Aspect", "Entry Timeframe", "Tiers in pricing HTF",
-            "Tiers in pricing MTF", "Stop Loss + Covering", "Breakeven Criteria"]
+    if scope == "entry":
+        cats = ["Entry Timeframe", "Tiers in pricing HTF", "Tiers in pricing MTF",
+                "Stop Loss + Covering", "Breakeven Criteria"]
+    else:
+        cats = ["Volatility", "News Aspect", "GAP Alignment"]
     for col in cats:
         if col not in g.columns:
             continue
@@ -2193,16 +2200,22 @@ def _confluence_board(f: pd.DataFrame) -> None:
                              "Avg R": round(float(sub["__rr"].mean()), 2), "Trades": len(sub)})
     if not rows:
         return
-    st.markdown("### Confluence Board")
-    st.caption("Every flag you log, ranked by what it's actually worth per trade (min 3 trades). "
-               "Green at the top = stack these. Red at the bottom = these cost you.")
+    if scope == "entry":
+        st.markdown("### Confluence Board")
+        st.caption("Your entry criteria, ranked by what each is actually worth per trade "
+                   "(min 3 trades). Green = stack these. Red = these cost you.")
+    else:
+        st.markdown("### External Factors Board")
+        st.caption("Market conditions around your trades — volatility, news and gaps — "
+                   "ranked by average R (min 3 trades).")
     d = pd.DataFrame(rows).sort_values("Avg R", ascending=False)
     if len(d) > 18:
         d = pd.concat([d.head(9), d.tail(9)])
     _rank_dots(d, "Category", "Avg R")
     best, worst = d.iloc[0], d.iloc[-1]
+    kind = "confluence" if scope == "entry" else "condition"
     _insight_box(
-        f"Strongest confluence: <b>{best['Category']}</b> ({best['Avg R']:+.2f}R over {int(best['Trades'])}). "
+        f"Strongest {kind}: <b>{best['Category']}</b> ({best['Avg R']:+.2f}R over {int(best['Trades'])}). "
         f"Costliest: <b>{worst['Category']}</b> ({worst['Avg R']:+.2f}R over {int(worst['Trades'])}).")
 
 
@@ -4003,6 +4016,8 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
     # ── Externals: market conditions + body signals ───────────────────────
     with t_ext:
         _conditions_tab(f_perf, show_table)
+        st.divider()
+        _confluence_board(f_perf, scope="external")
         if _mt5:
             st.divider()
             _spread_section(_data, styler)
