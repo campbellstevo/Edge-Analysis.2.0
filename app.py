@@ -1499,10 +1499,15 @@ def _whoop_bootstrap() -> None:
         except requests.exceptions.HTTPError as e:
             code = getattr(e.response, "status_code", None)
             if code in (400, 401):
-                # Refresh token dead. Another tab may have rotated it — retry
-                # once with whatever the device now holds before giving up.
-                blob = _whoop_load_blob("whoop_reload") or {}
-                newrt = blob.get("rt")
+                # Refresh token rejected. Another tab may have rotated it —
+                # re-read the device copy. The read is async: on the first run
+                # it returns None, so stay in "pending" and finish the retry
+                # on the next run instead of giving up straight away.
+                blob = _whoop_load_blob("whoop_reload")
+                if blob is None:
+                    st.session_state["whoop_boot"] = "pending"
+                    return
+                newrt = (blob or {}).get("rt")
                 if newrt and newrt != rt:
                     try:
                         _store_whoop_tokens(whoop.refresh_tokens(newrt, cid, csec))
@@ -1511,8 +1516,11 @@ def _whoop_bootstrap() -> None:
                         return
                     except Exception:
                         pass
-                for k in ("whoop_at", "whoop_rt", "whoop_at_exp"):
+                # Genuinely dead: drop the session copy AND the device copy so
+                # a burned token is never restored again on the next reload.
+                for k in ("whoop_at", "whoop_rt", "whoop_at_exp", "whoop_saved_sig"):
                     st.session_state.pop(k, None)
+                _js_eval("localStorage.removeItem('ea_whoop')", key="whoop_clear_dead")
             # Non-4xx (network/5xx): keep tokens and try again next load.
         except Exception:
             pass  # transient — keep tokens
