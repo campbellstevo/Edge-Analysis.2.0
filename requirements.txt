@@ -9,3 +9,4 @@ notion-client==2.2.1
 streamlit-js-eval>=0.1,<1
 qrcode==7.4.2
 fpdf2==2.7.9
+# force rebuild 2026-07-16
