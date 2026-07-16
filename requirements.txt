@@ -12,3 +12,4 @@ fpdf2==2.7.9
 # force rebuild 2026-07-16
 # rebuild 2
 # rebuild 3
+# rebuild 4

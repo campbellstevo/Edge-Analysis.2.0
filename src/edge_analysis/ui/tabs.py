@@ -2141,19 +2141,19 @@ def _div_vs_sweep(f: pd.DataFrame) -> None:
                f"({max(combos, key=lambda r: r['Avg R'])['Avg R']:+.2f}R)." if combos else ""))
 
 
-def _confluence_board(f: pd.DataFrame, scope: str = "entry") -> None:
-    """Logged flags ranked by average R. scope='entry' = entry criteria only;
+def _flag_verdicts(f: pd.DataFrame, scope: str = "entry"):
+    """Collect per-flag average-R verdicts. scope='entry' = entry criteria;
     scope='external' = market externals (volatility, news, gap)."""
     if f is None or f.empty:
-        return
+        return []
     g = f.copy()
     rr_col = next((c for c in ["Closed RR", "RR", "Closed R"] if c in g.columns), None)
     if rr_col is None:
-        return
+        return []
     g["__rr"] = pd.to_numeric(g[rr_col], errors="coerce")
     g = g[g["__rr"].notna()]
     if len(g) < 8:
-        return
+        return []
 
     def _yes(col):
         return g[col].astype(str).str.strip().str.lower().isin(["yes", "true", "__yes__", "1"])
@@ -2195,6 +2195,12 @@ def _confluence_board(f: pd.DataFrame, scope: str = "entry") -> None:
                 short = col.replace("Tiers in pricing ", "Tiers ").replace("?", "")
                 rows.append({"Category": f"{short} · {val[:24]}",
                              "Avg R": round(float(sub["__rr"].mean()), 2), "Trades": len(sub)})
+    return rows
+
+
+def _confluence_board(f: pd.DataFrame, scope: str = "entry") -> None:
+    """Ranked board of flag verdicts (used for the Externals factors board)."""
+    rows = _flag_verdicts(f, scope)
     if not rows:
         return
     if scope == "entry":
@@ -3134,6 +3140,8 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
 # ─────────────────────────── Refinements Tab ─────────────────────────────────
 
 def _build_refinements_stats(f_perf: pd.DataFrame, df_all_safe: pd.DataFrame) -> dict:
+    # collected at the top so the flag verdicts always ride along
+    _flags = _flag_verdicts(f_perf, "entry") + _flag_verdicts(f_perf, "external")
     """Compile a stats dict from the current dataframes for the AI prompt."""
     stats: dict = {}
 
@@ -3240,6 +3248,7 @@ def _build_refinements_stats(f_perf: pd.DataFrame, df_all_safe: pd.DataFrame) ->
             if s["session"] == "Asia":
                 stats["asia_pct"] = round(s["trades"] / max(1, total_sess) * 100, 1)
 
+    stats["flags"] = _flags
     return stats
 
 
@@ -3398,6 +3407,18 @@ def _compute_refinements(stats: dict) -> dict:
     if not refine:
         refine.append({"title": "Maintain consistency", "action": "Keep risk and process steady, and re-check as more data builds."})
 
+    flags = [r for r in (stats.get("flags") or []) if r.get("Trades", 0) >= 8]
+    goods = sorted([r for r in flags if r["Avg R"] >= 0.5], key=lambda r: -r["Avg R"])[:2]
+    bads = sorted([r for r in flags if r["Avg R"] <= -0.35], key=lambda r: r["Avg R"])[:2]
+    for r in goods:
+        working.append({"title": f"{r['Category']} is worth {r['Avg R']:+.2f}R per trade",
+                        "detail": f"Across {r['Trades']} trades. Keep stacking this condition."})
+    for r in bads:
+        holding.append({"title": f"{r['Category']} costs {r['Avg R']:+.2f}R per trade",
+                        "detail": f"Across {r['Trades']} trades."})
+        refine.append({"title": f"Filter out '{r['Category']}' trades",
+                       "action": f"This condition runs {r['Avg R']:+.2f}R over {r['Trades']} trades. "
+                                 "Skip these for a month and re-measure."})
     return {"working": working[:5], "holding_back": holding[:5], "refinements": refine[:5]}
 
 
@@ -3973,8 +3994,6 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
         _entry_models_tab(f_perf, show_table)
         _gap()
         _div_vs_sweep(f_perf)
-        _gap()
-        _confluence_board(f_perf)
         _gap()
         _confluences_tab(f_perf, show_table)
         _gap()
