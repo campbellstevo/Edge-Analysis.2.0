@@ -3940,114 +3940,116 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
         ["Performance", "Entry", "Externals", "Psychology", "Plan", "Review"]
     )
 
-    # ── Results: how you are doing ────────────────────────────────────────
+    # ── Performance: headline results, detail tucked away ─────────────────
     with t_results:
         if hero_fn is not None:
             hero_fn()
         _growth_tab(f_perf, df_all_safe, styler)
         st.divider()
-        _instruments_tab(f_perf, show_table)
-        if _mt5:
-            st.divider()
-            _dollar_pnl_section(_data, styler)
-        st.divider()
-        if not _salty:
-            _early_close_tab(df_all_safe, styler)
-            st.divider()
-            _account_comparison_tab(f_perf, styler)
-        else:
-            _early_close_tab_salty(df_all_safe, styler)
-        _section_header("Targets")
         _targets_tab(df_all_safe, styler)
         _section_header("Projections")
-        _projections_tab(df_all_safe, styler)
+        with st.expander("Run the projections simulator", expanded=False):
+            _projections_tab(df_all_safe, styler)
+        with st.expander("More performance detail", expanded=False):
+            _instruments_tab(f_perf, show_table)
+            if _mt5:
+                st.divider()
+                _dollar_pnl_section(_data, styler)
+            st.divider()
+            if not _salty:
+                _early_close_tab(df_all_safe, styler)
+                st.divider()
+                _account_comparison_tab(f_perf, styler)
+            else:
+                _early_close_tab_salty(df_all_safe, styler)
 
-    # ── Entry: what you trade, when, and how you manage it ───────────────
+    # ── Entry: setups, timing, trade management ──────────────────────────
     with t_entry:
         _section_header("Setups")
         _entry_models_tab(f_perf, show_table)
         st.divider()
-        _confluences_tab(f_perf, show_table)
-        st.divider()
         _div_vs_sweep(f_perf)
         st.divider()
         _confluence_board(f_perf)
-        st.divider()
-        _timeframes_tab(f_perf, show_table)
-        if _mt5:
+        with st.expander("More setup detail", expanded=False):
+            _confluences_tab(f_perf, show_table)
             st.divider()
-            _direction_section(_data, styler)
-            st.divider()
-            _conviction_section(_data, styler)
-            st.divider()
-            _a_game(_data, styler)
+            _timeframes_tab(f_perf, show_table)
+            if _mt5:
+                st.divider()
+                _direction_section(_data, styler)
+                st.divider()
+                _conviction_section(_data, styler)
+                st.divider()
+                _a_game(_data, styler)
 
         _section_header("Timing")
         _hourly_expectancy_clock(df_all_safe)
         st.divider()
         _sessions_tab(f_perf, show_table)
-        st.divider()
-        _time_days_tab(f_perf, show_table)
-        if _mt5:
-            st.divider()
-            _timing_section(_data, styler)
-            st.divider()
-            _holdtime_section(_data, styler)
-            st.divider()
-            _heatmap_hour_day(_data, styler)
-            st.divider()
-            _symbol_session_matrix(_data, styler)
+        with st.expander("More timing detail", expanded=False):
+            _time_days_tab(f_perf, show_table)
+            if _mt5:
+                st.divider()
+                _timing_section(_data, styler)
+                st.divider()
+                _holdtime_section(_data, styler)
+                st.divider()
+                _heatmap_hour_day(_data, styler)
+                st.divider()
+                _symbol_session_matrix(_data, styler)
 
         if _mt5 or _salty:
             _section_header("Managing the trade")
             if _mt5:
                 _mae_mfe_section(_data, styler)
-                st.divider()
-                _execution_section(_data, styler)
-                st.divider()
-                _exit_optimizer(_data, styler)
-                st.divider()
-                _mae_stop_optimizer(_data, styler)
-                st.divider()
-                _missed_runner_section(_data, styler)
+                with st.expander("Trade management tools", expanded=False):
+                    _execution_section(_data, styler)
+                    st.divider()
+                    _exit_optimizer(_data, styler)
+                    st.divider()
+                    _mae_stop_optimizer(_data, styler)
+                    st.divider()
+                    _missed_runner_section(_data, styler)
             if _salty:
                 _salty_execution_quality_tab(f_perf)
 
-    # ── Externals: market conditions + body signals ───────────────────────
+    # ── Externals: market conditions ───────────────────────────────────────
     with t_ext:
         _conditions_tab(f_perf, show_table)
         st.divider()
         _confluence_board(f_perf, scope="external")
         if _mt5:
-            st.divider()
-            _spread_section(_data, styler)
-            st.divider()
-            _cost_drag(_data, styler)
+            with st.expander("Costs and spread", expanded=False):
+                _spread_section(_data, styler)
+                st.divider()
+                _cost_drag(_data, styler)
 
-    # ── Psychology: discipline, tilt and mistakes ─────────────────────────
+    # ── Psychology ────────────────────────────────────────────────────────
     with t_psych:
         _psychology_tab(f_perf, df_all_safe, styler)
         st.divider()
         _loss_postmortem(f_perf)
         if _mt5:
-            st.divider()
-            _tilt(_data, styler)
-            st.divider()
-            _mistake_section(_data, styler)
-            st.divider()
-            _discipline_section(_data, styler)
+            with st.expander("Deeper psychology", expanded=False):
+                _tilt(_data, styler)
+                st.divider()
+                _mistake_section(_data, styler)
+                st.divider()
+                _discipline_section(_data, styler)
         if _whoop_on:
             _section_header("Recovery (WHOOP)")
             from edge_analysis.ui.whoop_tab import render_whoop_tab
             render_whoop_tab(df_all_safe, styler)
 
-    # ── Plan: targets, projections, plan and refinements ─────────────────
+    # ── Plan ──────────────────────────────────────────────────────────────
     with t_plan:
         render_plan_tab(df_all_safe, styler)
         _section_header("Refinements")
-        _refinements_tab(f_perf, df_all_safe, styler)
-        st.divider()
-        _data_tab(df_all_safe, show_table)
+        with st.expander("Refinement ideas from your data", expanded=False):
+            _refinements_tab(f_perf, df_all_safe, styler)
+        with st.expander("My template", expanded=False):
+            _data_tab(df_all_safe, show_table)
 
     # ── Review ────────────────────────────────────────────────────────────
     with t_review:

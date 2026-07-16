@@ -1028,6 +1028,11 @@ def inject_theme():
         animation: none !important;
     }}
     [data-testid="stAppViewContainer"] {{ opacity: 1 !important; }}
+    .stTabs, .stTabs [data-baseweb="tab-list"], .stTabs button[role="tab"],
+    div[data-testid="stTabs"]:not([data-stale="true"]) {{
+        opacity: 1 !important;
+        filter: none !important;
+    }}
 
     /* No copy-link icons on heading hover */
     [data-testid="stHeaderActionElements"] {{ display: none !important; }}
