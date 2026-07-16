@@ -48,12 +48,14 @@ def _outcome(g: pd.DataFrame, rr_col: str = "__rr") -> pd.Series:
 
 
 # ── Approved house-style helpers ──────────────────────────────────────────────
-def _section_header(title: str) -> None:
-    """Clean section divider: thin rule + small purple uppercase label."""
+def _section_header(title: str, caption: str = None) -> None:
+    """Clean section divider: air, thin rule, purple uppercase label, intro line."""
+    cap = (f"<div style='font-size:14px;color:#8a93a6;margin-top:3px;'>{caption}</div>"
+           if caption else "")
     st.markdown(
-        f"<div style='margin:34px 0 6px;padding-top:16px;border-top:2px solid #eef0f5;'>"
+        f"<div style='margin:52px 0 10px;padding-top:22px;border-top:2px solid #eef0f5;'>"
         f"<div style='font-size:13px;font-weight:700;letter-spacing:0.14em;"
-        f"text-transform:uppercase;color:{PURPLE};'>{title}</div></div>",
+        f"text-transform:uppercase;color:{PURPLE};'>{title}</div>{cap}</div>",
         unsafe_allow_html=True,
     )
 

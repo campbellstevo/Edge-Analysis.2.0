@@ -3916,6 +3916,11 @@ def _whoop_enabled() -> bool:
         return False
 
 
+def _gap(px: int = 26) -> None:
+    """Light vertical spacing between related blocks (softer than st.divider)."""
+    st.markdown(f"<div style='height:{px}px'></div>", unsafe_allow_html=True)
+
+
 def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, hero_fn=None):
     from edge_analysis.ui.mt5_tabs import (
         _section_header, _dollar_pnl_section, _mae_mfe_section, _missed_runner_section,
@@ -3940,117 +3945,122 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
         ["Performance", "Entry", "Externals", "Psychology", "Plan", "Review"]
     )
 
-    # ── Performance: headline results, detail tucked away ─────────────────
+    # ── Performance ────────────────────────────────────────────────────────
     with t_results:
         if hero_fn is not None:
             hero_fn()
+        _section_header("Results", "The equity story — growth, win rate, and the money behind it.")
         _growth_tab(f_perf, df_all_safe, styler)
-        st.divider()
+        _gap()
+        _instruments_tab(f_perf, show_table)
+        if _mt5:
+            _gap()
+            _dollar_pnl_section(_data, styler)
+        _gap()
+        if not _salty:
+            _early_close_tab(df_all_safe, styler)
+            _gap()
+            _account_comparison_tab(f_perf, styler)
+        else:
+            _early_close_tab_salty(df_all_safe, styler)
+
+        _section_header("Targets", "The monthly goal, your track record against it, and your records.")
         _targets_tab(df_all_safe, styler)
-        _section_header("Projections")
-        with st.expander("Run the projections simulator", expanded=False):
-            _projections_tab(df_all_safe, styler)
-        with st.expander("More performance detail", expanded=False):
-            _instruments_tab(f_perf, show_table)
-            if _mt5:
-                st.divider()
-                _dollar_pnl_section(_data, styler)
-            st.divider()
-            if not _salty:
-                _early_close_tab(df_all_safe, styler)
-                st.divider()
-                _account_comparison_tab(f_perf, styler)
-            else:
-                _early_close_tab_salty(df_all_safe, styler)
 
-    # ── Entry: setups, timing, trade management ──────────────────────────
+        _section_header("Projections", "What this edge does over the next 12 months if you keep showing up.")
+        _projections_tab(df_all_safe, styler)
+
+    # ── Entry ──────────────────────────────────────────────────────────────
     with t_entry:
-        _section_header("Setups")
+        _section_header("Setups", "Which entries earn and which cost — ranked from your own trades.")
         _entry_models_tab(f_perf, show_table)
-        st.divider()
+        _gap()
         _div_vs_sweep(f_perf)
-        st.divider()
+        _gap()
         _confluence_board(f_perf)
-        with st.expander("More setup detail", expanded=False):
-            _confluences_tab(f_perf, show_table)
-            st.divider()
-            _timeframes_tab(f_perf, show_table)
-            if _mt5:
-                st.divider()
-                _direction_section(_data, styler)
-                st.divider()
-                _conviction_section(_data, styler)
-                st.divider()
-                _a_game(_data, styler)
+        _gap()
+        _confluences_tab(f_perf, show_table)
+        _gap()
+        _timeframes_tab(f_perf, show_table)
+        if _mt5:
+            _gap()
+            _direction_section(_data, styler)
+            _gap()
+            _conviction_section(_data, styler)
+            _gap()
+            _a_game(_data, styler)
 
-        _section_header("Timing")
+        _section_header("Timing", "When your edge shows up — hours, sessions and days.")
         _hourly_expectancy_clock(df_all_safe)
-        st.divider()
+        _gap()
         _sessions_tab(f_perf, show_table)
-        with st.expander("More timing detail", expanded=False):
-            _time_days_tab(f_perf, show_table)
-            if _mt5:
-                st.divider()
-                _timing_section(_data, styler)
-                st.divider()
-                _holdtime_section(_data, styler)
-                st.divider()
-                _heatmap_hour_day(_data, styler)
-                st.divider()
-                _symbol_session_matrix(_data, styler)
+        _gap()
+        _time_days_tab(f_perf, show_table)
+        if _mt5:
+            _gap()
+            _timing_section(_data, styler)
+            _gap()
+            _holdtime_section(_data, styler)
+            _gap()
+            _heatmap_hour_day(_data, styler)
+            _gap()
+            _symbol_session_matrix(_data, styler)
 
         if _mt5 or _salty:
-            _section_header("Managing the trade")
+            _section_header("Managing the trade",
+                            "What happens after entry — efficiency, exits, stops and what got away.")
             if _mt5:
                 _mae_mfe_section(_data, styler)
-                with st.expander("Trade management tools", expanded=False):
-                    _execution_section(_data, styler)
-                    st.divider()
-                    _exit_optimizer(_data, styler)
-                    st.divider()
-                    _mae_stop_optimizer(_data, styler)
-                    st.divider()
-                    _missed_runner_section(_data, styler)
+                _gap()
+                _execution_section(_data, styler)
+                _gap()
+                _exit_optimizer(_data, styler)
+                _gap()
+                _mae_stop_optimizer(_data, styler)
+                _gap()
+                _missed_runner_section(_data, styler)
             if _salty:
                 _salty_execution_quality_tab(f_perf)
 
-    # ── Externals: market conditions ───────────────────────────────────────
+    # ── Externals ──────────────────────────────────────────────────────────
     with t_ext:
+        _section_header("Market conditions", "The market around your trades — trend, volatility, news and gaps.")
         _conditions_tab(f_perf, show_table)
-        st.divider()
+        _gap()
         _confluence_board(f_perf, scope="external")
         if _mt5:
-            with st.expander("Costs and spread", expanded=False):
-                _spread_section(_data, styler)
-                st.divider()
-                _cost_drag(_data, styler)
+            _section_header("Costs", "What spread and fees quietly take from the edge.")
+            _spread_section(_data, styler)
+            _gap()
+            _cost_drag(_data, styler)
 
-    # ── Psychology ────────────────────────────────────────────────────────
+    # ── Psychology ─────────────────────────────────────────────────────────
     with t_psych:
+        _section_header("Discipline", "You versus your rules — tilt, mental state and rule breaks.")
         _psychology_tab(f_perf, df_all_safe, styler)
-        st.divider()
+
+        _section_header("Where losses come from", "Your own loss tags and mistakes, ranked by damage.")
         _loss_postmortem(f_perf)
         if _mt5:
-            with st.expander("Deeper psychology", expanded=False):
-                _tilt(_data, styler)
-                st.divider()
-                _mistake_section(_data, styler)
-                st.divider()
-                _discipline_section(_data, styler)
+            _gap()
+            _tilt(_data, styler)
+            _gap()
+            _mistake_section(_data, styler)
+            _gap()
+            _discipline_section(_data, styler)
         if _whoop_on:
-            _section_header("Recovery (WHOOP)")
+            _section_header("Recovery (WHOOP)", "What your body says about your trading.")
             from edge_analysis.ui.whoop_tab import render_whoop_tab
             render_whoop_tab(df_all_safe, styler)
 
-    # ── Plan ──────────────────────────────────────────────────────────────
+    # ── Plan ───────────────────────────────────────────────────────────────
     with t_plan:
         render_plan_tab(df_all_safe, styler)
-        _section_header("Refinements")
-        with st.expander("Refinement ideas from your data", expanded=False):
-            _refinements_tab(f_perf, df_all_safe, styler)
-        with st.expander("My template", expanded=False):
-            _data_tab(df_all_safe, show_table)
+        _section_header("Refinements", "Data-backed tweaks worth testing next.")
+        _refinements_tab(f_perf, df_all_safe, styler)
+        _section_header("My template", "Your connected journal and what it's tracking.")
+        _data_tab(df_all_safe, show_table)
 
-    # ── Review ────────────────────────────────────────────────────────────
+    # ── Review ─────────────────────────────────────────────────────────────
     with t_review:
         render_review_tab(df_all_safe, styler)
