@@ -2086,6 +2086,64 @@ def _slider_row(label: str, fmt, make_widget):
     return val
 
 
+def _div_vs_sweep(f: pd.DataFrame) -> None:
+    """Head-to-head: Divergence vs Sweep, the two entry criteria."""
+    if f is None or f.empty:
+        return
+    g = f.copy()
+    rr_col = next((c for c in ["Closed RR", "RR", "Closed R"] if c in g.columns), None)
+    if rr_col is None or "DIV?" not in g.columns or "Sweep?" not in g.columns:
+        return
+    g["__rr"] = pd.to_numeric(g[rr_col], errors="coerce")
+    g = g[g["__rr"].notna()]
+    if len(g) < 8:
+        return
+
+    def _yes(col):
+        return g[col].astype(str).str.strip().str.lower().isin(["yes", "true", "__yes__", "1"])
+
+    div, swp = _yes("DIV?"), _yes("Sweep?")
+
+    def _stats(mask):
+        sub = g.loc[mask, "__rr"]
+        if len(sub) < 3:
+            return None
+        return dict(n=int(len(sub)), avg=float(sub.mean()),
+                    win=100.0 * float((sub > 0.15).sum()) / len(sub))
+
+    d_s, s_s = _stats(div), _stats(swp)
+    if d_s is None and s_s is None:
+        return
+    st.markdown("### DIV vs Sweep")
+    st.caption("Your two entry criteria head to head \u2014 average R per trade when each is present, "
+               "plus every combination.")
+    head = []
+    if d_s:
+        head.append({"Category": "Divergence \u00b7 yes", "Avg R": round(d_s["avg"], 2),
+                     "Trades": d_s["n"], "Win %": d_s["win"]})
+    if s_s:
+        head.append({"Category": "Sweep \u00b7 yes", "Avg R": round(s_s["avg"], 2),
+                     "Trades": s_s["n"], "Win %": s_s["win"]})
+    _edge_tiles(head, "Category", "Avg R")
+    combos = []
+    for lab, m in (("Both DIV + Sweep", div & swp), ("DIV only", div & ~swp),
+                   ("Sweep only", swp & ~div), ("Neither", ~div & ~swp)):
+        s_ = _stats(m)
+        if s_:
+            combos.append({"Category": lab, "Avg R": round(s_["avg"], 2),
+                           "Trades": s_["n"], "Win %": s_["win"]})
+    if combos:
+        _rank_dots(combos, "Category", "Avg R")
+    if d_s and s_s:
+        better = "Divergence" if d_s["avg"] > s_s["avg"] else "Sweep"
+        worse = "Sweep" if better == "Divergence" else "Divergence"
+        bv = max(d_s["avg"], s_s["avg"]); wv = min(d_s["avg"], s_s["avg"])
+        _insight_box(
+            f"<b>{better}</b> is the stronger criterion right now ({bv:+.2f}R vs {wv:+.2f}R for {worse}). "
+            + (f"Best combination: <b>{max(combos, key=lambda r: r['Avg R'])['Category']}</b> "
+               f"({max(combos, key=lambda r: r['Avg R'])['Avg R']:+.2f}R)." if combos else ""))
+
+
 def _confluence_board(f: pd.DataFrame) -> None:
     """Every logged confluence/flag ranked by average R — one board."""
     if f is None or f.empty:
@@ -2141,7 +2199,7 @@ def _confluence_board(f: pd.DataFrame) -> None:
     d = pd.DataFrame(rows).sort_values("Avg R", ascending=False)
     if len(d) > 18:
         d = pd.concat([d.head(9), d.tail(9)])
-    _edge_wheel(d, "Category", "Avg R")
+    _rank_dots(d, "Category", "Avg R")
     best, worst = d.iloc[0], d.iloc[-1]
     _insight_box(
         f"Strongest confluence: <b>{best['Category']}</b> ({best['Avg R']:+.2f}R over {int(best['Trades'])}). "
@@ -3897,6 +3955,8 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
         _entry_models_tab(f_perf, show_table)
         st.divider()
         _confluences_tab(f_perf, show_table)
+        st.divider()
+        _div_vs_sweep(f_perf)
         st.divider()
         _confluence_board(f_perf)
         st.divider()
