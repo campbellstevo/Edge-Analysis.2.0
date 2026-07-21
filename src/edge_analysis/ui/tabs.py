@@ -1936,6 +1936,10 @@ def _instruments_tab(f: pd.DataFrame, show_table):
     g = g.copy()
     g["Instrument"] = g["Instrument"].astype(str).str.strip()
     g = g[g["Instrument"] != ""]
+    if g["Instrument"].nunique() <= 1:
+        # one asset = nothing to compare — stay silent, like account comparison
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
     if g.empty:
         st.info("No instrument values present.")
         st.markdown("</div>", unsafe_allow_html=True)
