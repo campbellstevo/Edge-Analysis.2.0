@@ -2321,7 +2321,26 @@ def _double_confirmation_section(f: pd.DataFrame) -> None:
     if n_:
         rows.append({"Category": "Single confirmation", "Avg R": round(n_["avg"], 2),
                      "Trades": n_["n"], "Win %": n_["win"]})
-    _edge_tiles(rows, "Category", "Avg R")
+    def _dc_table():
+        trows = []
+        for lab, mask in (("Double confirmation", yes & known),
+                          ("Single confirmation", ~yes & known)):
+            sub = g.loc[mask, "__rr"]
+            if len(sub) < 3:
+                continue
+            n2 = len(sub)
+            trows.append({"Entry_Model": lab, "Trades": n2,
+                          "Win %": round(100.0 * float((sub > 0.15).sum()) / n2, 2),
+                          "BE %": round(100.0 * float(((sub >= -0.15) & (sub <= 0.15)).sum()) / n2, 2),
+                          "Loss %": round(100.0 * float((sub < -0.15).sum()) / n2, 2),
+                          "Net PnL (R)": round(float(sub.sum()), 2),
+                          "Expectancy (R)": round(float(sub.mean()), 2)})
+        if trows:
+            render_entry_model_table(pd.DataFrame(trows), title="Double confirmation \u2014 full numbers")
+
+    _flip("dc_flip",
+          lambda: _edge_tiles(rows, "Category", "Avg R"),
+          _dc_table)
     if y and n_ and (y["n"] + n_["n"]) >= 8:
         diff = y["avg"] - n_["avg"]
         lead = ("Double confirmation is earning its wait" if diff > 0
@@ -4213,14 +4232,14 @@ def _gap(px: int = 26) -> None:
 
 
 def _flip(key: str, chart_fn, table_fn) -> None:
-    """One dataset, two lenses \u2014 the Settings default decides which shows first."""
-    default = 1 if st.session_state.get("ea_view_pref") == "Table" else 0
-    view = st.radio("View", ["Chart", "Table"], index=default, horizontal=True, key=key,
-                    label_visibility="collapsed") or "Chart"
-    if view == "Chart":
-        chart_fn()
-    else:
+    """One dataset, two lenses \u2014 tables lead unless the Settings default says charts."""
+    default = 1 if st.session_state.get("ea_view_pref") == "Chart" else 0
+    view = st.radio("View", ["Table", "Chart"], index=default, horizontal=True, key=key,
+                    label_visibility="collapsed") or "Table"
+    if view == "Table":
         table_fn()
+    else:
+        chart_fn()
 
 
 def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, hero_fn=None):
