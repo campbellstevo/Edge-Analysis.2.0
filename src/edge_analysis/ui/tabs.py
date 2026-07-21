@@ -2278,6 +2278,58 @@ def _flag_verdicts(f: pd.DataFrame, scope: str = "entry"):
     return rows
 
 
+def _double_confirmation_section(f: pd.DataFrame) -> None:
+    """Expectancy with vs without a double-confirmation (multi-entry) setup."""
+    if f is None or f.empty:
+        return
+    col = next((c for c in ["Multi Entry Model Setup", "Double Confirmation"]
+                if c in f.columns), None)
+    if col is None:
+        return
+    g = f.copy()
+    rr_col = next((c for c in ["Closed RR", "RR", "Closed R"] if c in g.columns), None)
+    if rr_col is None:
+        return
+    g["__rr"] = pd.to_numeric(g[rr_col], errors="coerce")
+    g = g[g["__rr"].notna()]
+    if len(g) < 8:
+        return
+    raw = g[col].astype(str).str.strip()
+    if col == "Multi Entry Model Setup":
+        yes = raw.str.lower().isin(["yes", "true", "__yes__", "1"])
+        known = raw.str.lower().isin(["yes", "no", "true", "false", "__yes__", "__no__", "1", "0"])
+    else:
+        yes = raw.str.contains("Double Confirmation", case=False, na=False)
+        known = ~raw.str.lower().isin(["", "nan", "none", "na", "[]", '["n/a"]'])
+
+    def _stats(mask):
+        sub = g.loc[mask, "__rr"]
+        if len(sub) < 3:
+            return None
+        return dict(n=int(len(sub)), avg=float(sub.mean()),
+                    win=100.0 * float((sub > 0.15).sum()) / len(sub))
+
+    y, n_ = _stats(yes & known), _stats(~yes & known)
+    if y is None and n_ is None:
+        return
+    st.markdown("### Double confirmation")
+    st.caption("Setups with a second confirmation stacked on the entry versus single-confirmation entries.")
+    rows = []
+    if y:
+        rows.append({"Category": "Double confirmation", "Avg R": round(y["avg"], 2),
+                     "Trades": y["n"], "Win %": y["win"]})
+    if n_:
+        rows.append({"Category": "Single confirmation", "Avg R": round(n_["avg"], 2),
+                     "Trades": n_["n"], "Win %": n_["win"]})
+    _edge_tiles(rows, "Category", "Avg R")
+    if y and n_ and (y["n"] + n_["n"]) >= 8:
+        diff = y["avg"] - n_["avg"]
+        lead = ("Double confirmation is earning its wait" if diff > 0
+                else "Double confirmation isn't paying yet")
+        _insight_box(f"{lead}: <b>{diff:+.2f}R per trade</b> versus single-confirmation entries "
+                     f"({y['avg']:+.2f}R over {y['n']} vs {n_['avg']:+.2f}R over {n_['n']}).")
+
+
 def _obos_section(f: pd.DataFrame) -> None:
     """Overbought/Oversold extreme vs not — expectancy head to head."""
     if f is None or f.empty or "Oversold or Overbought?" not in f.columns:
@@ -4223,6 +4275,8 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
         _entry_models_tab(f_perf, show_table)
         _gap()
         _div_vs_sweep(f_perf)
+        _gap()
+        _double_confirmation_section(f_perf)
         _gap()
         _confluences_tab(f_perf, show_table)
         _gap()
