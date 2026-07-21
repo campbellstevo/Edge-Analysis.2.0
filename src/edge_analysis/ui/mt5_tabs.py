@@ -503,38 +503,11 @@ def _mistake_section(df: pd.DataFrame, styler) -> None:
                      "Cost vs clean (R)": round(cost, 1)})
     rdf = pd.DataFrame(rows).sort_values("Cost vs clean (R)")
     rdf["Cost"] = pd.to_numeric(rdf["Cost vs clean (R)"], errors="coerce").fillna(0.0)
-    rdf["Freq"] = pd.to_numeric(rdf["Trades"], errors="coerce").fillna(0).astype(int)
-    rdf["AvgR"] = pd.to_numeric(rdf["Avg R"], errors="coerce").fillna(0.0)
-    rdf["CostSize"] = rdf["Cost"].abs().clip(lower=0.2)
-    rdf["Colour"] = rdf["Cost"].apply(lambda x: "ok" if x >= 0 else "bad")
-    rdf["Label"] = rdf.apply(lambda r: f"{r['Category']}  ({r['Cost']:+.0f}R)", axis=1)
-    x_hi = float(rdf["Freq"].max()) * 1.3 + 1
-    y_lo = min(float(rdf["AvgR"].min()), 0.0); y_hi = max(float(rdf["AvgR"].max()), 0.0)
-    y_span = max(y_hi - y_lo, 0.5)
-    vals = t._to_alt_values(rdf[["Category", "Freq", "AvgR", "Cost", "CostSize", "Colour", "Label"]])
-    base = alt.Chart(alt.Data(values=vals))
-    rule = (alt.Chart(alt.Data(values=[{"y": 0}]))
-            .mark_rule(color="#cbd5e1", strokeDash=[4, 4]).encode(y=alt.Y("y:Q", title=None)))
-    bubbles = base.mark_circle(opacity=0.75, stroke="#fff", strokeWidth=1.5).encode(
-        x=alt.X("Freq:Q", title="How often it happens (trades)",
-                scale=alt.Scale(domain=[0, x_hi]),
-                axis=alt.Axis(tickMinStep=1, grid=True, gridColor="#eef0f5",
-                              labelColor="#94a3b8", titleColor="#94a3b8")),
-        y=alt.Y("AvgR:Q", title="Avg R when it happens",
-                scale=alt.Scale(domain=[y_lo - y_span * 0.35, y_hi + y_span * 0.35]),
-                axis=alt.Axis(format="+.1f", grid=True, gridColor="#eef0f5",
-                              labelColor="#94a3b8", titleColor="#94a3b8")),
-        size=alt.Size("CostSize:Q", legend=None, scale=alt.Scale(range=[250, 2500])),
-        color=alt.Color("Colour:N", legend=None,
-                        scale=alt.Scale(domain=["ok", "bad"], range=["#9ca3af", "#ef4444"])),
-        tooltip=[alt.Tooltip("Category:N", title="Mistake"),
-                 alt.Tooltip("Freq:Q", title="Trades"),
-                 alt.Tooltip("AvgR:Q", title="Avg R", format="+.2f"),
-                 alt.Tooltip("Cost:Q", title="R cost vs clean", format="+.1f")])
-    text = base.mark_text(dy=-22, fontSize=12, fontWeight="bold", color="#334155").encode(
-        x="Freq:Q", y="AvgR:Q", text="Label:N")
-    st.altair_chart(styler(alt.layer(rule, bubbles, text).properties(height=340)), use_container_width=True)
-    st.caption("Bigger bubble = more total R lost. Bottom-right = frequent AND costly — fix those first.")
+    bars = rdf.rename(columns={"Cost vs clean (R)": "R cost vs clean"})[
+        ["Category", "R cost vs clean", "Trades"]]
+    t._rank_dots(bars, "Category", "R cost vs clean", fmt="+.1f")
+    st.caption("Bar = total R lost (or saved) versus a clean trade \u00b7 count = how often it happened. "
+               f"Clean-trade baseline: {baseline:+.2f}R avg.")
     worst = rdf.iloc[0]
     total_cost = float(rdf["Cost vs clean (R)"].clip(upper=0).sum())
     st.caption(f"Clean-trade baseline: {baseline:+.2f}R avg.")
