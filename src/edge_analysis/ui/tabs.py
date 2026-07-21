@@ -1554,8 +1554,9 @@ def _entry_models_tab(f: pd.DataFrame, show_table):
         df_em = pd.DataFrame(rates).sort_values("Win %", ascending=False)
         st.markdown("### Entry Model Expectancy")
         st.caption("Average R per trade by entry model — ranked best → worst.")
-        _edge_tiles(df_em, "Entry_Model", "Expectancy (R)")
-        render_entry_model_table(df_em, title="Entry Model Performance")
+        _flip("em_flip",
+              lambda: _edge_tiles(df_em, "Entry_Model", "Expectancy (R)"),
+              lambda: render_entry_model_table(df_em, title="Entry Model Performance"))
         if not df_em.empty and int(pd.to_numeric(df_em["Trades"], errors="coerce").max() or 0) >= 8:
             best_em = df_em.iloc[0]
             worst_em = df_em.iloc[-1]
@@ -1907,8 +1908,9 @@ def _sessions_tab(f: pd.DataFrame, show_table):
         df_rates = pd.DataFrame(rates).sort_values("Win %", ascending=False)
         st.markdown("### Session Expectancy")
         st.caption("Average R per trade by session.")
-        _rank_dots(df_rates, "Session", "Expectancy (R)")
-        render_session_performance_table(df_rates, title="Session Performance")
+        _flip("sess_flip",
+              lambda: _rank_dots(df_rates, "Session", "Expectancy (R)"),
+              lambda: render_session_performance_table(df_rates, title="Session Performance"))
         if not df_rates.empty:
             best = df_rates.iloc[0]
             worst = df_rates.iloc[-1]
@@ -1998,9 +2000,11 @@ def _time_days_tab(f: pd.DataFrame, show_table):
     _line_rows = perf.copy()
     _line_rows["Avg R"] = pd.to_numeric(_line_rows.get("Expectancy (R)"), errors="coerce")
     _line_rows["Category"] = _line_rows["Day"].astype(str).str[:3]
-    _line_metric(_line_rows, "", get_chart_styler(), value="Avg R",
-                 x_order=["Mon", "Tue", "Wed", "Thu", "Fri"], x_title="")
-    render_day_performance_table(perf.sort_values("Day"), title="Day Performance (Mon–Fri)")
+    _flip("days_flip",
+          lambda: _line_metric(_line_rows, "", get_chart_styler(), value="Avg R",
+                               x_order=["Mon", "Tue", "Wed", "Thu", "Fri"], x_title=""),
+          lambda: render_day_performance_table(perf.sort_values("Day"),
+                                               title="Day Performance (Mon\u2013Fri)"))
     if not perf.empty and "Win %" in perf.columns:
         best_day = perf.loc[perf["Win %"].idxmax()]
         worst_day = perf.loc[perf["Win %"].idxmin()]
@@ -4062,6 +4066,16 @@ def _whoop_enabled() -> bool:
 def _gap(px: int = 26) -> None:
     """Light vertical spacing between related blocks (softer than st.divider)."""
     st.markdown(f"<div style='height:{px}px'></div>", unsafe_allow_html=True)
+
+
+def _flip(key: str, chart_fn, table_fn) -> None:
+    """One dataset, two lenses \u2014 chart by default, exact numbers on the flip."""
+    view = st.radio("View", ["Chart", "Table"], horizontal=True, key=key,
+                    label_visibility="collapsed") or "Chart"
+    if view == "Chart":
+        chart_fn()
+    else:
+        table_fn()
 
 
 def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, hero_fn=None):
