@@ -540,40 +540,13 @@ def _growth_tab(f: pd.DataFrame, df_all: pd.DataFrame, styler):
         wr_vals = _to_alt_values(
             wr_grouped[["Bucket", "Win %"]].assign(**{"Win %": lambda d: d["Win %"].round(2)}))
 
-    c_left, c_right = st.columns(2)
-    with c_left:
-        st.markdown("### Cumulative PnL (RR)")
-        if pnl_vals:
-            area = (alt.Chart(alt.Data(values=pnl_vals)).mark_area(opacity=0.12, color="#4800ff")
-                    .encode(x=x_time, y=alt.Y("CumPnL:Q", title="Cumulative PnL (RR)",
-                                               scale=alt.Scale(padding=14))))
-            line = (alt.Chart(alt.Data(values=pnl_vals))
-                    .mark_line(strokeWidth=2, color="#4800ff", interpolate="linear")
-                    .encode(x=x_time, y=alt.Y("CumPnL:Q", title=None, scale=alt.Scale(padding=14))))
-            st.altair_chart(styler(alt.layer(area, line).properties(height=320)),
-                            use_container_width=True)
-        else:
-            st.info("Not enough data for PnL chart.")
-    with c_right:
-        st.markdown("### Win Rate (%)")
-        if wr_vals:
-            line_color = "#4800ff"
-            xwr = _x_enc(axis_fmt)
-            line = (alt.Chart(alt.Data(values=wr_vals))
-                    .mark_line(strokeWidth=2, color=line_color, interpolate="linear")
-                    .encode(x=xwr,
-                            y=alt.Y("Win %:Q", title="Win Rate (%)", scale=alt.Scale(domain=[0, 100])))
-                    .properties(height=320))
-            st.altair_chart(styler(line), use_container_width=True)
-        else:
-            st.info("Not enough data for Win Rate chart.")
-
-    latest_wr = float(pd.DataFrame(wr_vals)["Win %"].dropna().iloc[-1]) if wr_vals else float("nan")
-    latest_eq = float(pd.DataFrame(pnl_vals)["CumPnL"].dropna().iloc[-1]) if pnl_vals else float("nan")
-    st.markdown(
-        f"<div class='muted'>Latest Win %: <b>{latest_wr:.0f}%</b> &nbsp;|&nbsp; "
-        f"Cumulative PnL: <b>{latest_eq:,.2f} R</b></div>",
-        unsafe_allow_html=True)
+    latest_wr = float("nan")
+    oc = g["Outcome"] if "Outcome" in g.columns else None
+    if oc is not None:
+        counted = oc.isin(["Win", "BE", "Loss"])
+        if counted.any():
+            latest_wr = float((oc[counted] == "Win").mean() * 100)
+    latest_eq = float(eq_df["CumPnL"].dropna().iloc[-1]) if not eq_df.empty else float("nan")
 
     if not (pd.isna(latest_wr) or pd.isna(latest_eq)):
         if latest_eq > 0 and latest_wr >= 30:
@@ -586,11 +559,71 @@ def _growth_tab(f: pd.DataFrame, df_all: pd.DataFrame, styler):
                 f"Cumulative PnL is positive at <b>+{latest_eq:,.1f}R</b> but win rate is "
                 f"<b>{latest_wr:.1f}%</b>. Profitability is driven by RR, not win rate — "
                 f"losing streaks will feel extended. Stick to the 3SL.", "warn")
-        elif latest_eq <= 0:
+        else:
             _insight_box(
                 f"Cumulative PnL is <b>{latest_eq:,.1f}R</b>. Review whether losses are "
                 f"systematic (wrong conditions, wrong session) or behavioural (overtrading, "
                 f"revenge). Check the Psychology tab for flags.", "bad")
+
+    usd = pd.to_numeric(g.get("PnL (USD)"), errors="coerce") if "PnL (USD)" in g.columns else None
+    has_usd = usd is not None and usd.notna().any()
+    st.markdown("### Equity")
+    view = "R"
+    if has_usd:
+        view = st.radio("Units", ["R", "$"], horizontal=True, key="eq_units",
+                        label_visibility="collapsed") or "R"
+    if view == "R":
+        if pnl_vals:
+            area = (alt.Chart(alt.Data(values=pnl_vals)).mark_area(opacity=0.12, color="#4800ff")
+                    .encode(x=x_time, y=alt.Y("CumPnL:Q", title="Cumulative R",
+                                               scale=alt.Scale(padding=14))))
+            line = (alt.Chart(alt.Data(values=pnl_vals))
+                    .mark_line(strokeWidth=2, color="#4800ff", interpolate="linear")
+                    .encode(x=x_time, y=alt.Y("CumPnL:Q", title=None, scale=alt.Scale(padding=14))))
+            st.altair_chart(styler(alt.layer(area, line).properties(height=300)),
+                            use_container_width=True)
+        else:
+            st.info("Not enough data for the equity chart.")
+    else:
+        gu = g[["__Date"]].copy(); gu["__pnl"] = usd.values
+        gu = gu[gu["__pnl"].notna()].sort_values("__Date")
+        gu["cum"] = gu["__pnl"].cumsum()
+        uvals = _to_alt_values(gu[["__Date", "cum"]].rename(columns={"__Date": "Bucket", "cum": "CumUSD"}))
+        if uvals:
+            area = (alt.Chart(alt.Data(values=uvals)).mark_area(opacity=0.12, color="#4800ff")
+                    .encode(x=alt.X("Bucket:T", title=None), y=alt.Y("CumUSD:Q", title="Cumulative $")))
+            line = (alt.Chart(alt.Data(values=uvals)).mark_line(strokeWidth=2, color="#4800ff")
+                    .encode(x=alt.X("Bucket:T", title=None), y=alt.Y("CumUSD:Q", title=None)))
+            st.altair_chart(styler(alt.layer(area, line).properties(height=300)),
+                            use_container_width=True)
+        else:
+            st.info("No dollar P&L values in this slice.")
+
+    rrs = pd.to_numeric(g["PnL_from_RR"], errors="coerce").dropna()
+    expc = float(rrs.mean()) if len(rrs) else float("nan")
+    gw = float(rrs[rrs > 0].sum()); gl = float(abs(rrs[rrs < 0].sum()))
+    pf_r = gw / gl if gl > 0 else float("nan")
+    chips = [("EXPECTANCY", "—" if expc != expc else f"{expc:+.2f}R",
+              "#16a34a" if expc == expc and expc >= 0 else "#ef4444"),
+             ("PROFIT FACTOR", "—" if pf_r != pf_r else f"{pf_r:.2f}",
+              "#16a34a" if pf_r == pf_r and pf_r >= 1 else "#ef4444")]
+    if has_usd:
+        net_u = float(usd.dropna().sum()); avg_u = float(usd.dropna().mean())
+        costs = 0.0
+        for cc in ("Commission", "Swap"):
+            if cc in g.columns:
+                costs += float(pd.to_numeric(g[cc], errors="coerce").fillna(0).sum())
+        chips += [("NET $", f"{'-' if net_u < 0 else ''}${abs(net_u):,.0f}",
+                   "#16a34a" if net_u >= 0 else "#ef4444"),
+                  ("AVG $/TRADE", f"{'-' if avg_u < 0 else ''}${abs(avg_u):,.2f}", "#0f172a"),
+                  ("COSTS", f"-${abs(costs):,.0f}", "#64748b")]
+    st.markdown(
+        "<div style='display:flex;gap:12px;flex-wrap:wrap;margin:10px 0 4px;'>" + "".join(
+            f"<div style='flex:1;min-width:130px;background:#f8f9fc;border-radius:12px;"
+            f"padding:12px 14px;'>"
+            f"<div style='font-size:11px;font-weight:600;letter-spacing:0.06em;color:#94a3b8;'>{k}</div>"
+            f"<div style='font-size:21px;font-weight:800;color:{c};'>{v}</div></div>"
+            for k, v, c in chips) + "</div>", unsafe_allow_html=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1384,68 +1417,82 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
 
     st.divider()
 
-    st.markdown("### Tilt Detection")
-    t1, t2 = st.columns(2)
-    with t1:
-        st.markdown(f"""
-            <div class='kpi'>
-              <div class='label'>Overtrading Days</div>
-              <div class='value' style='color:#4800ff'>{n_overtrade_days}</div>
-              <div class='muted'>Days with {OVERTRADE_LIMIT}+ trades</div>
-            </div>""", unsafe_allow_html=True)
-    with t2:
-        st.markdown(f"""
-            <div class='kpi'>
-              <div class='label'>Revenge Trades</div>
-              <div class='value' style='color:#4800ff'>{n_revenge}</div>
-              <div class='muted'>Entries within {REVENGE_WINDOW_MINS}min of a loss</div>
-            </div>""", unsafe_allow_html=True)
-
-    st.divider()
-
-    st.markdown("### Discipline Score Over Time")
-
-    day_flags["__date"] = pd.to_datetime(day_flags["__date"])
-    day_flags_indexed = day_flags.set_index("__date").sort_index()
-
-    if len(day_flags_indexed) >= 2:
-        rolling = (
-            (~day_flags_indexed["__violation"]).astype(int)
-            .rolling("28D", min_periods=1).mean().mul(100).round(1)
-            .reset_index()
-        )
-        rolling.columns = ["Date", "Score"]
-        rolling_vals = _to_alt_values(rolling)
-
-        area = (alt.Chart(alt.Data(values=rolling_vals))
-                .mark_area(opacity=0.10, color="#4800ff")
-                .encode(x="Date:T", y="Score:Q"))
-        line = (alt.Chart(alt.Data(values=rolling_vals))
-                .mark_line(strokeWidth=2, color="#4800ff", interpolate="monotone")
-                .encode(
-                    x=alt.X("Date:T", title=None,
-                             axis=alt.Axis(format="%b %d", labelAngle=-45, labelOverlap=True)),
-                    y=alt.Y("Score:Q", title="Score (%)", scale=alt.Scale(domain=[0, 105])))
-                .properties(height=240))
-        st.altair_chart(styler(alt.layer(area, line)), use_container_width=True)
+    _all_clear = (int(n_overtrade_days) == 0 and int(n_revenge) == 0
+                  and float(discipline_score) >= 100)
+    if _all_clear:
         st.markdown(
-            "<div class='muted'>Rolling 4-week average — higher is better</div>",
-            unsafe_allow_html=True)
-        if discipline_score >= 80:
-            _insight_box(f"Discipline score is <b>{discipline_score}%</b> — strong. "
-                         f"{clean_days} of {total_days} trading days had no overtrading or revenge trades.", "good")
-        elif discipline_score >= 60:
-            _insight_box(f"Discipline score is <b>{discipline_score}%</b>. "
-                         f"{total_days - clean_days} days had violations — "
-                         f"overtrading ({n_overtrade_days} days) or revenge entries ({n_revenge} trades). "
-                         f"Each violation day is a compounding leak in your edge.", "warn")
-        else:
-            _insight_box(f"Discipline score is <b>{discipline_score}%</b> — needs attention. "
-                         f"{total_days - clean_days} of {total_days} days had rule violations. "
-                         f"The 3SL system exists specifically to eliminate these mechanically — "
-                         f"review the compliance section below.", "bad")
+            "<div style='display:flex;align-items:center;gap:16px;background:#e9f7ef;"
+            "border:1px solid #bfe6cd;border-radius:12px;padding:16px 20px;margin:8px 0;'>"
+            "<div style='min-width:36px;height:36px;border-radius:50%;background:#16a34a;"
+            "color:#fff;font-size:19px;font-weight:800;display:flex;align-items:center;"
+            "justify-content:center;'>\u2713</div>"
+            "<div><div style='font-size:17px;font-weight:800;color:#14532d;'>Discipline: all clear</div>"
+            f"<div style='font-size:13.5px;color:#2f6b45;margin-top:2px;'>Score 100% \u00b7 "
+            f"0 overtrading days \u00b7 0 revenge trades \u00b7 {clean_days} of {total_days} clean days"
+            "</div></div></div>", unsafe_allow_html=True)
     else:
-        st.info("Not enough data for rolling chart yet.")
+        st.markdown("### Tilt Detection")
+        t1, t2 = st.columns(2)
+        with t1:
+            st.markdown(f"""
+                <div class='kpi'>
+                  <div class='label'>Overtrading Days</div>
+                  <div class='value' style='color:#4800ff'>{n_overtrade_days}</div>
+                  <div class='muted'>Days with {OVERTRADE_LIMIT}+ trades</div>
+                </div>""", unsafe_allow_html=True)
+        with t2:
+            st.markdown(f"""
+                <div class='kpi'>
+                  <div class='label'>Revenge Trades</div>
+                  <div class='value' style='color:#4800ff'>{n_revenge}</div>
+                  <div class='muted'>Entries within {REVENGE_WINDOW_MINS}min of a loss</div>
+                </div>""", unsafe_allow_html=True)
+
+        st.divider()
+
+        st.markdown("### Discipline Score Over Time")
+
+        day_flags["__date"] = pd.to_datetime(day_flags["__date"])
+        day_flags_indexed = day_flags.set_index("__date").sort_index()
+
+        if len(day_flags_indexed) >= 2:
+            rolling = (
+                (~day_flags_indexed["__violation"]).astype(int)
+                .rolling("28D", min_periods=1).mean().mul(100).round(1)
+                .reset_index()
+            )
+            rolling.columns = ["Date", "Score"]
+            rolling_vals = _to_alt_values(rolling)
+
+            area = (alt.Chart(alt.Data(values=rolling_vals))
+                    .mark_area(opacity=0.10, color="#4800ff")
+                    .encode(x="Date:T", y="Score:Q"))
+            line = (alt.Chart(alt.Data(values=rolling_vals))
+                    .mark_line(strokeWidth=2, color="#4800ff", interpolate="monotone")
+                    .encode(
+                        x=alt.X("Date:T", title=None,
+                                 axis=alt.Axis(format="%b %d", labelAngle=-45, labelOverlap=True)),
+                        y=alt.Y("Score:Q", title="Score (%)", scale=alt.Scale(domain=[0, 105])))
+                    .properties(height=240))
+            st.altair_chart(styler(alt.layer(area, line)), use_container_width=True)
+            st.markdown(
+                "<div class='muted'>Rolling 4-week average — higher is better</div>",
+                unsafe_allow_html=True)
+            if discipline_score >= 80:
+                _insight_box(f"Discipline score is <b>{discipline_score}%</b> — strong. "
+                             f"{clean_days} of {total_days} trading days had no overtrading or revenge trades.", "good")
+            elif discipline_score >= 60:
+                _insight_box(f"Discipline score is <b>{discipline_score}%</b>. "
+                             f"{total_days - clean_days} days had violations — "
+                             f"overtrading ({n_overtrade_days} days) or revenge entries ({n_revenge} trades). "
+                             f"Each violation day is a compounding leak in your edge.", "warn")
+            else:
+                _insight_box(f"Discipline score is <b>{discipline_score}%</b> — needs attention. "
+                             f"{total_days - clean_days} of {total_days} days had rule violations. "
+                             f"The 3SL system exists specifically to eliminate these mechanically — "
+                             f"review the compliance section below.", "bad")
+        else:
+            st.info("Not enough data for rolling chart yet.")
 
     st.divider()
 
@@ -1509,7 +1556,7 @@ def _entry_models_tab(f: pd.DataFrame, show_table):
         st.caption("Average R per trade by entry model — ranked best → worst.")
         _edge_tiles(df_em, "Entry_Model", "Expectancy (R)")
         render_entry_model_table(df_em, title="Entry Model Performance")
-        if not df_em.empty:
+        if not df_em.empty and int(pd.to_numeric(df_em["Trades"], errors="coerce").max() or 0) >= 8:
             best_em = df_em.iloc[0]
             worst_em = df_em.iloc[-1]
             if best_em["Entry_Model"] != worst_em["Entry_Model"]:
@@ -2495,43 +2542,45 @@ def _conditions_tab(f: pd.DataFrame, show_table):
         rr = grp["__rr"].dropna()
         return float(rr.mean()) if len(rr) > 0 else float("nan")
 
-    from edge_analysis.ui.mt5_tabs import _tiles
-
-    tf_titles = {
-        "Conditions ETF": "Entry timeframe (ETF)",
-        "Conditions MTF": "Middle timeframe (MTF)",
-        "Conditions HTF": "Higher timeframe (HTF)",
-    }
-    st.caption(
-        "Average R per trade under each market condition you logged. "
-        "Green = a condition worth trading. Red = a condition to avoid."
-    )
+    tf_titles = {"Conditions ETF": "Entry TF", "Conditions MTF": "Middle TF",
+                 "Conditions HTF": "Higher TF"}
+    st.caption("Average R per trade in each market state \u00b7 cells need 3+ trades.")
     all_rows = []
+    grid = []
     for col in present_cols:
         col_data = counted[counted[col].notna()].copy()
-        if col_data.empty:
-            continue
-        rows = []
-        for cond_val, group in col_data.groupby(col):
-            rr = group["__rr"].dropna()
-            if rr.empty:
-                continue
-            wins = group[group["Outcome"] == "Win"]
-            rows.append({
-                "Category": str(cond_val), "Trades": len(group),
-                "Win %": round(len(wins) / len(group) * 100, 1),
-                "Avg R": round(float(rr.mean()), 2),
-                "Net R": round(float(rr.sum()), 1),
-            })
-            all_rows.append({"Condition": f"{tf_labels.get(col, col)} · {cond_val}",
-                             "Expectancy": float(rr.mean())})
-        if rows:
-            rows = sorted(rows, key=lambda r: r["Trades"], reverse=True)[:4]
-            rows = sorted(rows, key=lambda r: r["Avg R"], reverse=True)
-            st.markdown(f"#### {tf_titles.get(col, col)}")
-            _tiles(pd.DataFrame(rows))
-            st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
+        cells = {}
+        for state in ("Trending", "Ranging"):
+            grp = col_data[col_data[col].astype(str).str.contains(state, case=False, na=False)]
+            rr = grp["__rr"].dropna()
+            if len(grp) >= 3 and len(rr) > 0:
+                avg = float(rr.mean())
+                cells[state] = (f"{avg:+.2f}R \u00b7 {len(grp)}t",
+                                "#16a34a" if avg >= 0 else "#ef4444")
+                all_rows.append({"Condition": f"{tf_titles.get(col, col)} \u00b7 {state}",
+                                 "Expectancy": avg, "N": len(grp)})
+            elif len(grp) > 0:
+                cells[state] = (f"\u2014  ({len(grp)}t)", "#c3c9d4")
+            else:
+                cells[state] = ("\u2014", "#c3c9d4")
+        grid.append((tf_titles.get(col, col), cells))
+    head = ("<div style='display:flex;padding:10px 18px 6px;'>"
+            "<div style='flex:1.2;'></div>"
+            "<div style='flex:1;font-size:12px;font-weight:700;letter-spacing:0.08em;color:#94a3b8;'>TRENDING</div>"
+            "<div style='flex:1;font-size:12px;font-weight:700;letter-spacing:0.08em;color:#94a3b8;'>RANGING</div></div>")
+    rows_html = ""
+    for i, (lab, cells) in enumerate(grid):
+        bgr = "background:#fafbfd;" if i % 2 == 0 else ""
+        t_v, t_c = cells["Trending"]; r_v, r_c = cells["Ranging"]
+        rows_html += (f"<div style='display:flex;align-items:center;padding:13px 18px;{bgr}'>"
+                      f"<div style='flex:1.2;font-size:15px;font-weight:700;color:#0f172a;'>{lab}</div>"
+                      f"<div style='flex:1;font-size:16px;font-weight:800;color:{t_c};'>{t_v}</div>"
+                      f"<div style='flex:1;font-size:16px;font-weight:800;color:{r_c};'>{r_v}</div></div>")
+    st.markdown("<div style='background:#fff;border:1px solid #eef0f4;border-radius:12px;"
+                "overflow:hidden;margin:4px 0 8px;'>" + head + rows_html + "</div>",
+                unsafe_allow_html=True)
 
+    all_rows = [r for r in all_rows if r.get("N", 0) >= 8]
     if all_rows:
         best_ind = max(all_rows, key=lambda x: x["Expectancy"])
         worst_ind = min(all_rows, key=lambda x: x["Expectancy"])
@@ -2602,7 +2651,8 @@ def _timeframes_tab(f: pd.DataFrame, show_table):
              .sort_values(["_sort", "Timeframe"]).drop(columns=["_sort"])
              .reset_index(drop=True).rename(columns={"Timeframe": "Entry_Model"}))
     render_timeframe_table(tf_df, title="Timeframe Performance")
-    if not tf_df.empty and "Win %" in tf_df.columns:
+    if (not tf_df.empty and "Win %" in tf_df.columns
+            and int(pd.to_numeric(tf_df["Trades"], errors="coerce").max() or 0) >= 8):
         best_tf = tf_df.loc[tf_df["Win %"].idxmax()]
         _insight_box(
             f"<b>{best_tf['Entry_Model']}</b> is your highest-performing timeframe at "
@@ -3814,7 +3864,39 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
     if has_usd:
         monthly["usd"] = mg["__usd"].resample("MS").sum()
     monthly = monthly[monthly["n"] > 0].tail(12)
-    if not monthly.empty:
+    if not monthly.empty and len(monthly) < 6:
+        cards = []
+        now_m = pd.Timestamp.now().to_period("M")
+        for dt_, row in monthly.iterrows():
+            r_ = float(row["r"]); c = "#16a34a" if r_ >= 0 else "#ef4444"
+            badge = ("<span style='background:#e2f5e9;color:#14532d;font-size:11px;font-weight:800;"
+                     "border-radius:999px;padding:3px 10px;margin-left:8px;'>TARGET \u2713</span>"
+                     if r_ >= need_r else "")
+            open_note = " \u00b7 month open" if dt_.to_period("M") == now_m else ""
+            usd_note = ""
+            if has_usd and "usd" in monthly.columns and row.get("usd") == row.get("usd"):
+                u = float(row["usd"])
+                usd_note = f" \u00b7 {'-' if u < 0 else ''}${abs(u):,.0f}"
+            cards.append(
+                f"<div style='flex:1;min-width:210px;max-width:300px;background:#fff;"
+                f"border:1px solid #eef0f4;border-left:5px solid {c};border-radius:0 12px 12px 0;"
+                f"padding:14px 16px;'>"
+                f"<div style='font-size:12px;font-weight:700;letter-spacing:0.08em;color:#94a3b8;'>"
+                f"{dt_.strftime('%b %Y').upper()}{badge}</div>"
+                f"<div style='font-size:30px;font-weight:800;color:{c};margin:2px 0;'>{r_:+.1f}R</div>"
+                f"<div style='font-size:13px;color:#64748b;'>{int(row['n'])} trades{usd_note}{open_note}</div>"
+                f"</div>")
+        st.markdown("<div style='display:flex;gap:14px;flex-wrap:wrap;margin:6px 0 8px;'>"
+                    + "".join(cards) + "</div>", unsafe_allow_html=True)
+        st.caption(f"TARGET \u2713 = month at or above your {target_pct:.0f}% pace ({need_r:.0f}R). "
+                   "The month-by-month chart unlocks at 6 months of history.")
+        hits = int((monthly["r"] >= need_r).sum())
+        pos = int((monthly["r"] > 0).sum())
+        _insight_box(
+            f"<b>{pos}</b> of your last <b>{len(monthly)}</b> months were positive; "
+            f"<b>{hits}</b> hit the {target_pct:.0f}% target pace ({need_r:.0f}R).",
+            "good" if pos >= len(monthly) / 2 else "warn")
+    elif not monthly.empty:
         md = monthly.reset_index()
         md.columns = ["dt"] + list(md.columns[1:])
         md["MonthLab"] = md["dt"].dt.strftime("%b %y")
@@ -3984,7 +4066,7 @@ def _gap(px: int = 26) -> None:
 
 def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, hero_fn=None):
     from edge_analysis.ui.mt5_tabs import (
-        _section_header, _dollar_pnl_section, _mae_mfe_section, _missed_runner_section,
+        _section_header, _mae_mfe_section, _missed_runner_section,
         _direction_section, _conviction_section, _holdtime_section, _spread_section,
         _timing_section, _discipline_section, _mistake_section, _execution_section,
     )
@@ -4014,9 +4096,6 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
         _growth_tab(f_perf, df_all_safe, styler)
         _gap()
         _instruments_tab(f_perf, show_table)
-        if _mt5:
-            _gap()
-            _dollar_pnl_section(_data, styler)
         _gap()
         if not _salty:
             _early_close_tab(df_all_safe, styler)

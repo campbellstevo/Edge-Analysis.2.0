@@ -31,6 +31,20 @@ def _fmt_num(v, d: int = 2):
     out = f"{float(v):.{d}f}".rstrip("0").rstrip(".")
     return out if out not in ("", "-") else "0"
 
+def _split_small(df, min_n: int = 3):
+    """Rows need min_n trades to earn a table row."""
+    if df is None or df.empty or "Trades" not in df.columns:
+        return df, 0
+    tr = pd.to_numeric(df["Trades"], errors="coerce").fillna(0)
+    main = df[tr >= min_n]
+    return main, int(len(df) - len(main))
+
+
+def _small_note(hidden: int):
+    if hidden:
+        st.caption(f"+{hidden} more with under 3 trades \u2014 shown once they have a sample.")
+
+
 def render_entry_model_table(df: pd.DataFrame, title: str = "Entry Model Performance"):
     if df is None or df.empty:
         return
@@ -40,6 +54,10 @@ def render_entry_model_table(df: pd.DataFrame, title: str = "Entry Model Perform
         df = df.rename(columns={"Instrument": "Entry_Model"}).copy()
     expected = ["Entry_Model", "Trades", "Win %", "BE %", "Loss %"]
     if any(c not in df.columns for c in expected):
+        return
+    df, _hidden = _split_small(df)
+    if df is None or df.empty:
+        _small_note(_hidden)
         return
     headers = [
         f'<th class="text">{first_col_label}</th>',
@@ -78,10 +96,15 @@ def render_entry_model_table(df: pd.DataFrame, title: str = "Entry Model Perform
       </div>
     </div>
     """, unsafe_allow_html=True)
+    _small_note(_hidden)
 
 def render_session_performance_table(df: pd.DataFrame, title: str = "Session Performance"):
     expected = ["Session", "Trades", "Win %", "BE %", "Loss %"]
     if df is None or df.empty or any(c not in df.columns for c in expected):
+        return
+    df, _hidden = _split_small(df)
+    if df is None or df.empty:
+        _small_note(_hidden)
         return
     headers = [
         '<th class="text">Session</th>',
@@ -120,10 +143,15 @@ def render_session_performance_table(df: pd.DataFrame, title: str = "Session Per
       </div>
     </div>
     """, unsafe_allow_html=True)
+    _small_note(_hidden)
 
 def render_day_performance_table(df: pd.DataFrame, title: str = "Day Performance (Mon–Fri)"):
     expected = ["Day", "Trades", "Win %", "BE %", "Loss %"]
     if df is None or df.empty or any(c not in df.columns for c in expected):
+        return
+    df, _hidden = _split_small(df)
+    if df is None or df.empty:
+        _small_note(_hidden)
         return
     headers = [
         '<th class="text">Day</th>',
@@ -162,6 +190,7 @@ def render_day_performance_table(df: pd.DataFrame, title: str = "Day Performance
       </div>
     </div>
     """, unsafe_allow_html=True)
+    _small_note(_hidden)
 
 def render_timeframe_table(df: pd.DataFrame, title: str = "Timeframe Performance"):
     """
@@ -170,6 +199,10 @@ def render_timeframe_table(df: pd.DataFrame, title: str = "Timeframe Performance
     """
     expected = ["Entry_Model", "Trades", "Win %", "BE %", "Loss %"]
     if df is None or df.empty or any(c not in df.columns for c in expected):
+        return
+    df, _hidden = _split_small(df)
+    if df is None or df.empty:
+        _small_note(_hidden)
         return
     headers = [
         '<th class="text">Timeframe</th>',
@@ -208,3 +241,4 @@ def render_timeframe_table(df: pd.DataFrame, title: str = "Timeframe Performance
       </div>
     </div>
     """, unsafe_allow_html=True)
+    _small_note(_hidden)

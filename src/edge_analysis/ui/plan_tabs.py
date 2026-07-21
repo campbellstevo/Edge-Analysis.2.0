@@ -156,21 +156,29 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
     ]
 
     st.markdown("#### Pre-trade checklist — every box yes, or pass")
-    rows_html = ""
     all_pass = pd.Series(True, index=g.index)
-    for i, (rule, mask, lab_y, lab_n) in enumerate(gates, 1):
+    entries = []
+    for rule, mask, lab_y, lab_n in gates:
         mask = mask.fillna(False) if hasattr(mask, "fillna") else mask
         a, b, na, nb = seg(mask)
         logged = (na + nb) >= 5 and min(na, nb) >= 1
         low = logged and min(na, nb) < 3
         if na >= 3:
             all_pass &= mask
+        edge = (a - b) if (logged and a == a and b == b) else float("nan")
+        entries.append((rule, edge, logged, low, a, b, na, nb, lab_y, lab_n))
+
+    proven = sorted([e for e in entries if e[1] == e[1] and e[1] >= 0.05 and not e[3]],
+                    key=lambda e: -e[1])
+    review = [e for e in entries if e not in proven]
+
+    def _row(i, e, faded=False):
+        rule, edge, logged, low, a, b, na, nb, lab_y, lab_n = e
         if not logged:
             stat = ("<span style='font-size:12px;color:#94a3b8;'>not logged yet — "
                     "start tagging this in Notion</span>")
             small = ""
         else:
-            edge = (a - b) if (a == a and b == b) else float("nan")
             ec = GREEN if (edge == edge and edge >= 0) else RED
             chip = (f"<span style='background:{ec}1a;color:{ec};font-weight:800;font-size:13px;"
                     f"border-radius:999px;padding:3px 12px;'>edge {edge:+.2f}R</span>"
@@ -180,15 +188,26 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
             stat = chip + lows
             small = (f"<div style='font-size:11px;color:#94a3b8;margin-top:3px;'>"
                      f"{lab_y} {_fmt_r(a)} ({na}) · {lab_n} {_fmt_r(b)} ({nb})</div>")
-        rows_html += (
-            f"<div style='display:flex;align-items:center;gap:14px;padding:11px 16px;"
+        op = "opacity:0.65;" if faded else ""
+        num_bg = "#c3c9d4" if faded else PURPLE
+        return (
+            f"<div style='display:flex;align-items:center;gap:14px;padding:11px 16px;{op}"
             f"border-bottom:1px solid rgba(148,163,184,0.15);'>"
-            f"<div style='min-width:26px;height:26px;border-radius:50%;background:{PURPLE};"
+            f"<div style='min-width:26px;height:26px;border-radius:50%;background:{num_bg};"
             f"color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center;"
             f"justify-content:center;'>{i}</div>"
             f"<div style='flex:1;font-size:14px;color:#334155;font-weight:600;'>{rule}</div>"
             f"<div style='text-align:right;'>{stat}{small}</div></div>"
         )
+
+    rows_html = "".join(_row(i, e) for i, e in enumerate(proven, 1))
+    if review:
+        rows_html += ("<div style='padding:9px 16px;font-size:11px;font-weight:700;"
+                      "letter-spacing:0.08em;color:#94a3b8;background:#fafbfd;"
+                      "border-bottom:1px solid rgba(148,163,184,0.15);'>UNDER REVIEW — "
+                      "NO PROVEN EDGE YET</div>")
+        rows_html += "".join(_row(i, e, faded=True)
+                             for i, e in enumerate(review, len(proven) + 1))
     st.markdown(
         "<div style='background:#fff;border:1px solid rgba(0,0,0,0.06);border-radius:12px;"
         "box-shadow:0 2px 10px rgba(0,0,0,0.04);overflow:hidden;margin:4px 0 10px;'>"
@@ -486,13 +505,14 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
     if lines:
         st.caption("Direction split: " + " · ".join(lines))
     sess_tot = {name: float(grp["__rr"].sum()) for name, grp in wk.groupby(sess_s) if name and str(name) != "nan"}
+    wk_fixes = []
     if sess_tot:
         best_s = max(sess_tot, key=sess_tot.get)
         worst_s = min(sess_tot, key=sess_tot.get)
         if sess_tot[worst_s] < -0.8:
-            t._insight_box(f"<b>{worst_s}</b> cost you <b>{_fmt_r(sess_tot[worst_s])}</b> this week — "
-                           f"the week's damage clusters there, while <b>{best_s}</b> paid "
-                           f"<b>{_fmt_r(sess_tot[best_s])}</b>.", "bad")
+            wk_fixes.append((abs(sess_tot[worst_s]), f"Stop trading {worst_s}",
+                             f"{_fmt_r(sess_tot[worst_s])} there this week vs "
+                             f"{_fmt_r(sess_tot[best_s])} in {best_s}"))
 
     # management leaks
     if mfe is not None and mfe.notna().any():
@@ -514,10 +534,9 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
                 f"<span style='color:{RED};font-weight:800;'>gave back {gv:.2f}R</span></div>"
                 for lab, gv in leaks[:6]) + "</div>", unsafe_allow_html=True)
             if give == give and net == net:
-                t._insight_box(
-                    f"Combined <b>{give:.2f}R</b> left on the table vs <b>{_fmt_r(net)}</b> banked. "
-                    "Define the +1R action (partial or trail) before entry and execute it mechanically.",
-                    "warn")
+                wk_fixes.append((float(give), "Define the +1R action before entry",
+                                 f"{give:.2f}R given back vs {_fmt_r(net)} banked — "
+                                 "partial or trail, executed mechanically"))
 
     # discipline: blank manual fields
     manual = [c for c in ["A+ Setup?", "Conviction (1-5)", "Mental State", "Mistake"] if c in wk.columns]
@@ -527,10 +546,26 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
             if all(str(r.get(c, "") or "").strip().lower() in ("", "nan", "none", "na") for c in manual):
                 blank += 1
         if blank:
-            t._insight_box(
-                f"<b>{blank} of {n}</b> trades this week have blank manual fields (A+, Conviction, "
-                "Mental State, Mistake) — the discipline sections can't score what isn't logged. "
-                "Backfill them in Notion while the trades are fresh.", "warn")
+            wk_fixes.append((0.1, f"Backfill the journal — {blank} of {n} trades blank",
+                             "A+, Conviction, Mental State and Mistake are empty; "
+                             "discipline scores can't see unlogged trades"))
+    if wk_fixes:
+        wk_fixes.sort(key=lambda x: -x[0])
+        items = "".join(
+            f"<div style='display:flex;gap:14px;align-items:flex-start;padding:10px 18px;"
+            f"border-bottom:1px solid rgba(148,163,184,0.12);'>"
+            f"<div style='min-width:28px;height:28px;border-radius:50%;background:{PURPLE};"
+            f"color:#fff;font-size:14px;font-weight:800;display:flex;align-items:center;"
+            f"justify-content:center;'>{i}</div>"
+            f"<div><div style='font-size:15px;font-weight:800;color:#0f172a;'>{title}</div>"
+            f"<div style='font-size:13px;color:#64748b;margin-top:1px;'>{sub}</div></div></div>"
+            for i, (_, title, sub) in enumerate(wk_fixes, 1))
+        st.markdown(
+            "<div style='background:#fff;border:1px solid rgba(0,0,0,0.06);border-radius:12px;"
+            "box-shadow:0 2px 10px rgba(0,0,0,0.04);overflow:hidden;margin:14px 0 6px;'>"
+            "<div style='padding:13px 18px 7px;font-size:17px;font-weight:800;color:#0f172a;'>"
+            f"This week's {['','one fix','two fixes','three fixes'][min(len(wk_fixes),3)] if len(wk_fixes)<=3 else str(len(wk_fixes)) + ' fixes'}</div>"
+            + items + "</div>", unsafe_allow_html=True)
 
     # vs last week
     if not pw.empty:
