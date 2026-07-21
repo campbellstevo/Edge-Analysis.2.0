@@ -1649,6 +1649,12 @@ def _confluences_tab(f: pd.DataFrame, show_table):
                             "Net PnL (R)": net_rr, "Expectancy (R)": ex_rr}))
     if rows:
         conf_df = pd.DataFrame(rows).sort_values("Win %", ascending=False).reset_index(drop=True)
+        _covered = conf_df["Confluence"].astype(str).str.lower().str.strip().isin(
+            ["sweep", "div", "divergence", "div?", "sweep?"])
+        conf_df = conf_df[~_covered].reset_index(drop=True)
+        if conf_df.empty:
+            st.markdown("</div>", unsafe_allow_html=True)
+            return
         render_entry_model_table(conf_df.rename(columns={"Confluence": "Entry_Model"}),
                                  title="Confluence Performance")
         if not conf_df.empty and "Win %" in conf_df.columns:
@@ -2178,7 +2184,26 @@ def _div_vs_sweep(f: pd.DataFrame) -> None:
     if s_s:
         head.append({"Category": "Sweep \u00b7 yes", "Avg R": round(s_s["avg"], 2),
                      "Trades": s_s["n"], "Win %": s_s["win"]})
-    _edge_tiles(head, "Category", "Avg R")
+
+    def _dvs_table():
+        trows = []
+        for lab, mask in (("Sweep", swp), ("DIV", div)):
+            sub = g.loc[mask, "__rr"]
+            if len(sub) < 3:
+                continue
+            n_ = len(sub)
+            trows.append({"Entry_Model": lab, "Trades": n_,
+                          "Win %": round(100.0 * float((sub > 0.15).sum()) / n_, 2),
+                          "BE %": round(100.0 * float(((sub >= -0.15) & (sub <= 0.15)).sum()) / n_, 2),
+                          "Loss %": round(100.0 * float((sub < -0.15).sum()) / n_, 2),
+                          "Net PnL (R)": round(float(sub.sum()), 2),
+                          "Expectancy (R)": round(float(sub.mean()), 2)})
+        if trows:
+            render_entry_model_table(pd.DataFrame(trows), title="DIV vs Sweep — full numbers")
+
+    _flip("dvs_flip",
+          lambda: _edge_tiles(head, "Category", "Avg R"),
+          _dvs_table)
     combos = []
     for lab, m in (("Both DIV + Sweep", div & swp), ("DIV only", div & ~swp),
                    ("Sweep only", swp & ~div), ("Neither", ~div & ~swp)):
