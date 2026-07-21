@@ -238,8 +238,16 @@ def render_whoop_tab(df_all: pd.DataFrame, styler) -> None:
         except Exception:
             show = drivers.head(12).copy()
             show["Avg-R gap"] = show["gap"].map(lambda x: f"{x:+.2f}R")
-            st.dataframe(show[["Metric", "Avg-R gap", "r", "Trades"]],
-                         hide_index=True, use_container_width=True)
+            _rows = "".join(
+                f"<tr><td class='text'>{r['Metric']}</td>"
+                f"<td class='num' style='font-weight:700;color:{'#16a34a' if str(r['Avg-R gap']).startswith('+') else '#ef4444'};'>{r['Avg-R gap']}</td>"
+                f"<td class='num'>{r['r']}</td><td class='num'>{int(r['Trades'])}</td></tr>"
+                for _, r in show.iterrows())
+            st.markdown(
+                "<div class='table-wrap'><table><thead><tr><th class='text'>Metric</th>"
+                "<th class='num'>Avg-R gap</th><th class='num'>r</th><th class='num'>Trades</th>"
+                "</tr></thead><tbody>" + _rows + "</tbody></table></div>",
+                unsafe_allow_html=True)
 
     st.divider()
     # ---- drill-downs on the three headline signals ---------------------------

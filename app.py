@@ -1543,6 +1543,14 @@ def main() -> None:
     _require_notion_login()
 
     # Theme preference: restore from this device, persist changes, apply overlay
+    if "ea_view_pref" not in st.session_state:
+        _saved_view = _js_eval("localStorage.getItem('ea_view') || ''", key="ea_view_load")
+        if _saved_view in ("Chart", "Table"):
+            st.session_state["ea_view_pref"] = _saved_view
+    if st.session_state.pop("ea_view_dirty", False):
+        _js_eval("localStorage.setItem('ea_view', "
+                 + json.dumps(st.session_state.get("ea_view_pref", "Chart")) + ")",
+                 key="ea_view_save")
     if "ea_theme_pref" not in st.session_state:
         _saved_theme = _js_eval("localStorage.getItem('ea_theme') || ''", key="ea_theme_load")
         if _saved_theme in ("dark", "light"):

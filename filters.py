@@ -194,8 +194,12 @@ def render_filters(
             )
         _theme_label = ("Light theme" if st.session_state.get("ea_theme_pref") == "dark"
                         else "Dark theme")
+        _view_label = ("Show charts by default"
+                       if st.session_state.get("ea_view_pref") == "Table"
+                       else "Show tables by default")
         _menu_opts = [PageNames.DASHBOARD, PageNames.CONNECT, "Getting started",
-                      "Refresh data", "Sign in on iPhone", "What the stats mean", _theme_label]
+                      "Refresh data", "Sign in on iPhone", "What the stats mean",
+                      _theme_label, _view_label]
 
         def _menu_cb():
             choice = st.session_state.get("ea_menu")
@@ -218,6 +222,14 @@ def render_filters(
                 st.session_state["ea_menu"] = page_now
             elif choice == "Getting started":
                 st.session_state["ea_show_setup"] = True
+                st.session_state["ea_menu"] = page_now
+            elif choice in ("Show tables by default", "Show charts by default"):
+                cur = st.session_state.get("ea_view_pref", "Chart")
+                st.session_state["ea_view_pref"] = "Table" if cur != "Table" else "Chart"
+                st.session_state["ea_view_dirty"] = True
+                for k in list(st.session_state.keys()):
+                    if str(k).endswith("_flip"):
+                        st.session_state.pop(k, None)
                 st.session_state["ea_menu"] = page_now
             else:  # theme toggle
                 cur = st.session_state.get("ea_theme_pref", "light")

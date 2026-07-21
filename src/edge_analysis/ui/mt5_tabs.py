@@ -309,9 +309,10 @@ def _timing_section(df: pd.DataFrame, styler) -> None:
             _line_metric(tbl, "", styler, value="Win %", x_order=list(tbl["Category"]),
                          x_title="Hour of day (Melb)", baseline=50.0, fmt=".0f", suffix="%")
             best = tbl.loc[tbl["Win %"].idxmax()]; worst = tbl.loc[tbl["Win %"].idxmin()]
-            t._insight_box(
-                f"Best hour: <b>{int(best['Hour']):02d}:00</b> ({best['Win %']:.0f}% over {int(best['Trades'])} trades). "
-                f"Weakest: <b>{int(worst['Hour']):02d}:00</b> ({worst['Win %']:.0f}%).")
+            if int(best.get("Trades", 0)) >= 5:
+                t._insight_box(
+                    f"Best hour: <b>{int(best['Hour']):02d}:00</b> ({best['Win %']:.0f}% over {int(best['Trades'])} trades). "
+                    f"Weakest: <b>{int(worst['Hour']):02d}:00</b> ({worst['Win %']:.0f}%).")
 
 
 # ── 4. Execution quality ──────────────────────────────────────────────────────
@@ -518,7 +519,7 @@ def _mistake_section(df: pd.DataFrame, styler) -> None:
 
 
 def _conviction_section(df: pd.DataFrame, styler) -> None:
-    rows = _cat_stats(df, "Conviction (1-5)")
+    rows = _cat_stats(df, "Conviction (1-5)", min_n=3)
     order = ["1", "2", "3", "4", "5"]
     if rows is not None:
         rows = rows[rows["Category"].isin(order)]
@@ -612,7 +613,7 @@ def _holdtime_section(df: pd.DataFrame, styler) -> None:
     bins = [0, 15, 30, 60, 120, 240, 1e9]
     labels = ["0–15m", "15–30m", "30–60m", "1–2h", "2–4h", "4h+"]
     g["__cat"] = pd.cut(g["__h"], bins=bins, labels=labels, right=True, include_lowest=True).astype(str)
-    rows = _cat_stats(g, "__cat")
+    rows = _cat_stats(g, "__cat", min_n=3)
     if rows is not None:
         rows = rows.assign(__o=rows["Category"].map(lambda v: labels.index(v) if v in labels else 9)).sort_values("__o").drop(columns="__o")
     _line_metric(rows, "Hold-Time Window", styler, value="Avg R", x_order=labels,

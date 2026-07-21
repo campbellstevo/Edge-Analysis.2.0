@@ -1023,7 +1023,7 @@ def _psych_mental_state_gate(df: pd.DataFrame, styler) -> None:
     states, rows = ["Good","Okay","Bad"], []
     for state in states:
         sub = g[g["__ms"]==state]
-        if sub.empty: continue
+        if len(sub) < 3: continue
         cnt = sub[sub["Outcome"].isin(["Win","BE","Loss"])]
         wr  = round(cnt["Outcome"].eq("Win").sum()/max(1,len(cnt))*100,1)
         wb  = round(sub[bias_col].fillna("").str.contains("Wrong Bias").sum()/max(1,len(sub))*100,1) if bias_col else 0.0
@@ -1908,9 +1908,6 @@ def _sessions_tab(f: pd.DataFrame, show_table):
         df_rates = pd.DataFrame(rates).sort_values("Win %", ascending=False)
         st.markdown("### Session Expectancy")
         st.caption("Average R per trade by session.")
-        _flip("sess_flip",
-              lambda: _rank_dots(df_rates, "Session", "Expectancy (R)"),
-              lambda: render_session_performance_table(df_rates, title="Session Performance"))
         if not df_rates.empty:
             best = df_rates.iloc[0]
             worst = df_rates.iloc[-1]
@@ -1919,6 +1916,9 @@ def _sessions_tab(f: pd.DataFrame, show_table):
                     f"<b>{best['Session']}</b> is your best session at <b>{best['Win %']:.1f}%</b> win rate. "
                     f"<b>{worst['Session']}</b> trails at <b>{worst['Win %']:.1f}%</b>. "
                     f"Concentrate trade frequency in {best['Session']} and reduce exposure in {worst['Session']}.", "info")
+        _flip("sess_flip",
+              lambda: _rank_dots(df_rates, "Session", "Expectancy (R)"),
+              lambda: render_session_performance_table(df_rates, title="Session Performance"))
     st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -4069,8 +4069,9 @@ def _gap(px: int = 26) -> None:
 
 
 def _flip(key: str, chart_fn, table_fn) -> None:
-    """One dataset, two lenses \u2014 chart by default, exact numbers on the flip."""
-    view = st.radio("View", ["Chart", "Table"], horizontal=True, key=key,
+    """One dataset, two lenses \u2014 the Settings default decides which shows first."""
+    default = 1 if st.session_state.get("ea_view_pref") == "Table" else 0
+    view = st.radio("View", ["Chart", "Table"], index=default, horizontal=True, key=key,
                     label_visibility="collapsed") or "Chart"
     if view == "Chart":
         chart_fn()
