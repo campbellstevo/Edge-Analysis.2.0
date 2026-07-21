@@ -1362,6 +1362,113 @@ def _whoop_client():
     )
 
 
+# ── WHOOP token: shared store in the user's Notion workspace ─────────────────
+# One rotating refresh-token family shared by every device. Device localStorage
+# stays as the fast path; Notion is the source of truth that survives any one
+# device losing a rotation write.
+_WHOOP_PAGE_TITLE = "Edge Analysis \u00b7 WHOOP link (do not delete)"
+_NV = {"Notion-Version": "2022-06-28"}
+
+
+def _whoop_notion_ids():
+    """(page_id, block_id) of the shared store, cached per session."""
+    tok = st.session_state.get(SessionKeys.USER_TOKEN)
+    if not tok:
+        return None, None
+    if "whoop_np" in st.session_state:
+        return st.session_state.get("whoop_np"), st.session_state.get("whoop_nb")
+    hdr = {"Authorization": f"Bearer {tok}", **_NV}
+    try:
+        r = requests.post("https://api.notion.com/v1/search",
+                          headers={**hdr, "Content-Type": "application/json"},
+                          json={"query": "WHOOP link", "page_size": 5}, timeout=8)
+        page_id = None
+        for res in (r.json() or {}).get("results", []):
+            try:
+                title = res["properties"]["title"]["title"][0]["plain_text"]
+            except Exception:
+                continue
+            if "WHOOP link" in title:
+                page_id = res["id"]
+                break
+        block_id = None
+        if page_id:
+            rb = requests.get(f"https://api.notion.com/v1/blocks/{page_id}/children",
+                              headers=hdr, timeout=8)
+            for blk in (rb.json() or {}).get("results", []):
+                if blk.get("type") == "paragraph":
+                    block_id = blk["id"]
+                    break
+        st.session_state["whoop_np"] = page_id
+        st.session_state["whoop_nb"] = block_id
+        return page_id, block_id
+    except Exception:
+        return None, None
+
+
+def _whoop_notion_read():
+    page_id, block_id = _whoop_notion_ids()
+    tok = st.session_state.get(SessionKeys.USER_TOKEN)
+    if not (tok and block_id):
+        return None
+    try:
+        r = requests.get(f"https://api.notion.com/v1/blocks/{block_id}",
+                         headers={"Authorization": f"Bearer {tok}", **_NV}, timeout=8)
+        txt = "".join(t.get("plain_text", "")
+                      for t in (r.json() or {}).get("paragraph", {}).get("rich_text", []))
+        blob = json.loads(txt) if txt.strip().startswith("{") else None
+        return blob if isinstance(blob, dict) else None
+    except Exception:
+        return None
+
+
+def _whoop_notion_write(blob: dict) -> None:
+    tok = st.session_state.get(SessionKeys.USER_TOKEN)
+    if not tok:
+        return
+    sig = (blob.get("rt") or "")[-12:]
+    if st.session_state.get("whoop_nsig") == sig:
+        return
+    hdr = {"Authorization": f"Bearer {tok}", "Content-Type": "application/json", **_NV}
+    payload_rt = [{"type": "text", "text": {"content": json.dumps(blob)}}]
+    try:
+        page_id, block_id = _whoop_notion_ids()
+        if block_id:
+            requests.patch(f"https://api.notion.com/v1/blocks/{block_id}",
+                           headers=hdr, json={"paragraph": {"rich_text": payload_rt}}, timeout=8)
+        else:
+            dbid = st.session_state.get(SessionKeys.DB_ID)
+            parent = None
+            if dbid:
+                rd = requests.get(f"https://api.notion.com/v1/databases/{dbid}",
+                                  headers={"Authorization": f"Bearer {tok}", **_NV}, timeout=8)
+                par = (rd.json() or {}).get("parent", {})
+                if par.get("type") == "page_id":
+                    parent = {"page_id": par["page_id"]}
+            if not parent:
+                return
+            rc = requests.post("https://api.notion.com/v1/pages", headers=hdr, json={
+                "parent": parent,
+                "properties": {"title": {"title": [{"type": "text",
+                               "text": {"content": _WHOOP_PAGE_TITLE}}]}},
+                "children": [{"object": "block", "type": "paragraph",
+                              "paragraph": {"rich_text": payload_rt}}],
+            }, timeout=10)
+            new_page = (rc.json() or {}).get("id")
+            st.session_state["whoop_np"] = new_page
+            st.session_state.pop("whoop_nb", None)
+            if new_page:
+                rb = requests.get(f"https://api.notion.com/v1/blocks/{new_page}/children",
+                                  headers={"Authorization": f"Bearer {tok}", **_NV}, timeout=8)
+                for blk in (rb.json() or {}).get("results", []):
+                    if blk.get("type") == "paragraph":
+                        st.session_state["whoop_nb"] = blk["id"]
+                        break
+        st.session_state["whoop_nsig"] = sig
+    except Exception:
+        pass
+
+
 def _store_whoop_tokens(data: dict) -> None:
     """Store tokens from a WHOOP token/refresh response into session + device."""
     at = data.get("access_token")
@@ -1383,9 +1490,12 @@ def _whoop_persist() -> None:
     # No dedupe gate: re-render the write component EVERY run. If a rerun
     # killed the component before its localStorage.setItem executed, the next
     # run re-issues it — a rotated refresh token can never be lost again.
-    blob = json.dumps({"rt": rt, "at": at, "exp": exp})
+    blob_d = {"rt": rt, "at": at, "exp": exp}
+    blob = json.dumps(blob_d)
     _js_eval("localStorage.setItem('ea_whoop', " + json.dumps(blob) + ")",
              key="whoop_save")
+    if rt:
+        _whoop_notion_write(blob_d)
 
 
 def _handle_whoop_logout() -> None:
@@ -1457,6 +1567,10 @@ def _whoop_bootstrap() -> None:
         if blob is None:
             st.session_state["whoop_boot"] = "pending"  # still resolving — don't show Connect
             return
+        if not blob:
+            nb = _whoop_notion_read()
+            if nb:
+                blob = nb
         if blob.get("at"):
             st.session_state["whoop_at"] = blob["at"]
             st.session_state["whoop_at_exp"] = blob.get("exp", 0)
@@ -1488,6 +1602,9 @@ def _whoop_bootstrap() -> None:
                 if blob is None:
                     st.session_state["whoop_boot"] = "pending"
                     return
+                nb = _whoop_notion_read()
+                if nb and nb.get("rt") and nb.get("rt") != rt:
+                    blob = nb
                 newrt = (blob or {}).get("rt")
                 if newrt and newrt != rt:
                     try:
