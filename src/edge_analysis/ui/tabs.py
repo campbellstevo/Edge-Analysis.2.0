@@ -3504,13 +3504,63 @@ def _compute_refinements(stats: dict) -> dict:
     if not refine:
         refine.append({"title": "Maintain consistency", "action": "Keep risk and process steady, and re-check as more data builds."})
 
-    flags = [r for r in (stats.get("flags") or []) if r.get("Trades", 0) >= 8]
-    goods = sorted([r for r in flags if r["Avg R"] >= 0.5], key=lambda r: -r["Avg R"])[:2]
-    bads = sorted([r for r in flags if r["Avg R"] <= -0.35], key=lambda r: r["Avg R"])[:2]
-    for r in goods:
+    # Yes/no flags: one verdict per flag, phrased as the ACTION on the flag itself
+    # ("don't trade with X" / "require X") — never via the mirror "· no" side.
+    _NICE = {"Multi-entry": "double-confirmation (multi-entry) setups",
+             "Opposing weak structure": "opposing weak structure",
+             "Divergence": "divergence", "Sweep": "a sweep",
+             "True break": "a confirmed true break",
+             "OB/OS extreme": "an OB/OS extreme",
+             "Prepared / clear bias": "a prepared, clear bias"}
+    flags = stats.get("flags") or []
+    pairs, cats = {}, []
+    for r in flags:
+        cat = str(r.get("Category", ""))
+        if cat.endswith(" \u00b7 yes") or cat.endswith(" \u00b7 no"):
+            label, side = cat.rsplit(" \u00b7 ", 1)
+            pairs.setdefault(label, {})[side] = r
+        else:
+            cats.append(r)
+
+    flag_sugs = []
+    for label, sides in pairs.items():
+        y, n_ = sides.get("yes"), sides.get("no")
+        y_ok = y and y.get("Trades", 0) >= 8
+        n_ok = n_ and n_.get("Trades", 0) >= 8
+        if not (y_ok or n_ok):
+            continue
+        ya = y["Avg R"] if y else float("nan")
+        na = n_["Avg R"] if n_ else float("nan")
+        gap = (ya - na) if (y and n_) else float("nan")
+        nice = _NICE.get(label, label.lower())
+        if gap == gap and abs(gap) < 0.4:
+            continue
+        yes_better = (gap == gap and gap > 0) or (gap != gap and y_ok and ya >= 0.5)
+        yes_worse = (gap == gap and gap < 0) or (gap != gap and y_ok and ya <= -0.35)
+        if yes_worse and (y_ok or n_ok):
+            evid = (f"{ya:+.2f}R over {y['Trades']} trades with it"
+                    + (f" vs {na:+.2f}R over {n_['Trades']} without" if n_ else ""))
+            flag_sugs.append((abs(gap) if gap == gap else abs(ya), "dont",
+                              f"Don't trade with {nice}", evid))
+        elif yes_better and (y_ok or n_ok):
+            evid = (f"{ya:+.2f}R over {y['Trades']} trades when present"
+                    + (f" vs {na:+.2f}R without" if n_ else ""))
+            flag_sugs.append((abs(gap) if gap == gap else abs(ya), "do",
+                              f"Trade {nice}", evid))
+    flag_sugs.sort(key=lambda x: -x[0])
+    for _, kind, title, evid in flag_sugs[:3]:
+        if kind == "dont":
+            holding.append({"title": title, "detail": evid})
+            refine.append({"title": title,
+                           "action": f"{evid}. Skip these for a month and re-measure."})
+        else:
+            working.append({"title": title, "detail": f"{evid}. Keep requiring it."})
+
+    cats8 = [r for r in cats if r.get("Trades", 0) >= 8]
+    for r in sorted([r for r in cats8 if r["Avg R"] >= 0.5], key=lambda r: -r["Avg R"])[:2]:
         working.append({"title": f"{r['Category']} is worth {r['Avg R']:+.2f}R per trade",
                         "detail": f"Across {r['Trades']} trades. Keep stacking this condition."})
-    for r in bads:
+    for r in sorted([r for r in cats8 if r["Avg R"] <= -0.35], key=lambda r: r["Avg R"])[:2]:
         holding.append({"title": f"{r['Category']} costs {r['Avg R']:+.2f}R per trade",
                         "detail": f"Across {r['Trades']} trades."})
         refine.append({"title": f"Filter out '{r['Category']}' trades",
