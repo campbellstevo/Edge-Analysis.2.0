@@ -1276,25 +1276,7 @@ def render_dashboard(mobile: bool):
     # Display KPIs
     def _hero_block():
         # ── Hero band: net result + sparkline + stat chips (one card) ────────────
-        cum = f.sort_values("Date")["PnL_from_RR"].fillna(0).cumsum() if "Date" in f.columns else f["PnL_from_RR"].fillna(0).cumsum()
         spark = ""
-        pts = cum.tolist()
-        if len(pts) >= 2:
-            lo, hi = min(min(pts), 0.0), max(max(pts), 0.0)
-            span = max(hi - lo, 0.001)
-            W, H = 560, 46
-            coords = " ".join(
-                f"{(i / (len(pts) - 1) * W):.1f},{(H - 4 - (v - lo) / span * (H - 8)):.1f}"
-                for i, v in enumerate(pts)
-            )
-            zero_y = H - 4 - (0.0 - lo) / span * (H - 8)
-            spark = (
-                f"<svg viewBox='0 0 {W} {H}' preserveAspectRatio='none' "
-                f"style='width:100%;height:{H}px;display:block;margin-top:10px;'>"
-                f"<line x1='0' y1='{zero_y:.1f}' x2='{W}' y2='{zero_y:.1f}' stroke='#e5e7eb' stroke-width='1' stroke-dasharray='4,4'/>"
-                f"<polyline points='{coords}' fill='none' stroke='#4800ff' stroke-width='2.5' "
-                f"stroke-linejoin='round' stroke-linecap='round'/></svg>"
-            )
         net_col = "#16a34a" if total_pnl_rr >= 0 else "#ef4444"
         _wk_chip = ""
         if "Date" in f.columns:

@@ -296,7 +296,7 @@ def _heatmap_hour_day(df, styler) -> None:
     agg = g.groupby(["__day", "__hr"]).agg(AvgR=("__rr", "mean"), Trades=("__rr", "size")).reset_index()
     agg = agg.rename(columns={"__day": "Day", "__hr": "Hour"})
     agg["AvgR"] = agg["AvgR"].round(2)
-    agg2 = agg[agg["Trades"] >= 2].copy()
+    agg2 = agg[agg["Trades"] >= 3].copy()
     if agg2.empty:
         agg2 = agg.copy()
     agg2["Window"] = agg2["Day"].astype(str) + "  ·  " + agg2["Hour"].map(lambda h: f"{int(h):02d}:00")
@@ -325,7 +325,7 @@ def _symbol_session_matrix(df, styler) -> None:
     agg = g.groupby(["__sym", "__sess"]).agg(AvgR=("__rr", "mean"), Trades=("__rr", "size")).reset_index()
     agg = agg.rename(columns={"__sym": "Symbol", "__sess": "Session"})
     agg["AvgR"] = agg["AvgR"].round(2)
-    agg2 = agg[agg["Trades"] >= 2].copy()
+    agg2 = agg[agg["Trades"] >= 3].copy()
     if agg2.empty:
         agg2 = agg.copy()
     agg2["Combo"] = agg2["Symbol"].astype(str) + "  ·  " + agg2["Session"].astype(str)

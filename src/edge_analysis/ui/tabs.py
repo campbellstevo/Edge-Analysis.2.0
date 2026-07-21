@@ -2211,7 +2211,7 @@ def _div_vs_sweep(f: pd.DataFrame) -> None:
         if s_:
             combos.append({"Category": lab, "Avg R": round(s_["avg"], 2),
                            "Trades": s_["n"], "Win %": s_["win"]})
-    if d_s and s_s:
+    if d_s and s_s and (d_s["n"] + s_s["n"]) >= 8:
         better = "Divergence" if d_s["avg"] > s_s["avg"] else "Sweep"
         worse = "Sweep" if better == "Divergence" else "Divergence"
         bv = max(d_s["avg"], s_s["avg"]); wv = min(d_s["avg"], s_s["avg"])
@@ -2314,7 +2314,7 @@ def _obos_section(f: pd.DataFrame) -> None:
         rows.append({"Category": "Not at extreme", "Avg R": round(n_["avg"], 2),
                      "Trades": n_["n"], "Win %": n_["win"]})
     _edge_tiles(rows, "Category", "Avg R")
-    if y and n_:
+    if y and n_ and (y["n"] + n_["n"]) >= 8:
         diff = y["avg"] - n_["avg"]
         lead = "OB/OS extremes are paying you" if diff > 0 else "OB/OS extremes are costing you"
         _insight_box(f"{lead}: <b>{diff:+.2f}R per trade</b> versus entries away from an extreme "
@@ -2338,7 +2338,10 @@ def _confluence_board(f: pd.DataFrame, scope: str = "entry") -> None:
     if len(d) > 18:
         d = pd.concat([d.head(9), d.tail(9)])
     _rank_dots(d, "Category", "Avg R")
-    best, worst = d.iloc[0], d.iloc[-1]
+    d8 = d[pd.to_numeric(d["Trades"], errors="coerce") >= 8]
+    if len(d8) < 2:
+        return
+    best, worst = d8.iloc[0], d8.iloc[-1]
     kind = "confluence" if scope == "entry" else "condition"
     _insight_box(
         f"Strongest {kind}: <b>{best['Category']}</b> ({best['Avg R']:+.2f}R over {int(best['Trades'])}). "
@@ -2597,20 +2600,30 @@ def _conditions_tab(f: pd.DataFrame, show_table):
             else:
                 cells[state] = ("\u2014", "#c3c9d4")
         grid.append((tf_titles.get(col, col), cells))
-    head = ("<div style='display:flex;padding:10px 18px 6px;'>"
-            "<div style='flex:1.2;'></div>"
-            "<div style='flex:1;font-size:12px;font-weight:700;letter-spacing:0.08em;color:#94a3b8;'>TRENDING</div>"
-            "<div style='flex:1;font-size:12px;font-weight:700;letter-spacing:0.08em;color:#94a3b8;'>RANGING</div></div>")
+    def _cell_pill(val, col):
+        if col == "#c3c9d4":
+            return (f"<span style='display:inline-block;min-width:120px;text-align:center;"
+                    f"background:#f4f5f8;color:#a6adbb;border-radius:999px;"
+                    f"padding:7px 14px;font-size:14px;font-weight:700;'>{val}</span>")
+        bg = "#e7f6ec" if col == "#16a34a" else "#fdeaea"
+        return (f"<span style='display:inline-block;min-width:120px;text-align:center;"
+                f"background:{bg};color:{col};border-radius:999px;"
+                f"padding:7px 14px;font-size:14px;font-weight:800;'>{val}</span>")
+    head = ("<div style='display:flex;align-items:center;padding:12px 18px 8px;'>"
+            "<div style='flex:1;'></div>"
+            "<div style='width:170px;text-align:center;font-size:11px;font-weight:700;"
+            "letter-spacing:0.09em;color:#94a3b8;'>TRENDING</div>"
+            "<div style='width:170px;text-align:center;font-size:11px;font-weight:700;"
+            "letter-spacing:0.09em;color:#94a3b8;'>RANGING</div></div>")
     rows_html = ""
     for i, (lab, cells) in enumerate(grid):
-        bgr = "background:#fafbfd;" if i % 2 == 0 else ""
         t_v, t_c = cells["Trending"]; r_v, r_c = cells["Ranging"]
-        rows_html += (f"<div style='display:flex;align-items:center;padding:13px 18px;{bgr}'>"
-                      f"<div style='flex:1.2;font-size:15px;font-weight:700;color:#0f172a;'>{lab}</div>"
-                      f"<div style='flex:1;font-size:16px;font-weight:800;color:{t_c};'>{t_v}</div>"
-                      f"<div style='flex:1;font-size:16px;font-weight:800;color:{r_c};'>{r_v}</div></div>")
+        rows_html += (f"<div style='display:flex;align-items:center;padding:8px 18px;'>"
+                      f"<div style='flex:1;font-size:14.5px;font-weight:700;color:#0f172a;'>{lab}</div>"
+                      f"<div style='width:170px;text-align:center;'>{_cell_pill(t_v, t_c)}</div>"
+                      f"<div style='width:170px;text-align:center;'>{_cell_pill(r_v, r_c)}</div></div>")
     st.markdown("<div style='background:#fff;border:1px solid #eef0f4;border-radius:12px;"
-                "overflow:hidden;margin:4px 0 8px;'>" + head + rows_html + "</div>",
+                "overflow:hidden;margin:4px 0 8px;padding:2px 0 10px;'>" + head + rows_html + "</div>",
                 unsafe_allow_html=True)
 
     all_rows = [r for r in all_rows if r.get("N", 0) >= 8]
@@ -4161,7 +4174,7 @@ def _flip(key: str, chart_fn, table_fn) -> None:
 def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, hero_fn=None):
     from edge_analysis.ui.mt5_tabs import (
         _section_header, _mae_mfe_section, _missed_runner_section,
-        _direction_section, _conviction_section, _holdtime_section, _spread_section,
+        _direction_section, _conviction_section, _holdtime_section,
         _timing_section, _discipline_section, _mistake_section, _execution_section,
     )
     from edge_analysis.ui.pro_tabs import (
@@ -4263,9 +4276,7 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
         _gap()
         _confluence_board(f_perf, scope="external")
         if _mt5:
-            _section_header("Costs", "What spread and fees quietly take from the edge.")
-            _spread_section(_data, styler)
-            _gap()
+            _section_header("Costs", "What fees and slippage quietly take from the edge.")
             _cost_drag(_data, styler)
 
     # ── Psychology ─────────────────────────────────────────────────────────
