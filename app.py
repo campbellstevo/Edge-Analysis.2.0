@@ -1617,7 +1617,13 @@ def _whoop_bootstrap() -> None:
 
     # Access token expired → refresh (once per run) using the refresh token.
     rt = st.session_state.get("whoop_rt")
+    if rt and st.session_state.get("whoop_refresh_done"):
+        # one refresh attempt per session — a failing WHOOP API must never
+        # turn every rerun into a 20s network stall (this looped the app)
+        st.session_state["whoop_boot"] = "ready"
+        return
     if rt:
+        st.session_state["whoop_refresh_done"] = True
         try:
             _store_whoop_tokens(whoop.refresh_tokens(rt, cid, csec))
             st.session_state["whoop_boot"] = "ready"
