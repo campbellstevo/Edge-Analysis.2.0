@@ -24,7 +24,7 @@ from edge_analysis.core.parsing import (
 
 def _stamp_sync():
     try:
-        st.session_state["ea_last_sync"] = pd.Timestamp.now().strftime("%H:%M")
+        st.session_state["ea_last_sync"] = float(pd.Timestamp.now().timestamp())
     except Exception:
         pass
 

@@ -1165,7 +1165,19 @@ def render_dashboard(mobile: bool):
     _sync = st.session_state.get("ea_last_sync")
     _status = "Live · Notion connected" if (token and dbid) else "Not connected"
     if token and dbid and _sync:
-        _status += f" · synced {_sync}"
+        try:
+            _age = max(0.0, float(pd.Timestamp.now().timestamp()) - float(_sync))
+            if _age < 120:
+                _ago = "just now"
+            elif _age < 3600:
+                _ago = f"{int(_age // 60)}m ago"
+            elif _age < 86400:
+                _ago = f"{int(_age // 3600)}h ago"
+            else:
+                _ago = f"{int(_age // 86400)}d ago"
+            _status += f" · synced {_ago}"
+        except (TypeError, ValueError):
+            pass  # legacy HH:MM stamp from an older session — drop it
     inject_header_bar(_status, bool(token and dbid))
     st.session_state["_ea_connected"] = bool(token and dbid)
 

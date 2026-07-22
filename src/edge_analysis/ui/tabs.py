@@ -567,63 +567,222 @@ def _growth_tab(f: pd.DataFrame, df_all: pd.DataFrame, styler):
 
     usd = pd.to_numeric(g.get("PnL (USD)"), errors="coerce") if "PnL (USD)" in g.columns else None
     has_usd = usd is not None and usd.notna().any()
-    st.markdown("### Equity")
-    view = "R"
-    if has_usd:
-        view = st.radio("Units", ["R", "$"], horizontal=True, key="eq_units",
-                        label_visibility="collapsed") or "R"
-    if view == "R":
-        if pnl_vals:
-            area = (alt.Chart(alt.Data(values=pnl_vals)).mark_area(opacity=0.12, color="#4800ff")
-                    .encode(x=x_time, y=alt.Y("CumPnL:Q", title="Cumulative R",
-                                               scale=alt.Scale(padding=14))))
-            line = (alt.Chart(alt.Data(values=pnl_vals))
-                    .mark_line(strokeWidth=2, color="#4800ff", interpolate="linear")
-                    .encode(x=x_time, y=alt.Y("CumPnL:Q", title=None, scale=alt.Scale(padding=14))))
-            st.altair_chart(styler(alt.layer(area, line).properties(height=300)),
-                            use_container_width=True)
-        else:
-            st.info("Not enough data for the equity chart.")
-    else:
-        gu = g[["__Date"]].copy(); gu["__pnl"] = usd.values
-        gu = gu[gu["__pnl"].notna()].sort_values("__Date")
-        gu["cum"] = gu["__pnl"].cumsum()
-        uvals = _to_alt_values(gu[["__Date", "cum"]].rename(columns={"__Date": "Bucket", "cum": "CumUSD"}))
-        if uvals:
-            area = (alt.Chart(alt.Data(values=uvals)).mark_area(opacity=0.12, color="#4800ff")
-                    .encode(x=alt.X("Bucket:T", title=None), y=alt.Y("CumUSD:Q", title="Cumulative $")))
-            line = (alt.Chart(alt.Data(values=uvals)).mark_line(strokeWidth=2, color="#4800ff")
-                    .encode(x=alt.X("Bucket:T", title=None), y=alt.Y("CumUSD:Q", title=None)))
-            st.altair_chart(styler(alt.layer(area, line).properties(height=300)),
-                            use_container_width=True)
-        else:
-            st.info("No dollar P&L values in this slice.")
+    TGT_R, STOP_R = 5.0, -6.0  # 5% monthly target / -6% circuit-breaker stop
 
-    rrs = pd.to_numeric(g["PnL_from_RR"], errors="coerce").dropna()
-    expc = float(rrs.mean()) if len(rrs) else float("nan")
-    gw = float(rrs[rrs > 0].sum()); gl = float(abs(rrs[rrs < 0].sum()))
-    pf_r = gw / gl if gl > 0 else float("nan")
-    chips = [("EXPECTANCY", "—" if expc != expc else f"{expc:+.2f}R",
-              "#16a34a" if expc == expc and expc >= 0 else "#ef4444"),
-             ("PROFIT FACTOR", "—" if pf_r != pf_r else f"{pf_r:.2f}",
-              "#16a34a" if pf_r == pf_r and pf_r >= 1 else "#ef4444")]
-    if has_usd:
-        net_u = float(usd.dropna().sum()); avg_u = float(usd.dropna().mean())
-        costs = 0.0
-        for cc in ("Commission", "Swap"):
-            if cc in g.columns:
-                costs += float(pd.to_numeric(g[cc], errors="coerce").fillna(0).sum())
-        chips += [("NET $", f"{'-' if net_u < 0 else ''}${abs(net_u):,.0f}",
-                   "#16a34a" if net_u >= 0 else "#ef4444"),
-                  ("AVG $/TRADE", f"{'-' if avg_u < 0 else ''}${abs(avg_u):,.2f}", "#0f172a"),
-                  ("COSTS", f"-${abs(costs):,.0f}", "#64748b")]
-    st.markdown(
-        "<div style='display:flex;gap:12px;flex-wrap:wrap;margin:10px 0 4px;'>" + "".join(
-            f"<div style='flex:1;min-width:130px;background:#f8f9fc;border-radius:12px;"
-            f"padding:12px 14px;'>"
-            f"<div style='font-size:11px;font-weight:600;letter-spacing:0.06em;color:#94a3b8;'>{k}</div>"
-            f"<div style='font-size:21px;font-weight:800;color:{c};'>{v}</div></div>"
-            for k, v, c in chips) + "</div>", unsafe_allow_html=True)
+    st.markdown("### Equity")
+    eq_view = st.radio("Equity view", ["This month", "All time", "Stacked"],
+                       horizontal=True, key="eq_view",
+                       label_visibility="collapsed") or "This month"
+
+    daily_all = (g.set_index("__Date")["PnL_from_RR"]
+                 .groupby(pd.Grouper(freq="D")).sum().dropna())
+    daily_all = daily_all[daily_all.index.notna()]
+
+    def _month_daily(period):
+        m = daily_all[daily_all.index.to_period("M") == period]
+        if m.empty:
+            return None
+        out = m.cumsum().reset_index()
+        out.columns = ["Date", "Cum"]
+        out["Day"] = out["Date"].dt.day
+        return out
+
+    def _aux_rules():
+        lay = []
+        for yv, col in ((0.0, "#cbd5e1"), (TGT_R, "#16a34a"), (STOP_R, "#ef4444")):
+            dash = [5, 5] if yv != 0 else [2, 3]
+            lay.append(alt.Chart(alt.Data(values=[{"y": yv}]))
+                       .mark_rule(color=col, strokeDash=dash,
+                                  strokeWidth=1.5 if yv == 0 else 2)
+                       .encode(y=alt.Y("y:Q", title=None)))
+        return lay
+
+    if eq_view == "This month":
+        now_p = pd.Timestamp.now().to_period("M")
+        md = _month_daily(now_p)
+        if md is None or md.empty:
+            st.info("No trades this month yet.")
+        else:
+            md["Peak"] = md["Cum"].cummax().clip(lower=0.0)
+            lastd = pd.Timestamp(now_p.end_time.date())
+            firstd = pd.Timestamp(now_p.start_time.date())
+            ylo = min(STOP_R - 1.5, float(md["Cum"].min()) - 1)
+            yhi = max(TGT_R + 1.5, float(md["Cum"].max()) + 1)
+            ysc = alt.Scale(domain=[ylo, yhi])
+            vals = _to_alt_values(md[["Date", "Cum", "Peak"]])
+            base = alt.Chart(alt.Data(values=vals))
+            xsc = alt.Scale(domain=[firstd.isoformat(), lastd.isoformat()])
+            dd = base.mark_area(color="#ef4444", opacity=0.12).encode(
+                x=alt.X("Date:T", title=None, scale=xsc),
+                y=alt.Y("Cum:Q", title=None, scale=ysc),
+                y2="Peak:Q")
+            pace = (alt.Chart(alt.Data(values=[
+                        {"Date": firstd.isoformat(), "y": 0.0},
+                        {"Date": lastd.isoformat(), "y": TGT_R}]))
+                    .mark_line(color="#b7a8f7", strokeDash=[6, 6], strokeWidth=1.5)
+                    .encode(x=alt.X("Date:T", title=None), y=alt.Y("y:Q", title=None)))
+            ln = base.mark_line(color="#4800ff", strokeWidth=3).encode(
+                x=alt.X("Date:T", title=None, scale=xsc),
+                y=alt.Y("Cum:Q", title=None, scale=ysc))
+            pt = (alt.Chart(alt.Data(values=[vals[-1]]))
+                  .mark_circle(color="#4800ff", size=110, stroke="#ffffff", strokeWidth=2)
+                  .encode(x=alt.X("Date:T", title=None, scale=xsc),
+                          y=alt.Y("Cum:Q", title=None, scale=ysc)))
+            st.altair_chart(styler(alt.layer(*_aux_rules(), pace, dd, ln, pt)
+                                   .properties(height=320)),
+                            use_container_width=True)
+            st.caption("Green dash = +5R target - red dash = the -6R month stop - "
+                       "faint purple = 5% pace for today - red shading = drawdown from the month's peak.")
+            cur = float(md["Cum"].iloc[-1])
+            maxdd = float((md["Cum"].cummax() - md["Cum"]).max())
+            chips = [("MONTH", f"{cur:+.1f}R", "#16a34a" if cur >= 0 else "#ef4444"),
+                     ("TO TARGET", f"{max(0.0, TGT_R - cur):.1f}R",
+                      "#16a34a" if cur >= TGT_R else "#0f172a"),
+                     ("MAX DD", f"-{maxdd:.1f}R", "#ef4444" if maxdd > 0 else "#64748b"),
+                     ("STOP ROOM", f"{cur - STOP_R:.1f}R",
+                      "#ef4444" if cur - STOP_R < 2 else "#0f172a")]
+            st.markdown(
+                "<div style='display:flex;gap:12px;flex-wrap:wrap;margin:10px 0 4px;'>" + "".join(
+                    f"<div style='flex:1;min-width:130px;background:#f8f9fc;border-radius:12px;"
+                    f"padding:12px 14px;'>"
+                    f"<div style='font-size:11px;font-weight:600;letter-spacing:0.06em;color:#94a3b8;'>{k}</div>"
+                    f"<div style='font-size:21px;font-weight:800;color:{c};'>{v}</div></div>"
+                    for k, v, c in chips) + "</div>", unsafe_allow_html=True)
+
+    elif eq_view == "Stacked":
+        periods = sorted(daily_all.index.to_period("M").unique())[-6:]
+        now_p = pd.Timestamp.now().to_period("M")
+        lines, endpts, finishes = [], [], []
+        for p_ in periods:
+            md = _month_daily(p_)
+            if md is None or len(md) < 2:
+                continue
+            lab = p_.strftime("%b %y")
+            cur_m = p_ == now_p
+            for _, r in md.iterrows():
+                lines.append({"Day": int(r["Day"]), "Cum": round(float(r["Cum"]), 2),
+                              "Month": lab, "kind": "cur" if cur_m else "past"})
+            fin = float(md["Cum"].iloc[-1])
+            endpts.append({"Day": int(md["Day"].iloc[-1]), "Cum": round(fin, 2),
+                           "Month": lab,
+                           "col": "cur" if cur_m else ("up" if fin >= 0 else "down")})
+            finishes.append((lab + (" - live" if cur_m else ""), fin, cur_m))
+        if not lines:
+            st.info("Not enough monthly history yet.")
+        else:
+            xsc = alt.Scale(domain=[1, 31])
+            ally = [r["Cum"] for r in lines]
+            ysc = alt.Scale(domain=[min(STOP_R - 1.5, min(ally) - 1),
+                                    max(TGT_R + 1.5, max(ally) + 1)])
+            base = alt.Chart(alt.Data(values=lines))
+            past = base.transform_filter(alt.datum.kind == "past").mark_line(
+                color="#d5d9e2", strokeWidth=2).encode(
+                x=alt.X("Day:Q", title="Day of month", scale=xsc,
+                        axis=alt.Axis(tickMinStep=1, grid=False, labelColor="#94a3b8",
+                                      titleColor="#94a3b8")),
+                y=alt.Y("Cum:Q", title=None, scale=ysc),
+                detail="Month:N",
+                tooltip=[alt.Tooltip("Month:N"), alt.Tooltip("Cum:Q", format="+.2f")])
+            curl = base.transform_filter(alt.datum.kind == "cur").mark_line(
+                color="#4800ff", strokeWidth=3.5).encode(
+                x=alt.X("Day:Q", title=None, scale=xsc),
+                y=alt.Y("Cum:Q", title=None, scale=ysc), detail="Month:N",
+                tooltip=[alt.Tooltip("Month:N"), alt.Tooltip("Cum:Q", format="+.2f")])
+            dots = (alt.Chart(alt.Data(values=endpts))
+                    .mark_circle(size=90, stroke="#ffffff", strokeWidth=2)
+                    .encode(x=alt.X("Day:Q", title=None, scale=xsc),
+                            y=alt.Y("Cum:Q", title=None, scale=ysc),
+                            color=alt.Color("col:N", legend=None,
+                                            scale=alt.Scale(domain=["cur", "up", "down"],
+                                                            range=["#4800ff", "#16a34a", "#ef4444"])),
+                            tooltip=[alt.Tooltip("Month:N"), alt.Tooltip("Cum:Q", format="+.2f")]))
+            st.altair_chart(styler(alt.layer(*_aux_rules(), past, curl, dots)
+                                   .properties(height=330)),
+                            use_container_width=True)
+            st.caption("Every month runs day 1-31 from zero - purple = this month - "
+                       "green dash = +5R target - red dash = -6R stop. Hover any line for the month.")
+            fin_html = "".join(
+                f"<div style='flex:1;min-width:120px;background:#f8f9fc;border-radius:12px;"
+                f"padding:10px 13px;'>"
+                f"<div style='font-size:11px;font-weight:700;letter-spacing:0.05em;"
+                f"color:{'#4800ff' if c else '#94a3b8'};'>{m.upper()}</div>"
+                f"<div style='font-size:19px;font-weight:800;"
+                f"color:{'#4800ff' if c else ('#16a34a' if v >= 0 else '#ef4444')};'>{v:+.1f}R</div></div>"
+                for m, v, c in reversed(finishes))
+            st.markdown("<div style='display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 4px;'>"
+                        + fin_html + "</div>", unsafe_allow_html=True)
+
+    else:
+        view = "R"
+        if has_usd:
+            view = st.radio("Units", ["R", "$"], horizontal=True, key="eq_units",
+                            label_visibility="collapsed") or "R"
+        if view == "R":
+            if pnl_vals:
+                stairs = []
+                periods = sorted(daily_all.index.to_period("M").unique())
+                for i, p_ in enumerate(periods):
+                    lvl = TGT_R * (i + 1)
+                    stairs.append({"Date": pd.Timestamp(p_.start_time.date()).isoformat(),
+                                   "y": lvl, "step": i})
+                    stairs.append({"Date": pd.Timestamp(p_.end_time.date()).isoformat(),
+                                   "y": lvl, "step": i})
+                stair_layer = (alt.Chart(alt.Data(values=stairs))
+                               .mark_line(color="#16a34a", strokeDash=[6, 5], strokeWidth=2)
+                               .encode(x=alt.X("Date:T", title=None),
+                                       y=alt.Y("y:Q", title=None), detail="step:Q"))
+                area = (alt.Chart(alt.Data(values=pnl_vals)).mark_area(opacity=0.12, color="#4800ff")
+                        .encode(x=x_time, y=alt.Y("CumPnL:Q", title="Cumulative R",
+                                                   scale=alt.Scale(padding=14))))
+                line = (alt.Chart(alt.Data(values=pnl_vals))
+                        .mark_line(strokeWidth=2, color="#4800ff", interpolate="linear")
+                        .encode(x=x_time, y=alt.Y("CumPnL:Q", title=None, scale=alt.Scale(padding=14))))
+                st.altair_chart(styler(alt.layer(area, line, stair_layer).properties(height=300)),
+                                use_container_width=True)
+                st.caption("Green stairs = the 5% target compounding month by month - "
+                           "line above the stairs means ahead of plan.")
+            else:
+                st.info("Not enough data for the equity chart.")
+        else:
+            gu = g[["__Date"]].copy(); gu["__pnl"] = usd.values
+            gu = gu[gu["__pnl"].notna()].sort_values("__Date")
+            gu["cum"] = gu["__pnl"].cumsum()
+            uvals = _to_alt_values(gu[["__Date", "cum"]].rename(columns={"__Date": "Bucket", "cum": "CumUSD"}))
+            if uvals:
+                area = (alt.Chart(alt.Data(values=uvals)).mark_area(opacity=0.12, color="#4800ff")
+                        .encode(x=alt.X("Bucket:T", title=None), y=alt.Y("CumUSD:Q", title="Cumulative $")))
+                line = (alt.Chart(alt.Data(values=uvals)).mark_line(strokeWidth=2, color="#4800ff")
+                        .encode(x=alt.X("Bucket:T", title=None), y=alt.Y("CumUSD:Q", title=None)))
+                st.altair_chart(styler(alt.layer(area, line).properties(height=300)),
+                                use_container_width=True)
+            else:
+                st.info("No dollar P&L values in this slice.")
+
+        rrs = pd.to_numeric(g["PnL_from_RR"], errors="coerce").dropna()
+        expc = float(rrs.mean()) if len(rrs) else float("nan")
+        gw = float(rrs[rrs > 0].sum()); gl = float(abs(rrs[rrs < 0].sum()))
+        pf_r = gw / gl if gl > 0 else float("nan")
+        chips = [("EXPECTANCY", "-" if expc != expc else f"{expc:+.2f}R",
+                  "#16a34a" if expc == expc and expc >= 0 else "#ef4444"),
+                 ("PROFIT FACTOR", "-" if pf_r != pf_r else f"{pf_r:.2f}",
+                  "#16a34a" if pf_r == pf_r and pf_r >= 1 else "#ef4444")]
+        if has_usd:
+            net_u = float(usd.dropna().sum()); avg_u = float(usd.dropna().mean())
+            costs = 0.0
+            for cc in ("Commission", "Swap"):
+                if cc in g.columns:
+                    costs += float(pd.to_numeric(g[cc], errors="coerce").fillna(0).sum())
+            chips += [("NET $", f"{'-' if net_u < 0 else ''}${abs(net_u):,.0f}",
+                       "#16a34a" if net_u >= 0 else "#ef4444"),
+                      ("AVG $/TRADE", f"{'-' if avg_u < 0 else ''}${abs(avg_u):,.2f}", "#0f172a"),
+                      ("COSTS", f"-${abs(costs):,.0f}", "#64748b")]
+        st.markdown(
+            "<div style='display:flex;gap:12px;flex-wrap:wrap;margin:10px 0 4px;'>" + "".join(
+                f"<div style='flex:1;min-width:130px;background:#f8f9fc;border-radius:12px;"
+                f"padding:12px 14px;'>"
+                f"<div style='font-size:11px;font-weight:600;letter-spacing:0.06em;color:#94a3b8;'>{k}</div>"
+                f"<div style='font-size:21px;font-weight:800;color:{c};'>{v}</div></div>"
+                for k, v, c in chips) + "</div>", unsafe_allow_html=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
 
