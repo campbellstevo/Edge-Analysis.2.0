@@ -1037,6 +1037,16 @@ def inject_theme():
         filter: none !important;
     }}
 
+    /* Bordered st.container = house card */
+    [data-testid="stVerticalBlockBorderWrapper"] {{
+        background: #ffffff;
+        border: 1px solid #eef0f4 !important;
+        border-radius: 16px;
+        padding: 18px 22px 20px;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+        margin: 6px 0 18px;
+    }}
+
     /* No copy-link icons on heading hover */
     [data-testid="stHeaderActionElements"] {{ display: none !important; }}
     h1 > a, h2 > a, h3 > a, h4 > a {{ display: none !important; }}
@@ -1347,6 +1357,10 @@ def inject_dark_overlay():
         color: #e8ebf1 !important;
     }
     .stTabs [data-baseweb="tab-list"] { background: transparent !important; }
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        background: #161b27 !important;
+        border-color: rgba(255,255,255,0.09) !important;
+    }
     .ea-pb-lab { color: #e5e7eb !important; }
     .ea-pb-n { color: #6b7280 !important; }
     .ea-pb-track { background: #1a1f2b !important; }

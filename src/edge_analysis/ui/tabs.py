@@ -429,14 +429,30 @@ def _parse_targeted_rr_mid(val) -> float:
 
 
 # ───────────────────────────── Growth tab ────────────────────────────────────
-def _growth_tab(f: pd.DataFrame, df_all: pd.DataFrame, styler):
-    st.markdown('<div class="section">', unsafe_allow_html=True)
+def _perf_settings(g: pd.DataFrame):
+    """Monthly target / max-loss: auto from the data, editable via the pencil popover."""
+    mr = g.set_index("__Date")["PnL_from_RR"].resample("MS").agg(["sum", "count"])
+    mr = mr[mr["count"] > 0]
+    if len(mr) >= 2:
+        exp_t = float(pd.to_numeric(g["PnL_from_RR"], errors="coerce").dropna().mean() or 0)
+        tpm = float(mr["count"].mean())
+        sd_m = float(mr["sum"].std()) if len(mr) >= 3 else float(mr["sum"].abs().mean())
+        auto_tgt = max(1.0, round(exp_t * tpm - 0.25 * (sd_m or 0.0), 1))
+    else:
+        auto_tgt = 5.0
+    auto_stop = -6.0
+    if "ea_m_tgt" not in st.session_state:
+        st.session_state["ea_m_tgt"] = float(auto_tgt)
+    if "ea_m_stop" not in st.session_state:
+        st.session_state["ea_m_stop"] = float(auto_stop)
+    return (float(st.session_state["ea_m_tgt"]),
+            float(st.session_state["ea_m_stop"]), auto_tgt)
 
+
+def _perf_prep(f: pd.DataFrame):
+    """Shared date/R prep for the Performance cards. Returns g with __Date."""
     if f is None or f.empty:
-        st.info("No dated rows yet. Add some trades or adjust filters.")
-        st.markdown("</div>", unsafe_allow_html=True)
-        return
-
+        return None
     g = f.copy()
     date_col = None
     if "Date" in g.columns:
@@ -447,193 +463,98 @@ def _growth_tab(f: pd.DataFrame, df_all: pd.DataFrame, styler):
             if cl == "date" or "date" in cl or "time" in cl:
                 date_col = c
                 break
-
     if not date_col:
-        st.warning("No date-like column found in complete trades.")
-        st.info("No dated rows yet. Add some trades or adjust filters.")
-        st.markdown("</div>", unsafe_allow_html=True)
-        return
-
+        return None
     g["__Date"] = g[date_col].astype(str).str.replace(r"\s*\(GMT.*\)$", "", regex=True)
     g["__Date"] = pd.to_datetime(g["__Date"], errors="coerce")
     g = g[g["__Date"].notna()].copy()
     if g.empty:
-        with st.expander("Debug: date parsing", expanded=False):
-            try:
-                st.write("Sample raw values:", f[date_col].head(5).tolist())
-            except Exception:
-                pass
-        st.info("No dated rows yet. Add some trades or adjust filters.")
-        st.markdown("</div>", unsafe_allow_html=True)
-        return
-
+        return None
     try:
         if getattr(g["__Date"].dt, "tz", None) is not None:
             g["__Date"] = g["__Date"].dt.tz_localize(None)
     except Exception:
         pass
-
     if "PnL_from_RR" not in g.columns:
         rr_col = "Closed RR Num" if "Closed RR Num" in g.columns else "Closed RR"
         g["PnL_from_RR"] = g.get(rr_col, 0.0).fillna(0.0)
+    return g.sort_values("__Date")
 
-    g = g.sort_values("__Date").copy()
-    g_indexed = g.set_index("__Date")
-    bucket = st.session_state.get("growth_bucket", "Week")
-    if bucket == "Day":
-        eq_df = g_indexed.groupby(g_indexed.index.date)["PnL_from_RR"].sum().reset_index()
-        eq_df.columns = ["Bucket", "PnLBucket"]
-        eq_df["Bucket"] = pd.to_datetime(eq_df["Bucket"])
-        axis_fmt = "%b %d"
-    elif bucket == "Week":
-        eq_df = g_indexed["PnL_from_RR"].resample("W-MON", label="left", closed="left").sum().reset_index()
-        eq_df.columns = ["Bucket", "PnLBucket"]
-        axis_fmt = "%b %d"
-    else:
-        eq_df = g_indexed["PnL_from_RR"].resample("MS").sum().reset_index()
-        eq_df.columns = ["Bucket", "PnLBucket"]
-        axis_fmt = "%b %Y"
 
-    eq_df = eq_df[eq_df["Bucket"].notna()]
-    eq_df["CumPnL"] = eq_df["PnLBucket"].fillna(0).cumsum()
+def _month_card(f: pd.DataFrame, styler) -> None:
+    """Card 1 — This month: month R + week delta, target/stop pills, chart, progress, chips."""
+    g = _perf_prep(f)
+    if g is None:
+        st.info("No dated rows yet. Add some trades or adjust filters.")
+        return
+    TGT_R, STOP_R, auto_tgt = _perf_settings(g)
+    daily = g.set_index("__Date")["PnL_from_RR"].groupby(pd.Grouper(freq="D")).sum().dropna()
+    now_p = pd.Timestamp.now().to_period("M")
+    md = daily[daily.index.to_period("M") == now_p].cumsum().reset_index()
+    md.columns = ["Date", "Cum"]
+    cur = float(md["Cum"].iloc[-1]) if not md.empty else 0.0
+    n_tr = int((g["__Date"].dt.to_period("M") == now_p).sum())
+    wk_r = float(g.loc[g["__Date"] >= (pd.Timestamp.now() - pd.Timedelta(days=7)),
+                       "PnL_from_RR"].sum())
 
-    def _x_enc(fmt, ang=-45):
-        return alt.X("Bucket:T", title=None,
-                     axis=alt.Axis(format=fmt, labelAngle=ang, labelLimit=100,
-                                   labelOverlap=False, tickCount=8),
-                     scale=alt.Scale(nice=False, padding=0.02))
+    with st.container(border=True):
+        h1, h2 = st.columns([1.25, 1])
+        with h1:
+            wc = "#16a34a" if wk_r >= 0 else "#ef4444"
+            arrow = "▲" if wk_r >= 0 else "▼"
+            cc = "#16a34a" if cur >= 0 else "#ef4444"
+            st.markdown(
+                f"<div style='font-size:12px;font-weight:700;letter-spacing:0.08em;"
+                f"color:#94a3b8;'>{pd.Timestamp.now().strftime('%B').upper()}</div>"
+                f"<div style='font-size:38px;font-weight:800;color:{cc};line-height:1.1;'>"
+                f"{cur:+,.1f}R"
+                f"<span style='font-size:15px;font-weight:700;color:{wc};margin-left:14px;'>"
+                f"{arrow} {wk_r:+.1f}R this week</span></div>",
+                unsafe_allow_html=True)
+        with h2:
+            p1, p2 = st.columns([2.6, 1])
+            with p1:
+                st.markdown(
+                    "<div style='display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;"
+                    "margin-top:6px;'>"
+                    f"<span style='background:#e2f5e9;color:#14532d;font-weight:800;font-size:13.5px;"
+                    f"border-radius:999px;padding:7px 14px;'>Target&nbsp; {TGT_R:.1f}R</span>"
+                    f"<span style='background:#fde8e8;color:#7f1d1d;font-weight:800;font-size:13.5px;"
+                    f"border-radius:999px;padding:7px 14px;'>Max loss&nbsp; {STOP_R:.1f}R</span>"
+                    "</div>"
+                    "<div style='text-align:right;font-size:11.5px;color:#94a3b8;margin-top:5px;'>"
+                    "auto from your data · edit →</div>",
+                    unsafe_allow_html=True)
+            with p2:
+                try:
+                    pop = st.popover("✎")
+                except Exception:
+                    pop = st.expander("✎")
+                with pop:
+                    st.number_input("Monthly target (R)", min_value=0.5, max_value=50.0,
+                                    step=0.5, key="ea_m_tgt")
+                    st.number_input("Monthly max loss (R)", min_value=-30.0, max_value=-1.0,
+                                    step=0.5, key="ea_m_stop")
+                    st.caption(f"Auto: target {auto_tgt:+.1f}R · max loss -6R (your rule)")
 
-    x_time = _x_enc(axis_fmt)
-    pnl_vals = _to_alt_values(eq_df[["Bucket", "CumPnL"]])
-
-    wr = g[["__Date", "Outcome"]].dropna()
-    wr = wr[wr["Outcome"].isin(["Win", "BE", "Loss"])]
-    wr_vals = []
-    if not wr.empty:
-        wr_indexed = wr.set_index("__Date")
-        if bucket == "Day":
-            wr_grouped = (wr_indexed.groupby(wr_indexed.index.date)
-                          .agg(trades=("Outcome", "count"), wins=("Outcome", lambda s: (s == "Win").sum()))
-                          .reset_index())
-            wr_grouped.columns = ["Bucket", "trades", "wins"]
-            wr_grouped["Bucket"] = pd.to_datetime(wr_grouped["Bucket"])
-        elif bucket == "Week":
-            wr_grouped = (wr_indexed.resample("W-MON", label="left", closed="left")
-                          .agg(trades=("Outcome", "count"), wins=("Outcome", lambda s: (s == "Win").sum()))
-                          .reset_index())
-            wr_grouped.columns = ["Bucket", "trades", "wins"]
-        else:
-            wr_grouped = (wr_indexed.resample("MS")
-                          .agg(trades=("Outcome", "count"), wins=("Outcome", lambda s: (s == "Win").sum()))
-                          .reset_index())
-            wr_grouped.columns = ["Bucket", "trades", "wins"]
-
-        wr_grouped["CumTrades"] = wr_grouped["trades"].cumsum()
-        wr_grouped["CumWins"] = wr_grouped["wins"].cumsum()
-        wr_grouped["Win %"] = np.where(
-            wr_grouped["CumTrades"] > 0,
-            (wr_grouped["CumWins"] / wr_grouped["CumTrades"]) * 100.0, 0.0)
-        wr_vals = _to_alt_values(
-            wr_grouped[["Bucket", "Win %"]].assign(**{"Win %": lambda d: d["Win %"].round(2)}))
-
-    latest_wr = float("nan")
-    oc = g["Outcome"] if "Outcome" in g.columns else None
-    if oc is not None:
-        counted = oc.isin(["Win", "BE", "Loss"])
-        if counted.any():
-            latest_wr = float((oc[counted] == "Win").mean() * 100)
-    latest_eq = float(eq_df["CumPnL"].dropna().iloc[-1]) if not eq_df.empty else float("nan")
-
-    if not (pd.isna(latest_wr) or pd.isna(latest_eq)):
-        if latest_eq > 0 and latest_wr >= 30:
-            _insight_box(
-                f"Cumulative PnL is <b>+{latest_eq:,.1f}R</b> with a win rate of "
-                f"<b>{latest_wr:.1f}%</b>. System is profitable — protect the equity curve "
-                f"by respecting your weekly profit target and stepping away once it's hit.", "good")
-        elif latest_eq > 0 and latest_wr < 30:
-            _insight_box(
-                f"Cumulative PnL is positive at <b>+{latest_eq:,.1f}R</b> but win rate is "
-                f"<b>{latest_wr:.1f}%</b>. Profitability is driven by RR, not win rate — "
-                f"losing streaks will feel extended. Stick to the 3SL.", "warn")
-        else:
-            _insight_box(
-                f"Cumulative PnL is <b>{latest_eq:,.1f}R</b>. Review whether losses are "
-                f"systematic (wrong conditions, wrong session) or behavioural (overtrading, "
-                f"revenge). Check the Psychology tab for flags.", "bad")
-
-    usd = pd.to_numeric(g.get("PnL (USD)"), errors="coerce") if "PnL (USD)" in g.columns else None
-    has_usd = usd is not None and usd.notna().any()
-    # ── monthly settings: auto from the data, editable, drive everything below ──
-    mr = g.set_index("__Date")["PnL_from_RR"].resample("MS").agg(["sum", "count"])
-    mr = mr[mr["count"] > 0]
-    if len(mr) >= 2:
-        exp_t = float(pd.to_numeric(g["PnL_from_RR"], errors="coerce").dropna().mean() or 0)
-        tpm = float(mr["count"].mean())
-        sd_m = float(mr["sum"].std()) if len(mr) >= 3 else float(mr["sum"].abs().mean())
-        auto_tgt = max(1.0, round(exp_t * tpm - 0.25 * (sd_m or 0.0), 1))
-    else:
-        auto_tgt = 5.0
-    auto_stop = -6.0  # the circuit-breaker rule
-    if "ea_m_tgt" not in st.session_state:
-        st.session_state["ea_m_tgt"] = float(auto_tgt)
-    if "ea_m_stop" not in st.session_state:
-        st.session_state["ea_m_stop"] = float(auto_stop)
-    sc1, sc2 = st.columns(2)
-    with sc1:
-        st.number_input("Monthly target (R)", min_value=0.5, max_value=50.0, step=0.5,
-                        key="ea_m_tgt")
-    with sc2:
-        st.number_input("Monthly max loss (R)", min_value=-30.0, max_value=-1.0, step=0.5,
-                        key="ea_m_stop")
-    st.caption(f"Auto from your data: target {auto_tgt:+.1f}R (expectancy \u00d7 trades per month), "
-               f"max loss {auto_stop:+.0f}R (your circuit-breaker rule). Edit to override \u2014 "
-               "the chart, chips and Targets section all follow these.")
-    TGT_R = float(st.session_state.get("ea_m_tgt", auto_tgt))
-    STOP_R = float(st.session_state.get("ea_m_stop", auto_stop))
-
-    st.markdown("### Equity")
-    eq_view = st.radio("Equity view", ["This month", "All time", "Stacked"],
-                       horizontal=True, key="eq_view",
-                       label_visibility="collapsed") or "This month"
-
-    daily_all = (g.set_index("__Date")["PnL_from_RR"]
-                 .groupby(pd.Grouper(freq="D")).sum().dropna())
-    daily_all = daily_all[daily_all.index.notna()]
-
-    def _month_daily(period):
-        m = daily_all[daily_all.index.to_period("M") == period]
-        if m.empty:
-            return None
-        out = m.cumsum().reset_index()
-        out.columns = ["Date", "Cum"]
-        out["Day"] = out["Date"].dt.day
-        return out
-
-    def _aux_rules():
-        lay = []
-        for yv, col in ((0.0, "#cbd5e1"), (TGT_R, "#16a34a"), (STOP_R, "#ef4444")):
-            dash = [5, 5] if yv != 0 else [2, 3]
-            lay.append(alt.Chart(alt.Data(values=[{"y": yv}]))
-                       .mark_rule(color=col, strokeDash=dash,
-                                  strokeWidth=1.5 if yv == 0 else 2)
-                       .encode(y=alt.Y("y:Q", title=None)))
-        return lay
-
-    if eq_view == "This month":
-        now_p = pd.Timestamp.now().to_period("M")
-        md = _month_daily(now_p)
-        if md is None or md.empty:
+        if md.empty:
             st.info("No trades this month yet.")
         else:
-            lastd = pd.Timestamp(now_p.end_time.date())
             firstd = pd.Timestamp(now_p.start_time.date())
+            lastd = pd.Timestamp(now_p.end_time.date())
             ylo = min(STOP_R - 1.5, float(md["Cum"].min()) - 1)
             yhi = max(TGT_R + 1.5, float(md["Cum"].max()) + 1)
             ysc = alt.Scale(domain=[ylo, yhi])
-            vals = _to_alt_values(md[["Date", "Cum"]])
-            base = alt.Chart(alt.Data(values=vals))
             xsc = alt.Scale(domain=[firstd.isoformat(), lastd.isoformat()])
             xax = alt.Axis(format="%d", labelColor="#94a3b8", grid=False, tickCount=10)
+            vals = _to_alt_values(md[["Date", "Cum"]])
+            lays = []
+            for yv, col in ((0.0, "#cbd5e1"), (TGT_R, "#16a34a"), (STOP_R, "#ef4444")):
+                lays.append(alt.Chart(alt.Data(values=[{"y": yv}]))
+                            .mark_rule(color=col, strokeDash=[5, 5] if yv else [2, 3],
+                                       strokeWidth=2 if yv else 1.5)
+                            .encode(y=alt.Y("y:Q", title=None)))
+            base = alt.Chart(alt.Data(values=vals))
             ln = base.mark_line(color="#4800ff", strokeWidth=3).encode(
                 x=alt.X("Date:T", title=None, scale=xsc, axis=xax),
                 y=alt.Y("Cum:Q", title=None, scale=ysc))
@@ -641,155 +562,118 @@ def _growth_tab(f: pd.DataFrame, df_all: pd.DataFrame, styler):
                   .mark_circle(color="#4800ff", size=110, stroke="#ffffff", strokeWidth=2)
                   .encode(x=alt.X("Date:T", title=None, scale=xsc),
                           y=alt.Y("Cum:Q", title=None, scale=ysc)))
-            st.altair_chart(styler(alt.layer(*_aux_rules(), ln, pt)
-                                   .properties(height=320)),
+            st.altair_chart(styler(alt.layer(*lays, ln, pt).properties(height=290)),
                             use_container_width=True)
-            st.caption(f"Green dash = your {TGT_R:+.1f}R target \u00b7 "
-                       f"red dash = the {STOP_R:+.0f}R month stop.")
-            cur = float(md["Cum"].iloc[-1])
-            maxdd = float((md["Cum"].cummax() - md["Cum"]).max())
-            chips = [("MONTH", f"{cur:+.1f}R", "#16a34a" if cur >= 0 else "#ef4444"),
-                     ("TO TARGET", f"{max(0.0, TGT_R - cur):.1f}R",
-                      "#16a34a" if cur >= TGT_R else "#0f172a"),
-                     ("MAX DD", f"-{maxdd:.1f}R", "#ef4444" if maxdd > 0 else "#64748b"),
-                     ("STOP ROOM", f"{cur - STOP_R:.1f}R",
-                      "#ef4444" if cur - STOP_R < 2 else "#0f172a")]
+
+            prog = max(0.0, min(1.0, cur / TGT_R)) if TGT_R > 0 else 0.0
+            neg = max(0.0, min(1.0, cur / STOP_R)) if STOP_R < 0 else 0.0
+            barw = prog if cur >= 0 else neg
+            barc = "#16a34a" if cur >= 0 else "#ef4444"
+            sub = (f"{cur:+.1f}R now · {max(0.0, TGT_R - cur):.1f}R to go"
+                   + (f" · {cur - STOP_R:.1f}R above the stop" if cur < 0 else ""))
             st.markdown(
-                "<div style='display:flex;gap:12px;flex-wrap:wrap;margin:10px 0 4px;'>" + "".join(
-                    f"<div style='flex:1;min-width:130px;background:#f8f9fc;border-radius:12px;"
+                "<div style='font-size:11px;font-weight:700;letter-spacing:0.06em;"
+                "color:#94a3b8;margin-top:2px;'>PROGRESS TO TARGET</div>"
+                f"<div style='background:#f1f5f9;border-radius:7px;height:13px;margin:7px 0 6px;'>"
+                f"<div style='width:{barw * 100:.1f}%;height:13px;border-radius:7px;"
+                f"background:{barc};'></div></div>"
+                f"<div style='font-size:13px;color:#64748b;'>{sub}</div>",
+                unsafe_allow_html=True)
+
+            maxdd = float((md["Cum"].cummax() - md["Cum"]).max())
+            pace_c = "#ef4444" if n_tr > 12 else "#0f172a"
+            chips = [("TO TARGET", f"{max(0.0, TGT_R - cur):.1f}R",
+                      "#16a34a" if cur >= TGT_R else "#0f172a"),
+                     ("MAX DRAWDOWN", f"-{maxdd:.1f}R", "#ef4444" if maxdd > 0 else "#64748b"),
+                     ("STOP ROOM", f"{cur - STOP_R:.1f}R",
+                      "#ef4444" if cur - STOP_R < 2 else "#0f172a"),
+                     ("TRADES · PACE", f"{n_tr} of 12" + (" ⚠" if n_tr > 12 else ""),
+                      pace_c)]
+            st.markdown(
+                "<div style='display:flex;gap:12px;flex-wrap:wrap;margin-top:12px;'>" + "".join(
+                    f"<div style='flex:1;min-width:140px;background:#f8f9fc;border-radius:12px;"
                     f"padding:12px 14px;'>"
-                    f"<div style='font-size:11px;font-weight:600;letter-spacing:0.06em;color:#94a3b8;'>{k}</div>"
+                    f"<div style='font-size:11px;font-weight:600;letter-spacing:0.06em;"
+                    f"color:#94a3b8;'>{k}</div>"
                     f"<div style='font-size:21px;font-weight:800;color:{c};'>{v}</div></div>"
                     for k, v, c in chips) + "</div>", unsafe_allow_html=True)
 
-    elif eq_view == "Stacked":
-        periods = sorted(daily_all.index.to_period("M").unique())[-6:]
-        now_p = pd.Timestamp.now().to_period("M")
-        lines, endpts, finishes = [], [], []
-        for p_ in periods:
-            md = _month_daily(p_)
-            if md is None or len(md) < 2:
-                continue
-            lab = p_.strftime("%B")
-            cur_m = p_ == now_p
-            for _, r in md.iterrows():
-                lines.append({"Day": int(r["Day"]), "Cum": round(float(r["Cum"]), 2),
-                              "Month": lab, "kind": "cur" if cur_m else "past"})
-            fin = float(md["Cum"].iloc[-1])
-            endpts.append({"Day": int(md["Day"].iloc[-1]), "Cum": round(fin, 2),
-                           "Month": lab,
-                           "col": "cur" if cur_m else ("up" if fin >= 0 else "down")})
-            finishes.append((lab + (" - live" if cur_m else ""), fin, cur_m))
-        if not lines:
-            st.info("Not enough monthly history yet.")
-        else:
-            xsc = alt.Scale(domain=[1, 31])
-            ally = [r["Cum"] for r in lines]
-            ysc = alt.Scale(domain=[min(STOP_R - 1.5, min(ally) - 1),
-                                    max(TGT_R + 1.5, max(ally) + 1)])
-            base = alt.Chart(alt.Data(values=lines))
-            past = base.transform_filter(alt.datum.kind == "past").mark_line(
-                color="#d5d9e2", strokeWidth=2).encode(
-                x=alt.X("Day:Q", title="Day of month", scale=xsc,
-                        axis=alt.Axis(tickMinStep=1, grid=False, labelColor="#94a3b8",
-                                      titleColor="#94a3b8")),
-                y=alt.Y("Cum:Q", title=None, scale=ysc),
-                detail="Month:N",
-                tooltip=[alt.Tooltip("Month:N"), alt.Tooltip("Cum:Q", format="+.2f")])
-            curl = base.transform_filter(alt.datum.kind == "cur").mark_line(
-                color="#4800ff", strokeWidth=3.5).encode(
-                x=alt.X("Day:Q", title=None, scale=xsc),
-                y=alt.Y("Cum:Q", title=None, scale=ysc), detail="Month:N",
-                tooltip=[alt.Tooltip("Month:N"), alt.Tooltip("Cum:Q", format="+.2f")])
-            dots = (alt.Chart(alt.Data(values=endpts))
-                    .mark_circle(size=90, stroke="#ffffff", strokeWidth=2)
-                    .encode(x=alt.X("Day:Q", title=None, scale=xsc),
-                            y=alt.Y("Cum:Q", title=None, scale=ysc),
-                            color=alt.Color("col:N", legend=None,
-                                            scale=alt.Scale(domain=["cur", "up", "down"],
-                                                            range=["#4800ff", "#16a34a", "#ef4444"])),
-                            tooltip=[alt.Tooltip("Month:N"), alt.Tooltip("Cum:Q", format="+.2f")]))
-            st.altair_chart(styler(alt.layer(*_aux_rules(), past, curl, dots)
-                                   .properties(height=330)),
-                            use_container_width=True)
-            st.caption(f"Every month runs day 1\u201331 from zero \u00b7 purple = this month \u00b7 "
-                       f"green dash = {TGT_R:+.1f}R target \u00b7 red dash = {STOP_R:+.0f}R stop. "
-                       "Hover any line for the month.")
-            fin_html = "".join(
-                f"<div style='flex:1;min-width:120px;background:#f8f9fc;border-radius:12px;"
-                f"padding:10px 13px;'>"
-                f"<div style='font-size:11px;font-weight:700;letter-spacing:0.05em;"
-                f"color:{'#4800ff' if c else '#94a3b8'};'>{m.upper()}</div>"
-                f"<div style='font-size:19px;font-weight:800;"
-                f"color:{'#4800ff' if c else ('#16a34a' if v >= 0 else '#ef4444')};'>{v:+.1f}R</div></div>"
-                for m, v, c in reversed(finishes))
-            st.markdown("<div style='display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 4px;'>"
-                        + fin_html + "</div>", unsafe_allow_html=True)
 
-    else:
-        vc1, vc2 = st.columns([1, 1])
-        with vc1:
+def _alltime_card(f: pd.DataFrame, styler) -> None:
+    """Card 3 — All time: curve with R/$ + bucket in the header, one unified stat row."""
+    g = _perf_prep(f)
+    if g is None:
+        return
+    usd = pd.to_numeric(g.get("PnL (USD)"), errors="coerce") if "PnL (USD)" in g.columns else None
+    has_usd = usd is not None and usd.notna().any()
+    with st.container(border=True):
+        h1, h2, h3 = st.columns([2.2, 0.9, 1])
+        with h1:
+            st.markdown("<div style='font-size:21px;font-weight:800;color:#0f172a;"
+                        "margin-top:4px;'>All time</div>", unsafe_allow_html=True)
+        with h2:
             view = "R"
             if has_usd:
                 view = st.radio("Units", ["R", "$"], horizontal=True, key="eq_units",
                                 label_visibility="collapsed") or "R"
-        with vc2:
-            st.selectbox("Time Bucket", ["Day", "Week", "Month"], index=1,
-                         key="growth_bucket", label_visibility="collapsed")
-        if view == "R":
-            if pnl_vals:
-                area = (alt.Chart(alt.Data(values=pnl_vals)).mark_area(opacity=0.12, color="#4800ff")
-                        .encode(x=x_time, y=alt.Y("CumPnL:Q", title="Cumulative R",
-                                                   scale=alt.Scale(padding=14))))
-                line = (alt.Chart(alt.Data(values=pnl_vals))
-                        .mark_line(strokeWidth=2, color="#4800ff", interpolate="linear")
-                        .encode(x=x_time, y=alt.Y("CumPnL:Q", title=None, scale=alt.Scale(padding=14))))
-                st.altair_chart(styler(alt.layer(area, line).properties(height=300)),
-                                use_container_width=True)
-            else:
-                st.info("Not enough data for the equity chart.")
+        with h3:
+            bucket = st.selectbox("Time Bucket", ["Day", "Week", "Month"], index=1,
+                                  key="growth_bucket", label_visibility="collapsed")
+        gi = g.set_index("__Date")
+        if view == "$" and has_usd:
+            ser = pd.Series(usd.values, index=g["__Date"]).dropna()
+            ytitle = "Cumulative $"
         else:
-            gu = g[["__Date"]].copy(); gu["__pnl"] = usd.values
-            gu = gu[gu["__pnl"].notna()].sort_values("__Date")
-            gu["cum"] = gu["__pnl"].cumsum()
-            uvals = _to_alt_values(gu[["__Date", "cum"]].rename(columns={"__Date": "Bucket", "cum": "CumUSD"}))
-            if uvals:
-                area = (alt.Chart(alt.Data(values=uvals)).mark_area(opacity=0.12, color="#4800ff")
-                        .encode(x=alt.X("Bucket:T", title=None), y=alt.Y("CumUSD:Q", title="Cumulative $")))
-                line = (alt.Chart(alt.Data(values=uvals)).mark_line(strokeWidth=2, color="#4800ff")
-                        .encode(x=alt.X("Bucket:T", title=None), y=alt.Y("CumUSD:Q", title=None)))
-                st.altair_chart(styler(alt.layer(area, line).properties(height=300)),
-                                use_container_width=True)
-            else:
-                st.info("No dollar P&L values in this slice.")
+            ser = gi["PnL_from_RR"]
+            ytitle = "Cumulative R"
+        freq = {"Day": "D", "Week": "W-MON", "Month": "MS"}[bucket]
+        eq = ser.resample(freq).sum().cumsum().reset_index()
+        eq.columns = ["Bucket", "Cum"]
+        eq = eq[eq["Bucket"].notna()]
+        vals = _to_alt_values(eq)
+        if vals:
+            fmt = "%b %d" if bucket != "Month" else "%b %Y"
+            xenc = alt.X("Bucket:T", title=None,
+                         axis=alt.Axis(format=fmt, labelAngle=-45, labelColor="#94a3b8",
+                                       labelOverlap=True, tickCount=8))
+            area = (alt.Chart(alt.Data(values=vals)).mark_area(opacity=0.12, color="#4800ff")
+                    .encode(x=xenc, y=alt.Y("Cum:Q", title=ytitle, scale=alt.Scale(padding=14))))
+            line = (alt.Chart(alt.Data(values=vals)).mark_line(strokeWidth=2, color="#4800ff")
+                    .encode(x=xenc, y=alt.Y("Cum:Q", title=None, scale=alt.Scale(padding=14))))
+            st.altair_chart(styler(alt.layer(area, line).properties(height=290)),
+                            use_container_width=True)
+        else:
+            st.info("Not enough data for the equity chart.")
 
         rrs = pd.to_numeric(g["PnL_from_RR"], errors="coerce").dropna()
-        expc = float(rrs.mean()) if len(rrs) else float("nan")
+        n = int(len(rrs))
+        wins = rrs[rrs > 0.15]
+        win_pct = 100.0 * len(wins) / n if n else 0.0
+        avg_win = float(wins.mean()) if len(wins) else float("nan")
+        expc = float(rrs.mean()) if n else float("nan")
         gw = float(rrs[rrs > 0].sum()); gl = float(abs(rrs[rrs < 0].sum()))
-        pf_r = gw / gl if gl > 0 else float("nan")
-        chips = [("EXPECTANCY", "-" if expc != expc else f"{expc:+.2f}R",
+        pf = gw / gl if gl > 0 else float("nan")
+        net = float(rrs.sum())
+        chips = [("NET", f"{net:+.1f}R", "#16a34a" if net >= 0 else "#ef4444"),
+                 ("TRADES", f"{n}", "#0f172a"),
+                 ("WIN", f"{win_pct:.0f}%", "#0f172a"),
+                 ("AVG WIN", "—" if avg_win != avg_win else f"{avg_win:.2f}R", "#4800ff"),
+                 ("EXPECTANCY", "—" if expc != expc else f"{expc:+.2f}R",
                   "#16a34a" if expc == expc and expc >= 0 else "#ef4444"),
-                 ("PROFIT FACTOR", "-" if pf_r != pf_r else f"{pf_r:.2f}",
-                  "#16a34a" if pf_r == pf_r and pf_r >= 1 else "#ef4444")]
+                 ("PROFIT FACTOR", "—" if pf != pf else f"{pf:.2f}",
+                  "#16a34a" if pf == pf and pf >= 1 else "#ef4444")]
         if has_usd:
-            net_u = float(usd.dropna().sum()); avg_u = float(usd.dropna().mean())
-            costs = 0.0
-            for cc in ("Commission", "Swap"):
-                if cc in g.columns:
-                    costs += float(pd.to_numeric(g[cc], errors="coerce").fillna(0).sum())
-            chips += [("NET $", f"{'-' if net_u < 0 else ''}${abs(net_u):,.0f}",
-                       "#16a34a" if net_u >= 0 else "#ef4444"),
-                      ("AVG $/TRADE", f"{'-' if avg_u < 0 else ''}${abs(avg_u):,.2f}", "#0f172a"),
-                      ("COSTS", f"-${abs(costs):,.0f}", "#64748b")]
+            net_u = float(usd.dropna().sum())
+            chips.append(("NET $", f"{'-' if net_u < 0 else ''}${abs(net_u):,.0f}",
+                          "#16a34a" if net_u >= 0 else "#ef4444"))
         st.markdown(
-            "<div style='display:flex;gap:12px;flex-wrap:wrap;margin:10px 0 4px;'>" + "".join(
-                f"<div style='flex:1;min-width:130px;background:#f8f9fc;border-radius:12px;"
-                f"padding:12px 14px;'>"
-                f"<div style='font-size:11px;font-weight:600;letter-spacing:0.06em;color:#94a3b8;'>{k}</div>"
-                f"<div style='font-size:21px;font-weight:800;color:{c};'>{v}</div></div>"
+            "<div style='display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;'>" + "".join(
+                f"<div style='flex:1;min-width:118px;background:#f8f9fc;border-radius:12px;"
+                f"padding:11px 13px;'>"
+                f"<div style='font-size:10.5px;font-weight:600;letter-spacing:0.05em;"
+                f"color:#94a3b8;'>{k}</div>"
+                f"<div style='font-size:19px;font-weight:800;color:{c};'>{v}</div></div>"
                 for k, v, c in chips) + "</div>", unsafe_allow_html=True)
-
-    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ── Account comparison cards ──────────────────────────────────────────────────
@@ -4066,15 +3950,11 @@ def _early_close_tab_salty(df: pd.DataFrame, styler):
     st.markdown("</div>", unsafe_allow_html=True)
 
 def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
-    """Monthly profit target, month-by-month track record, weekly/monthly records."""
-    st.markdown("### Monthly Target")
+    """Card 2 — Month by month: month cards or the stacked race, records, evidence strip."""
     if df_raw is None or df_raw.empty or "Date" not in df_raw.columns:
-        _unavailable("Targets")
         return
     g = df_raw.copy()
     g["__dt"] = pd.to_datetime(g["Date"], errors="coerce")
-    # timestamps are UTC — shift to the trader's own calendar, inferred from
-    # their journal's hour column
     try:
         from edge_analysis.ui.plan_tabs import get_tz_offset
         if getattr(g["__dt"].dt, "tz", None) is not None:
@@ -4085,231 +3965,166 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
     g = g[g["__dt"].notna()]
     rr_col = next((c for c in ["Closed RR", "RR", "Closed R"] if c in g.columns), None)
     if rr_col is None or g.empty:
-        _unavailable("Targets")
         return
     g["__rr"] = pd.to_numeric(g[rr_col], errors="coerce")
     g = g[g["__rr"].notna()]
     if g.empty:
-        _unavailable("Targets")
         return
     usd = pd.to_numeric(g.get("PnL"), errors="coerce") if "PnL" in g.columns else None
     has_usd = usd is not None and usd.notna().any()
     if has_usd:
         g["__usd"] = usd
-
     need_r = float(st.session_state.get("ea_m_tgt", 5.0))
-    risk_pct = 1.0
-    target_pct = need_r * risk_pct
-    st.caption(f"Tracking the monthly target set at the top of this tab \u2014 "
-               f"{need_r:.1f}R a month at {risk_pct:.0f}% risk.")
-    now = pd.Timestamp.now()
-    cur = g[(g["__dt"].dt.year == now.year) & (g["__dt"].dt.month == now.month)]
-    cur_r = float(cur["__rr"].sum()) if not cur.empty else 0.0
-    prog = max(0.0, min(100.0, cur_r / need_r * 100.0)) if need_r > 0 else 0.0
-    pc = "#16a34a" if cur_r >= need_r else ("#4800ff" if cur_r >= 0 else "#ef4444")
-    st.markdown(
-        f"<div style='background:#fff;border:1px solid rgba(0,0,0,0.06);border-radius:12px;"
-        f"padding:18px 22px;box-shadow:0 2px 12px rgba(0,0,0,0.05);margin:10px 0 4px;'>"
-        f"<div style='display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;'>"
-        f"<div><div style='font-size:12px;font-weight:600;letter-spacing:0.08em;color:#94a3b8;'>"
-        f"{now.strftime('%B %Y').upper()}</div>"
-        f"<div style='font-size:30px;font-weight:800;color:{pc};'>{cur_r:+.1f}R"
-        f"<span style='font-size:15px;color:#64748b;font-weight:600;'> / {need_r:.0f}R target</span></div></div>"
-        f"<div style='font-size:13px;color:#64748b;'>{target_pct:.0f}% at {risk_pct:.2f}% risk = "
-        f"<b>{need_r:.0f}R</b> · {len(cur)} trade{'s' if len(cur) != 1 else ''} this month</div></div>"
-        f"<div style='height:10px;border-radius:5px;background:#eef0f5;margin-top:12px;overflow:hidden;'>"
-        f"<div style='width:{prog:.1f}%;height:10px;background:{pc};border-radius:5px;'></div></div>"
-        f"</div>",
-        unsafe_allow_html=True,
-    )
-    exp = float(g["__rr"].mean())
-    if exp > 0:
-        left_r = max(0.0, need_r - cur_r)
-        n_need = int(np.ceil(left_r / exp)) if left_r > 0 else 0
-        msg = ("Target reached — protect it: cut size or stop for the month."
-               if left_r <= 0 else
-               f"At your <b>{exp:+.2f}R</b> per-trade expectancy, the remaining <b>{left_r:.1f}R</b> "
-               f"needs roughly <b>{n_need}</b> more trades.")
-        _insight_box(msg, "good" if left_r <= 0 else "info")
+    stop_r = float(st.session_state.get("ea_m_stop", -6.0))
 
-    # ── Recommended pace: derived from expectancy, volatility, frequency ─────
-    st.markdown("### Recommended")
-    st.caption("Derived from your own expectancy, volatility and trade frequency — a pace your data supports, not a wish.")
-    sd = float(g["__rr"].std()) if len(g) > 2 else 0.0
-    mg_tmp = g.set_index("__dt").sort_index()
-    _mn = mg_tmp["__rr"].resample("MS").size()
-    tpm_est = float(_mn[_mn > 0].mean()) if (_mn > 0).any() else float(len(g))
-    exp_m = exp * tpm_est
-    sd_m = sd * float(np.sqrt(max(tpm_est, 1.0)))
-    if exp <= 0:
-        _insight_box(
-            "Your expectancy is not positive yet — a monthly profit target isn't meaningful "
-            "until the edge is. Focus on the Refinements tab first.", "warn")
-    else:
-        rec_target = max(1.0, exp_m - 0.25 * sd_m)
-        rec_loss = min(-1.0, exp_m - 1.75 * sd_m)
-        recs = [
-            ("RECOMMENDED MONTHLY TARGET", f"+{rec_target:.0f}R",
-             f"≈ {rec_target * float(risk_pct):.1f}% at {risk_pct:.2f}% risk", "#16a34a"),
-            ("RECOMMENDED MAX MONTHLY LOSS", f"{rec_loss:.0f}R",
-             f"≈ {rec_loss * float(risk_pct):.1f}% — stop trading if hit", "#ef4444"),
-            ("WEEKLY TARGET PACE", f"+{rec_target / 4.33:.1f}R",
-             "monthly target ÷ 4.33 weeks", "#16a34a"),
-            ("WEEKLY LOSS CAP", f"{rec_loss / 4.33:.1f}R",
-             "max monthly loss ÷ 4.33", "#ef4444"),
-        ]
-        cards = "".join(
-            f"<div style='flex:1;min-width:170px;background:#fff;border:1px solid rgba(0,0,0,0.06);"
-            f"border-radius:12px;padding:12px 14px;box-shadow:0 2px 10px rgba(0,0,0,0.04);'>"
-            f"<div style='font-size:11px;font-weight:600;letter-spacing:0.05em;color:#94a3b8;'>{lab}</div>"
-            f"<div style='font-size:22px;font-weight:800;color:{col};'>{val}</div>"
-            f"<div style='font-size:12px;color:#64748b;'>{sub}</div></div>"
-            for lab, val, sub, col in recs)
-        st.markdown(f"<div style='display:flex;gap:12px;flex-wrap:wrap;margin:6px 0;'>{cards}</div>",
-                    unsafe_allow_html=True)
-        gap = float(target_pct) / float(risk_pct) - rec_target
-        if gap > 1.5:
-            _insight_box(
-                f"Your {target_pct:.0f}% target ({float(target_pct)/float(risk_pct):.0f}R) is "
-                f"<b>{gap:.0f}R above</b> what your current stats support (+{rec_target:.0f}R). "
-                f"Either lower the target or grow the expectancy — chasing the gap is how tilt starts.",
-                "warn")
-        elif gap < -1.5:
-            _insight_box(
-                f"Your data supports more than your {target_pct:.0f}% target — "
-                f"about <b>+{rec_target:.0f}R</b> a month at current pace. Room to aim higher.", "good")
-
-    st.markdown("### Track Record")
-    st.caption("Net R per calendar month" + (" · dollars from MT5 where available." if has_usd else "."))
     mg = g.set_index("__dt").sort_index()
     monthly = mg["__rr"].resample("MS").sum().to_frame("r")
     monthly["n"] = mg["__rr"].resample("MS").size()
     if has_usd:
         monthly["usd"] = mg["__usd"].resample("MS").sum()
     monthly = monthly[monthly["n"] > 0].tail(12)
-    if not monthly.empty and len(monthly) < 6:
-        cards = []
-        now_m = pd.Timestamp.now().to_period("M")
-        for dt_, row in monthly.iterrows():
-            r_ = float(row["r"]); c = "#16a34a" if r_ >= 0 else "#ef4444"
-            badge = ("<span style='background:#e2f5e9;color:#14532d;font-size:11px;font-weight:800;"
-                     "border-radius:999px;padding:3px 10px;margin-left:8px;'>TARGET \u2713</span>"
-                     if r_ >= need_r else "")
-            open_note = " \u00b7 month open" if dt_.to_period("M") == now_m else ""
-            usd_note = ""
-            if has_usd and "usd" in monthly.columns and row.get("usd") == row.get("usd"):
-                u = float(row["usd"])
-                usd_note = f" \u00b7 {'-' if u < 0 else ''}${abs(u):,.0f}"
-            cards.append(
-                f"<div style='flex:1;min-width:210px;max-width:300px;background:#fff;"
-                f"border:1px solid #eef0f4;border-left:5px solid {c};border-radius:0 12px 12px 0;"
-                f"padding:14px 16px;'>"
-                f"<div style='font-size:12px;font-weight:700;letter-spacing:0.08em;color:#94a3b8;'>"
-                f"{dt_.strftime('%b %Y').upper()}{badge}</div>"
-                f"<div style='font-size:30px;font-weight:800;color:{c};margin:2px 0;'>{r_:+.1f}R</div>"
-                f"<div style='font-size:13px;color:#64748b;'>{int(row['n'])} trades{usd_note}{open_note}</div>"
-                f"</div>")
-        st.markdown("<div style='display:flex;gap:14px;flex-wrap:wrap;margin:6px 0 8px;'>"
-                    + "".join(cards) + "</div>", unsafe_allow_html=True)
-        st.caption(f"TARGET \u2713 = month at or above your {target_pct:.0f}% pace ({need_r:.0f}R). "
-                   "The month-by-month chart unlocks at 6 months of history.")
-        hits = int((monthly["r"] >= need_r).sum())
-        pos = int((monthly["r"] > 0).sum())
-        _insight_box(
-            f"<b>{pos}</b> of your last <b>{len(monthly)}</b> months were positive; "
-            f"<b>{hits}</b> hit the {target_pct:.0f}% target pace ({need_r:.0f}R).",
-            "good" if pos >= len(monthly) / 2 else "warn")
-    elif not monthly.empty:
-        md = monthly.reset_index()
-        md.columns = ["dt"] + list(md.columns[1:])
-        md["MonthLab"] = md["dt"].dt.strftime("%b %y")
-        md["NetR"] = md["r"].round(2)
-        md["Colour"] = md["NetR"].apply(lambda x: "good" if x >= 0 else "bad")
-        md["Lab"] = md["NetR"].apply(lambda v: f"{v:+.1f}R")
-        md["Trades"] = md["n"].astype(int)
-        cols = ["MonthLab", "NetR", "Colour", "Lab", "Trades"]
-        if has_usd and "usd" in md.columns:
-            md["USD"] = md["usd"].round(0)
-            cols.append("USD")
-        order = list(md["MonthLab"])
-        vals = _to_alt_values(md[cols])
-        lo = min(float(md["NetR"].min()), 0.0); hi = max(float(md["NetR"].max()), need_r)
-        span = max(hi - lo, 1.0)
-        dom = [lo - span * 0.18, hi + span * 0.22]
-        base = alt.Chart(alt.Data(values=vals))
-        xenc = alt.X("MonthLab:N", sort=order, title=None,
-                     axis=alt.Axis(labelAngle=0, labelFontSize=12, labelColor="#0f172a",
-                                   ticks=False, domain=False))
-        tip = [alt.Tooltip("MonthLab:N", title=" "), alt.Tooltip("NetR:Q", title="Net R", format="+.2f"),
-               alt.Tooltip("Trades:Q")]
-        if "USD" in cols:
-            tip.append(alt.Tooltip("USD:Q", title="Net $", format="+,.0f"))
-        bars = base.mark_bar(size=34, cornerRadiusTopLeft=6, cornerRadiusTopRight=6).encode(
-            x=xenc,
-            y=alt.Y("NetR:Q", title="Net R", scale=alt.Scale(domain=dom),
-                    axis=alt.Axis(format="+.0f", grid=True, gridColor="#eef0f5",
-                                  labelColor="#94a3b8", titleColor="#94a3b8")),
-            color=alt.Color("Colour:N", legend=None,
-                            scale=alt.Scale(domain=["good", "bad"], range=["#16a34a", "#ef4444"])),
-            tooltip=tip)
-        text = base.mark_text(dy=-10, fontSize=12, fontWeight="bold", color="#334155").encode(
-            x=xenc, y=alt.Y("NetR:Q", scale=alt.Scale(domain=dom)), text="Lab:N")
-        zero = (alt.Chart(alt.Data(values=[{"y": 0}]))
-                .mark_rule(color="#cbd5e1", strokeWidth=1.5).encode(y=alt.Y("y:Q", title=None)))
-        tgt = (alt.Chart(alt.Data(values=[{"y": float(need_r)}]))
-               .mark_rule(color="#4800ff", strokeDash=[5, 5], strokeWidth=1.5)
-               .encode(y=alt.Y("y:Q", title=None)))
-        st.altair_chart(styler(alt.layer(zero, tgt, bars, text).properties(height=300)),
-                        use_container_width=True)
-        st.caption(f"Dashed purple line = your {target_pct:.0f}% target pace ({need_r:.0f}R per month).")
-        hits = int((monthly["r"] >= need_r).sum())
-        pos = int((monthly["r"] > 0).sum())
-        _insight_box(
-            f"<b>{pos}</b> of your last <b>{len(monthly)}</b> months were positive; "
-            f"<b>{hits}</b> hit the {target_pct:.0f}% target pace ({need_r:.0f}R).",
-            "good" if pos >= len(monthly) / 2 else "warn")
+    if monthly.empty:
+        return
 
-    st.markdown("### Records")
-    weekly = mg["__rr"].resample("W-MON", label="left", closed="left").sum()
-    wk_n = mg["__rr"].resample("W-MON", label="left", closed="left").size()
-    weekly = weekly[wk_n > 0]
-    rows = []
-    if not weekly.empty:
-        bw, ww = weekly.idxmax(), weekly.idxmin()
-        rows.append(("BEST WEEK", f"{weekly.max():+.1f}R", f"week of {bw.strftime('%d %b')}", "#16a34a"))
-        rows.append(("WORST WEEK", f"{weekly.min():+.1f}R", f"week of {ww.strftime('%d %b')}", "#ef4444"))
-    if not monthly.empty:
+    with st.container(border=True):
+        h1, h2 = st.columns([2.2, 1])
+        with h1:
+            st.markdown("<div style='font-size:21px;font-weight:800;color:#0f172a;"
+                        "margin-top:4px;'>Month by month</div>", unsafe_allow_html=True)
+        with h2:
+            mview = st.radio("View", ["Months", "Stacked"], horizontal=True,
+                             key="mbm_view", label_visibility="collapsed") or "Months"
+
+        now_m = pd.Timestamp.now().to_period("M")
+        if mview == "Months":
+            cards = []
+            for dt_, row in monthly.tail(6).iterrows():
+                r_ = float(row["r"]); c = "#16a34a" if r_ >= 0 else "#ef4444"
+                live = dt_.to_period("M") == now_m
+                badge = ("<span style='background:#e2f5e9;color:#14532d;font-size:11px;"
+                         "font-weight:800;border-radius:999px;padding:3px 10px;margin-left:8px;'>"
+                         "TARGET ✓</span>" if r_ >= need_r else "")
+                usd_note = ""
+                if has_usd and "usd" in monthly.columns and row.get("usd") == row.get("usd"):
+                    u = float(row["usd"])
+                    usd_note = f" · {'-' if u < 0 else ''}${abs(u):,.0f}"
+                cards.append(
+                    f"<div style='flex:1;min-width:200px;max-width:290px;background:#fbfcfe;"
+                    f"border:1px solid #eef0f4;border-left:5px solid {c};"
+                    f"border-radius:0 12px 12px 0;padding:13px 16px;'>"
+                    f"<div style='font-size:12px;font-weight:700;letter-spacing:0.08em;"
+                    f"color:{'#4800ff' if live else '#94a3b8'};'>"
+                    f"{dt_.strftime('%B').upper()}{badge}</div>"
+                    f"<div style='font-size:28px;font-weight:800;color:{c};margin:2px 0;'>"
+                    f"{r_:+.1f}R</div>"
+                    f"<div style='font-size:13px;color:#64748b;'>{int(row['n'])} trades"
+                    f"{usd_note}{' · live' if live else ''}</div></div>")
+            st.markdown("<div style='display:flex;gap:14px;flex-wrap:wrap;margin:8px 0 4px;'>"
+                        + "".join(cards) + "</div>", unsafe_allow_html=True)
+        else:
+            daily = mg["__rr"].groupby(pd.Grouper(freq="D")).sum().dropna()
+            periods = sorted(daily.index.to_period("M").unique())[-6:]
+            lines, endpts = [], []
+            for p_ in periods:
+                m = daily[daily.index.to_period("M") == p_]
+                if len(m) < 2:
+                    continue
+                cumv = m.cumsum()
+                lab = p_.strftime("%B")
+                cur_m = p_ == now_m
+                for dtv, cv in cumv.items():
+                    lines.append({"Day": int(dtv.day), "Cum": round(float(cv), 2),
+                                  "Month": lab, "kind": "cur" if cur_m else "past"})
+                fin = float(cumv.iloc[-1])
+                endpts.append({"Day": int(cumv.index[-1].day), "Cum": round(fin, 2),
+                               "Month": lab,
+                               "col": "cur" if cur_m else ("up" if fin >= 0 else "down")})
+            if lines:
+                xsc = alt.Scale(domain=[1, 31])
+                ally = [r["Cum"] for r in lines]
+                ysc = alt.Scale(domain=[min(stop_r - 1.5, min(ally) - 1),
+                                        max(need_r + 1.5, max(ally) + 1)])
+                lays = []
+                for yv, col in ((0.0, "#cbd5e1"), (need_r, "#16a34a"), (stop_r, "#ef4444")):
+                    lays.append(alt.Chart(alt.Data(values=[{"y": yv}]))
+                                .mark_rule(color=col, strokeDash=[5, 5] if yv else [2, 3],
+                                           strokeWidth=2 if yv else 1.5)
+                                .encode(y=alt.Y("y:Q", title=None)))
+                base = alt.Chart(alt.Data(values=lines))
+                past = base.transform_filter(alt.datum.kind == "past").mark_line(
+                    color="#d5d9e2", strokeWidth=2).encode(
+                    x=alt.X("Day:Q", title="Day of month", scale=xsc,
+                            axis=alt.Axis(tickMinStep=1, grid=False, labelColor="#94a3b8",
+                                          titleColor="#94a3b8")),
+                    y=alt.Y("Cum:Q", title=None, scale=ysc), detail="Month:N",
+                    tooltip=[alt.Tooltip("Month:N"), alt.Tooltip("Cum:Q", format="+.2f")])
+                curl = base.transform_filter(alt.datum.kind == "cur").mark_line(
+                    color="#4800ff", strokeWidth=3.5).encode(
+                    x=alt.X("Day:Q", title=None, scale=xsc),
+                    y=alt.Y("Cum:Q", title=None, scale=ysc), detail="Month:N",
+                    tooltip=[alt.Tooltip("Month:N"), alt.Tooltip("Cum:Q", format="+.2f")])
+                dots = (alt.Chart(alt.Data(values=endpts))
+                        .mark_circle(size=90, stroke="#ffffff", strokeWidth=2)
+                        .encode(x=alt.X("Day:Q", title=None, scale=xsc),
+                                y=alt.Y("Cum:Q", title=None, scale=ysc),
+                                color=alt.Color("col:N", legend=None,
+                                                scale=alt.Scale(domain=["cur", "up", "down"],
+                                                                range=["#4800ff", "#16a34a",
+                                                                       "#ef4444"])),
+                                tooltip=[alt.Tooltip("Month:N"),
+                                         alt.Tooltip("Cum:Q", format="+.2f")]))
+                st.altair_chart(styler(alt.layer(*lays, past, curl, dots)
+                                       .properties(height=300)),
+                                use_container_width=True)
+            else:
+                st.info("Not enough monthly history for the stacked view yet.")
+
+        # records as one slim chip row
+        weekly = mg["__rr"].resample("W-MON", label="left", closed="left").sum()
+        wk_n = mg["__rr"].resample("W-MON", label="left", closed="left").size()
+        weekly = weekly[wk_n > 0]
+        rows = []
+        if not weekly.empty:
+            bw, ww = weekly.idxmax(), weekly.idxmin()
+            rows.append(("BEST WEEK", f"{weekly.max():+.1f}R",
+                         f"week of {bw.strftime('%d %b')}", "#16a34a"))
+            rows.append(("WORST WEEK", f"{weekly.min():+.1f}R",
+                         f"week of {ww.strftime('%d %b')}", "#ef4444"))
         bm, wm = monthly["r"].idxmax(), monthly["r"].idxmin()
         rows.append(("BEST MONTH", f"{monthly['r'].max():+.1f}R", bm.strftime("%b %Y"), "#16a34a"))
         rows.append(("WORST MONTH", f"{monthly['r'].min():+.1f}R", wm.strftime("%b %Y"), "#ef4444"))
-    if rows:
-        rec = "".join(
-            f"<div style='flex:1;min-width:150px;background:#fff;border:1px solid rgba(0,0,0,0.06);"
-            f"border-radius:12px;padding:12px 14px;box-shadow:0 2px 10px rgba(0,0,0,0.04);'>"
-            f"<div style='font-size:11px;font-weight:600;letter-spacing:0.06em;color:#94a3b8;'>{lab}</div>"
-            f"<div style='font-size:22px;font-weight:800;color:{col};'>{val}</div>"
-            f"<div style='font-size:12px;color:#64748b;'>{sub}</div></div>"
-            for lab, val, sub, col in rows)
-        st.markdown(f"<div style='display:flex;gap:12px;flex-wrap:wrap;margin:6px 0;'>{rec}</div>",
-                    unsafe_allow_html=True)
-    try:
-        _pdf = _monthly_report_pdf(monthly, need_r, float(target_pct), float(risk_pct), rows)
-        st.download_button("Download monthly report (PDF)", data=_pdf,
-                           file_name=f"edge-analysis-report-{pd.Timestamp.now().strftime('%Y-%m')}.pdf",
-                           mime="application/pdf", key="tgt_pdf")
-    except Exception:
-        pass
+        st.markdown(
+            "<div style='font-size:11px;font-weight:700;letter-spacing:0.06em;color:#94a3b8;"
+            "margin-top:14px;'>RECORDS</div>"
+            "<div style='display:flex;gap:12px;flex-wrap:wrap;margin-top:8px;'>" + "".join(
+                f"<div style='flex:1;min-width:150px;background:#f8f9fc;border-radius:12px;"
+                f"padding:11px 14px;'>"
+                f"<div style='font-size:10.5px;font-weight:600;letter-spacing:0.05em;"
+                f"color:#94a3b8;'>{k}</div>"
+                f"<div style='font-size:20px;font-weight:800;color:{c};'>{v}</div>"
+                f"<div style='font-size:12px;color:#94a3b8;'>{sub}</div></div>"
+                for k, v, sub, c in rows) + "</div>", unsafe_allow_html=True)
 
-    if not weekly.empty:
-        worst_w = float(weekly.min())
-        cap = max(1.0, round((float(target_pct) / float(risk_pct)) / 4.0))
-        _insight_box(
-            f"Recommendation: cap any single week at <b>-{cap:.0f}R</b> "
-            f"(a quarter of your monthly target). Your worst week so far is <b>{worst_w:+.1f}R</b> — "
-            f"one bad week should never cost more than a quarter of the month.",
-            "warn" if worst_w < -cap else "info")
-
-
+        # the ONE evidence strip on the tab
+        exp_m = float(monthly["r"].mean())
+        sd_m = float(monthly["r"].std()) if len(monthly) >= 3 else float(monthly["r"].abs().mean())
+        rec_target = max(1.0, exp_m - 0.25 * (sd_m or 0.0))
+        if need_r > rec_target + 0.5:
+            st.markdown(
+                "<div style='background:#fdf6e8;border-radius:10px;padding:12px 18px;"
+                "border-left:5px solid #d97706;margin-top:14px;'>"
+                f"<div style='font-size:14.5px;font-weight:800;color:#7c4a03;'>"
+                f"Your data currently supports about {rec_target:+.1f}R a month — "
+                f"the {need_r:.0f}R target is ambition, not evidence yet.</div>"
+                "<div style='font-size:12.5px;color:#9a6b1f;margin-top:3px;'>"
+                "The gap closes as your live expectancy grows.</div></div>",
+                unsafe_allow_html=True)
+        try:
+            _pdf = _monthly_report_pdf(monthly, need_r, float(need_r), 1.0, rows)
+            st.download_button("Download monthly report (PDF)", data=_pdf,
+                               file_name="edge-analysis-monthly.pdf", mime="application/pdf")
+        except Exception:
+            pass
 
 
 def _monthly_report_pdf(monthly, need_r, target_pct, risk_pct, records_rows) -> bytes:
@@ -4424,10 +4239,9 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
 
     # ── Performance ────────────────────────────────────────────────────────
     with t_results:
-        if hero_fn is not None:
-            hero_fn()
-        _section_header("Results", "The equity story — growth, win rate, and the money behind it.")
-        _growth_tab(f_perf, df_all_safe, styler)
+        _month_card(f_perf, styler)
+        _targets_tab(df_all_safe, styler)
+        _alltime_card(f_perf, styler)
         _gap()
         _instruments_tab(f_perf, show_table)
         _gap()
@@ -4437,9 +4251,6 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
             _account_comparison_tab(f_perf, styler)
         else:
             _early_close_tab_salty(df_all_safe, styler)
-
-        _section_header("Targets", "The monthly goal, your track record against it, and your records.")
-        _targets_tab(df_all_safe, styler)
 
         _section_header("Projections", "What this edge does over the next 12 months if you keep showing up.")
         _projections_tab(df_all_safe, styler)
