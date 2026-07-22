@@ -30,8 +30,19 @@ def _stamp_sync():
 
 
 @st.cache_data(show_spinner=False, ttl=1800)
+def _load_live_df_cached(token: Optional[str], dbid: Optional[str]):
+    """Returns (df, fetched_at_epoch) — the stamp lives with the cache entry, so
+    cache hits report the true age of the data, not the age of the rerun."""
+    return _load_live_df_impl(token, dbid), float(pd.Timestamp.now().timestamp())
+
+
 def load_live_df(token: Optional[str], dbid: Optional[str]) -> pd.DataFrame:
-    _stamp_sync()
+    df, fetched_at = _load_live_df_cached(token, dbid)
+    st.session_state["ea_last_sync"] = fetched_at
+    return df
+
+
+def _load_live_df_impl(token: Optional[str], dbid: Optional[str]) -> pd.DataFrame:
     if not (token and dbid):
         return pd.DataFrame()
 
