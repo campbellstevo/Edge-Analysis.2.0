@@ -155,8 +155,10 @@ def _get_collection(path: str, token: str, start: Optional[str] = None,
         r.raise_for_status()
         j = r.json()
         out.extend(j.get("records", []) or [])
-        next_token = j.get("next_token")
-        if not next_token:
+        prev_token, next_token = next_token, j.get("next_token")
+        pages = locals().get("_pg", 0) + 1
+        _pg = pages
+        if not next_token or next_token == prev_token or pages > 60:
             break
     return out
 

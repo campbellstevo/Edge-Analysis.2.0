@@ -477,13 +477,9 @@ def _growth_tab(f: pd.DataFrame, df_all: pd.DataFrame, styler):
         rr_col = "Closed RR Num" if "Closed RR Num" in g.columns else "Closed RR"
         g["PnL_from_RR"] = g.get(rr_col, 0.0).fillna(0.0)
 
-    c1, _, _ = st.columns([1, 1, 2])
-    with c1:
-        bucket = st.selectbox("Time Bucket", ["Day", "Week", "Month"], index=1, key="growth_bucket")
-
     g = g.sort_values("__Date").copy()
     g_indexed = g.set_index("__Date")
-
+    bucket = st.session_state.get("growth_bucket", "Week")
     if bucket == "Day":
         eq_df = g_indexed.groupby(g_indexed.index.date)["PnL_from_RR"].sum().reset_index()
         eq_df.columns = ["Bucket", "PnLBucket"]
@@ -567,7 +563,33 @@ def _growth_tab(f: pd.DataFrame, df_all: pd.DataFrame, styler):
 
     usd = pd.to_numeric(g.get("PnL (USD)"), errors="coerce") if "PnL (USD)" in g.columns else None
     has_usd = usd is not None and usd.notna().any()
-    TGT_R, STOP_R = 5.0, -6.0  # 5% monthly target / -6% circuit-breaker stop
+    # ── monthly settings: auto from the data, editable, drive everything below ──
+    mr = g.set_index("__Date")["PnL_from_RR"].resample("MS").agg(["sum", "count"])
+    mr = mr[mr["count"] > 0]
+    if len(mr) >= 2:
+        exp_t = float(pd.to_numeric(g["PnL_from_RR"], errors="coerce").dropna().mean() or 0)
+        tpm = float(mr["count"].mean())
+        sd_m = float(mr["sum"].std()) if len(mr) >= 3 else float(mr["sum"].abs().mean())
+        auto_tgt = max(1.0, round(exp_t * tpm - 0.25 * (sd_m or 0.0), 1))
+    else:
+        auto_tgt = 5.0
+    auto_stop = -6.0  # the circuit-breaker rule
+    if "ea_m_tgt" not in st.session_state:
+        st.session_state["ea_m_tgt"] = float(auto_tgt)
+    if "ea_m_stop" not in st.session_state:
+        st.session_state["ea_m_stop"] = float(auto_stop)
+    sc1, sc2 = st.columns(2)
+    with sc1:
+        st.number_input("Monthly target (R)", min_value=0.5, max_value=50.0, step=0.5,
+                        key="ea_m_tgt")
+    with sc2:
+        st.number_input("Monthly max loss (R)", min_value=-30.0, max_value=-1.0, step=0.5,
+                        key="ea_m_stop")
+    st.caption(f"Auto from your data: target {auto_tgt:+.1f}R (expectancy \u00d7 trades per month), "
+               f"max loss {auto_stop:+.0f}R (your circuit-breaker rule). Edit to override \u2014 "
+               "the chart, chips and Targets section all follow these.")
+    TGT_R = float(st.session_state.get("ea_m_tgt", auto_tgt))
+    STOP_R = float(st.session_state.get("ea_m_stop", auto_stop))
 
     st.markdown("### Equity")
     eq_view = st.radio("Equity view", ["This month", "All time", "Stacked"],
@@ -603,36 +625,27 @@ def _growth_tab(f: pd.DataFrame, df_all: pd.DataFrame, styler):
         if md is None or md.empty:
             st.info("No trades this month yet.")
         else:
-            md["Peak"] = md["Cum"].cummax().clip(lower=0.0)
             lastd = pd.Timestamp(now_p.end_time.date())
             firstd = pd.Timestamp(now_p.start_time.date())
             ylo = min(STOP_R - 1.5, float(md["Cum"].min()) - 1)
             yhi = max(TGT_R + 1.5, float(md["Cum"].max()) + 1)
             ysc = alt.Scale(domain=[ylo, yhi])
-            vals = _to_alt_values(md[["Date", "Cum", "Peak"]])
+            vals = _to_alt_values(md[["Date", "Cum"]])
             base = alt.Chart(alt.Data(values=vals))
             xsc = alt.Scale(domain=[firstd.isoformat(), lastd.isoformat()])
-            dd = base.mark_area(color="#ef4444", opacity=0.12).encode(
-                x=alt.X("Date:T", title=None, scale=xsc),
-                y=alt.Y("Cum:Q", title=None, scale=ysc),
-                y2="Peak:Q")
-            pace = (alt.Chart(alt.Data(values=[
-                        {"Date": firstd.isoformat(), "y": 0.0},
-                        {"Date": lastd.isoformat(), "y": TGT_R}]))
-                    .mark_line(color="#b7a8f7", strokeDash=[6, 6], strokeWidth=1.5)
-                    .encode(x=alt.X("Date:T", title=None), y=alt.Y("y:Q", title=None)))
+            xax = alt.Axis(format="%d", labelColor="#94a3b8", grid=False, tickCount=10)
             ln = base.mark_line(color="#4800ff", strokeWidth=3).encode(
-                x=alt.X("Date:T", title=None, scale=xsc),
+                x=alt.X("Date:T", title=None, scale=xsc, axis=xax),
                 y=alt.Y("Cum:Q", title=None, scale=ysc))
             pt = (alt.Chart(alt.Data(values=[vals[-1]]))
                   .mark_circle(color="#4800ff", size=110, stroke="#ffffff", strokeWidth=2)
                   .encode(x=alt.X("Date:T", title=None, scale=xsc),
                           y=alt.Y("Cum:Q", title=None, scale=ysc)))
-            st.altair_chart(styler(alt.layer(*_aux_rules(), pace, dd, ln, pt)
+            st.altair_chart(styler(alt.layer(*_aux_rules(), ln, pt)
                                    .properties(height=320)),
                             use_container_width=True)
-            st.caption("Green dash = +5R target - red dash = the -6R month stop - "
-                       "faint purple = 5% pace for today - red shading = drawdown from the month's peak.")
+            st.caption(f"Green dash = your {TGT_R:+.1f}R target \u00b7 "
+                       f"red dash = the {STOP_R:+.0f}R month stop.")
             cur = float(md["Cum"].iloc[-1])
             maxdd = float((md["Cum"].cummax() - md["Cum"]).max())
             chips = [("MONTH", f"{cur:+.1f}R", "#16a34a" if cur >= 0 else "#ef4444"),
@@ -657,7 +670,7 @@ def _growth_tab(f: pd.DataFrame, df_all: pd.DataFrame, styler):
             md = _month_daily(p_)
             if md is None or len(md) < 2:
                 continue
-            lab = p_.strftime("%b %y")
+            lab = p_.strftime("%B")
             cur_m = p_ == now_p
             for _, r in md.iterrows():
                 lines.append({"Day": int(r["Day"]), "Cum": round(float(r["Cum"]), 2),
@@ -699,8 +712,9 @@ def _growth_tab(f: pd.DataFrame, df_all: pd.DataFrame, styler):
             st.altair_chart(styler(alt.layer(*_aux_rules(), past, curl, dots)
                                    .properties(height=330)),
                             use_container_width=True)
-            st.caption("Every month runs day 1-31 from zero - purple = this month - "
-                       "green dash = +5R target - red dash = -6R stop. Hover any line for the month.")
+            st.caption(f"Every month runs day 1\u201331 from zero \u00b7 purple = this month \u00b7 "
+                       f"green dash = {TGT_R:+.1f}R target \u00b7 red dash = {STOP_R:+.0f}R stop. "
+                       "Hover any line for the month.")
             fin_html = "".join(
                 f"<div style='flex:1;min-width:120px;background:#f8f9fc;border-radius:12px;"
                 f"padding:10px 13px;'>"
@@ -713,34 +727,25 @@ def _growth_tab(f: pd.DataFrame, df_all: pd.DataFrame, styler):
                         + fin_html + "</div>", unsafe_allow_html=True)
 
     else:
-        view = "R"
-        if has_usd:
-            view = st.radio("Units", ["R", "$"], horizontal=True, key="eq_units",
-                            label_visibility="collapsed") or "R"
+        vc1, vc2 = st.columns([1, 1])
+        with vc1:
+            view = "R"
+            if has_usd:
+                view = st.radio("Units", ["R", "$"], horizontal=True, key="eq_units",
+                                label_visibility="collapsed") or "R"
+        with vc2:
+            st.selectbox("Time Bucket", ["Day", "Week", "Month"], index=1,
+                         key="growth_bucket", label_visibility="collapsed")
         if view == "R":
             if pnl_vals:
-                stairs = []
-                periods = sorted(daily_all.index.to_period("M").unique())
-                for i, p_ in enumerate(periods):
-                    lvl = TGT_R * (i + 1)
-                    stairs.append({"Date": pd.Timestamp(p_.start_time.date()).isoformat(),
-                                   "y": lvl, "step": i})
-                    stairs.append({"Date": pd.Timestamp(p_.end_time.date()).isoformat(),
-                                   "y": lvl, "step": i})
-                stair_layer = (alt.Chart(alt.Data(values=stairs))
-                               .mark_line(color="#16a34a", strokeDash=[6, 5], strokeWidth=2)
-                               .encode(x=alt.X("Date:T", title=None),
-                                       y=alt.Y("y:Q", title=None), detail="step:Q"))
                 area = (alt.Chart(alt.Data(values=pnl_vals)).mark_area(opacity=0.12, color="#4800ff")
                         .encode(x=x_time, y=alt.Y("CumPnL:Q", title="Cumulative R",
                                                    scale=alt.Scale(padding=14))))
                 line = (alt.Chart(alt.Data(values=pnl_vals))
                         .mark_line(strokeWidth=2, color="#4800ff", interpolate="linear")
                         .encode(x=x_time, y=alt.Y("CumPnL:Q", title=None, scale=alt.Scale(padding=14))))
-                st.altair_chart(styler(alt.layer(area, line, stair_layer).properties(height=300)),
+                st.altair_chart(styler(alt.layer(area, line).properties(height=300)),
                                 use_container_width=True)
-                st.caption("Green stairs = the 5% target compounding month by month - "
-                           "line above the stairs means ahead of plan.")
             else:
                 st.info("Not enough data for the equity chart.")
         else:
@@ -4092,19 +4097,11 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
     if has_usd:
         g["__usd"] = usd
 
-    st.caption("Set your target and risk — everything below updates from your live journal.")
-    with st.form("targets_settings", border=False):
-        target_pct = _slider_row(
-            "Monthly target", lambda v: f"{v:.0f}%",
-            lambda: st.slider("Monthly target", min_value=1, max_value=20, value=5, step=1,
-                              key="tgt_pct", label_visibility="collapsed"))
-        risk_pct = _slider_row(
-            "Risk per trade", lambda v: f"{v:.2f}%",
-            lambda: st.slider("Risk per trade", min_value=0.25, max_value=5.0, value=1.0, step=0.25,
-                              key="tgt_risk", label_visibility="collapsed"))
-        st.form_submit_button("Update", type="primary")
-
-    need_r = float(target_pct) / float(risk_pct)
+    need_r = float(st.session_state.get("ea_m_tgt", 5.0))
+    risk_pct = 1.0
+    target_pct = need_r * risk_pct
+    st.caption(f"Tracking the monthly target set at the top of this tab \u2014 "
+               f"{need_r:.1f}R a month at {risk_pct:.0f}% risk.")
     now = pd.Timestamp.now()
     cur = g[(g["__dt"].dt.year == now.year) & (g["__dt"].dt.month == now.month)]
     cur_r = float(cur["__rr"].sum()) if not cur.empty else 0.0

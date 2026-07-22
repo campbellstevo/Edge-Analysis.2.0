@@ -1493,21 +1493,41 @@ def _store_whoop_tokens(data: dict) -> None:
 
 
 def _whoop_persist() -> None:
-    """Save {refresh, access, expiry} to this device so the session survives
-    reloads, reboots and Community-Cloud sleep — a still-valid access token can
-    then be reused with no (rotation-prone) refresh call at all."""
+    """Save {refresh, access, expiry} to device + Notion. Write once per token
+    signature, then verify once with a read-back — bounded reruns, self-healing
+    if the write was lost, and no every-run component storm (that looped the app)."""
     at = st.session_state.get("whoop_at") or ""
     rt = st.session_state.get("whoop_rt") or ""
     exp = st.session_state.get("whoop_at_exp", 0)
-    # No dedupe gate: re-render the write component EVERY run. If a rerun
-    # killed the component before its localStorage.setItem executed, the next
-    # run re-issues it — a rotated refresh token can never be lost again.
-    blob_d = {"rt": rt, "at": at, "exp": exp}
-    blob = json.dumps(blob_d)
-    _js_eval("localStorage.setItem('ea_whoop', " + json.dumps(blob) + ")",
-             key="whoop_save")
-    if rt:
-        _whoop_notion_write(blob_d)
+    sig = f"{at[-10:]}|{rt[-10:]}|{int(exp)}"
+    if (st.session_state.get("whoop_saved_sig") == sig
+            and st.session_state.get("whoop_verified_sig") == sig):
+        return
+    if st.session_state.get("whoop_saved_sig") != sig:
+        st.session_state["whoop_saved_sig"] = sig
+        st.session_state["whoop_persist_tries"] = st.session_state.get("whoop_persist_tries", 0) + 1
+        blob_d = {"rt": rt, "at": at, "exp": exp}
+        _js_eval("localStorage.setItem('ea_whoop', " + json.dumps(json.dumps(blob_d)) + ")",
+                 key="whoop_save")
+        if rt:
+            _whoop_notion_write(blob_d)
+        return
+    if st.session_state.get("whoop_persist_tries", 0) > 3:
+        st.session_state["whoop_verified_sig"] = sig  # safety valve
+        return
+    raw = _js_eval("localStorage.getItem('ea_whoop') || ''", key="whoop_verify")
+    if raw is None:
+        return
+    ok = False
+    try:
+        ok = (json.loads(raw).get("rt") or "")[-10:] == rt[-10:]
+    except Exception:
+        ok = not rt
+    if ok:
+        st.session_state["whoop_verified_sig"] = sig
+        st.session_state["whoop_persist_tries"] = 0
+    else:
+        st.session_state.pop("whoop_saved_sig", None)
 
 
 def _handle_whoop_logout() -> None:

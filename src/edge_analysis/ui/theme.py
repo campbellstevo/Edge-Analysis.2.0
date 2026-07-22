@@ -1012,10 +1012,13 @@ def inject_theme():
     /* While rerunning, fully remove the stale previous render so duplicate
        tab strips / ghosts never paint (visibility:hidden still reserved
        layout space and left faded strips). */
-    div[data-stale="true"], [data-stale="true"], .stale-element,
-    [data-testid="stAppViewContainer"] .element-container.stale-element,
-    [data-stale="true"] .stTabs, [data-stale="true"] [data-baseweb="tab-list"],
-    [data-stale="true"] iframe, [data-stale="true"] svg, [data-stale="true"] canvas {{
+    .stApp[data-test-script-state="running"] [data-stale="true"] {{
+        opacity: 0.35 !important;
+        transition: none !important;
+    }}
+    .stApp[data-test-script-state="running"] div[data-stale="true"][data-testid="stTabs"],
+    .stApp[data-test-script-state="running"] [data-stale="true"] [data-baseweb="tab-list"],
+    .stApp[data-test-script-state="running"] [data-stale="true"] iframe {{
         display: none !important;
     }}
 
