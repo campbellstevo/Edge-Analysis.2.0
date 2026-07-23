@@ -1038,7 +1038,8 @@ def inject_theme():
     }}
 
     /* Bordered st.container = house card */
-    [data-testid="stVerticalBlockBorderWrapper"] {{
+    [data-testid="stVerticalBlockBorderWrapper"],
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-card-anchor) {{
         background: #ffffff;
         border: 1px solid #eef0f4 !important;
         border-radius: 16px;
@@ -1046,6 +1047,8 @@ def inject_theme():
         box-shadow: 0 2px 12px rgba(0,0,0,0.04);
         margin: 6px 0 18px;
     }}
+    div[data-testid="stElementContainer"]:has(> .ea-card-anchor),
+    .ea-card-anchor {{ display: none !important; }}
 
     /* No copy-link icons on heading hover */
     [data-testid="stHeaderActionElements"] {{ display: none !important; }}
@@ -1357,7 +1360,8 @@ def inject_dark_overlay():
         color: #e8ebf1 !important;
     }
     .stTabs [data-baseweb="tab-list"] { background: transparent !important; }
-    [data-testid="stVerticalBlockBorderWrapper"] {
+    [data-testid="stVerticalBlockBorderWrapper"],
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-card-anchor) {
         background: #161b27 !important;
         border-color: rgba(255,255,255,0.09) !important;
     }

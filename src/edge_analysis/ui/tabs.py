@@ -508,6 +508,7 @@ def _month_card(f: pd.DataFrame, styler) -> None:
                        "PnL_from_RR"].sum())
 
     with st.container(border=True):
+        st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
         h1, h2 = st.columns([1.25, 1])
         with h1:
             wc = "#16a34a" if wk_r >= 0 else "#ef4444"
@@ -627,6 +628,7 @@ def _alltime_card(f: pd.DataFrame, styler) -> None:
     usd = pd.to_numeric(g.get("PnL (USD)"), errors="coerce") if "PnL (USD)" in g.columns else None
     has_usd = usd is not None and usd.notna().any()
     with st.container(border=True):
+        st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
         h1, h2, h3 = st.columns([2.2, 0.9, 1])
         with h1:
             st.markdown("<div style='font-size:21px;font-weight:800;color:#0f172a;"
@@ -4056,6 +4058,7 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
         return
 
     with st.container(border=True):
+        st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
         h1, h2 = st.columns([2.2, 1])
         with h1:
             st.markdown("<div style='font-size:21px;font-weight:800;color:#0f172a;"
