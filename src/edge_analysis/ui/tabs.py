@@ -429,6 +429,16 @@ def _parse_targeted_rr_mid(val) -> float:
 
 
 # ───────────────────────────── Growth tab ────────────────────────────────────
+def _st_rerun_safe():
+    try:
+        st.rerun()
+    except Exception:
+        try:
+            st.experimental_rerun()
+        except Exception:
+            pass
+
+
 def _perf_settings(g: pd.DataFrame):
     """Monthly target / max-loss: auto from the data, editable via the pencil popover."""
     mr = g.set_index("__Date")["PnL_from_RR"].resample("MS").agg(["sum", "count"])
@@ -531,11 +541,21 @@ def _month_card(f: pd.DataFrame, styler) -> None:
                 except Exception:
                     pop = st.expander("✎")
                 with pop:
-                    st.number_input("Monthly target (R)", min_value=0.5, max_value=50.0,
-                                    step=0.5, key="ea_m_tgt")
-                    st.number_input("Monthly max loss (R)", min_value=-30.0, max_value=-1.0,
-                                    step=0.5, key="ea_m_stop")
-                    st.caption(f"Auto: target {auto_tgt:+.1f}R · max loss -6R (your rule)")
+                    e1, e2 = st.columns(2)
+                    with e1:
+                        st.number_input("Target (R)", min_value=0.5, max_value=50.0,
+                                        step=0.5, key="ea_m_tgt")
+                    with e2:
+                        st.number_input("Max loss (R)", min_value=-30.0, max_value=-1.0,
+                                        step=0.5, key="ea_m_stop")
+                    rc1, rc2 = st.columns([1, 1.4])
+                    with rc1:
+                        if st.button("Reset to auto", key="ea_m_reset"):
+                            st.session_state.pop("ea_m_tgt", None)
+                            st.session_state.pop("ea_m_stop", None)
+                            _st_rerun_safe()
+                    with rc2:
+                        st.caption(f"Auto: {auto_tgt:+.1f}R · -6R (your rule)")
 
         if md.empty:
             st.info("No trades this month yet.")
@@ -622,28 +642,77 @@ def _alltime_card(f: pd.DataFrame, styler) -> None:
         gi = g.set_index("__Date")
         if view == "$" and has_usd:
             ser = pd.Series(usd.values, index=g["__Date"]).dropna()
-            ytitle = "Cumulative $"
+            unit = "$"
         else:
             ser = gi["PnL_from_RR"]
-            ytitle = "Cumulative R"
-        freq = {"Day": "D", "Week": "W-MON", "Month": "MS"}[bucket]
-        eq = ser.resample(freq).sum().cumsum().reset_index()
-        eq.columns = ["Bucket", "Cum"]
-        eq = eq[eq["Bucket"].notna()]
-        vals = _to_alt_values(eq)
-        if vals:
-            fmt = "%b %d" if bucket != "Month" else "%b %Y"
-            xenc = alt.X("Bucket:T", title=None,
-                         axis=alt.Axis(format=fmt, labelAngle=-45, labelColor="#94a3b8",
-                                       labelOverlap=True, tickCount=8))
-            area = (alt.Chart(alt.Data(values=vals)).mark_area(opacity=0.12, color="#4800ff")
-                    .encode(x=xenc, y=alt.Y("Cum:Q", title=ytitle, scale=alt.Scale(padding=14))))
-            line = (alt.Chart(alt.Data(values=vals)).mark_line(strokeWidth=2, color="#4800ff")
-                    .encode(x=xenc, y=alt.Y("Cum:Q", title=None, scale=alt.Scale(padding=14))))
-            st.altair_chart(styler(alt.layer(area, line).properties(height=290)),
+            unit = "R"
+        TGT_R = float(st.session_state.get("ea_m_tgt", 5.0))
+        STOP_R = float(st.session_state.get("ea_m_stop", -6.0))
+        if bucket == "Month":
+            mo = ser.resample("MS").sum()
+            mo = mo[ser.resample("MS").size() > 0]
+            rows = [{"Month": ts.strftime("%b"), "Net": round(float(v), 2),
+                     "Colour": "good" if v >= 0 else "bad",
+                     "Lab": (f"{v:+.1f}R" if unit == "R" else f"{'-' if v < 0 else ''}${abs(v):,.0f}")}
+                    for ts, v in mo.items()]
+            order = [r["Month"] for r in rows]
+            lo = min(min((r["Net"] for r in rows), default=0.0), STOP_R if unit == "R" else 0.0)
+            hi = max(max((r["Net"] for r in rows), default=0.0), TGT_R if unit == "R" else 0.0)
+            span = max(hi - lo, 1.0)
+            dom = [lo - span * 0.18, hi + span * 0.24]
+            base = alt.Chart(alt.Data(values=rows))
+            xenc = alt.X("Month:N", sort=order, title=None,
+                         axis=alt.Axis(labelAngle=0, labelFontSize=13,
+                                       labelColor="#0f172a", ticks=False, domain=False))
+            bars = base.mark_bar(size=44, cornerRadiusTopLeft=7, cornerRadiusTopRight=7).encode(
+                x=xenc,
+                y=alt.Y("Net:Q", title=None, scale=alt.Scale(domain=dom),
+                        axis=alt.Axis(format="+.0f", grid=True, gridColor="#eef0f5",
+                                      labelColor="#94a3b8")),
+                color=alt.Color("Colour:N", legend=None,
+                                scale=alt.Scale(domain=["good", "bad"],
+                                                range=["#16a34a", "#ef4444"])),
+                tooltip=[alt.Tooltip("Month:N"), alt.Tooltip("Net:Q", format="+.2f")])
+            txt = base.mark_text(dy=-12, fontSize=12, fontWeight="bold", color="#334155").encode(
+                x=xenc, y=alt.Y("Net:Q", scale=alt.Scale(domain=dom)), text="Lab:N")
+            lays = [bars, txt,
+                    alt.Chart(alt.Data(values=[{"y": 0}]))
+                    .mark_rule(color="#cbd5e1", strokeWidth=1.5).encode(y=alt.Y("y:Q", title=None))]
+            if unit == "R":
+                lays.append(alt.Chart(alt.Data(values=[{"y": TGT_R}]))
+                            .mark_rule(color="#16a34a", strokeDash=[6, 5], strokeWidth=2)
+                            .encode(y=alt.Y("y:Q", title=None)))
+                lays.append(alt.Chart(alt.Data(values=[{"y": STOP_R}]))
+                            .mark_rule(color="#ef4444", strokeDash=[6, 5], strokeWidth=2)
+                            .encode(y=alt.Y("y:Q", title=None)))
+            st.altair_chart(styler(alt.layer(*lays).properties(height=300)),
                             use_container_width=True)
+            if unit == "R":
+                st.caption(f"Each bar = the month's net result \u00b7 green dash = "
+                           f"{TGT_R:+.1f}R target \u00b7 red dash = {STOP_R:+.0f}R max loss.")
         else:
-            st.info("Not enough data for the equity chart.")
+            freq = {"Day": "D", "Week": "W-MON"}[bucket]
+            eq = ser.resample(freq).sum().cumsum().reset_index()
+            eq.columns = ["Bucket", "Cum"]
+            eq = eq[eq["Bucket"].notna()]
+            vals = _to_alt_values(eq)
+            if vals:
+                xenc = alt.X("Bucket:T", title=None,
+                             axis=alt.Axis(format="%d %b", labelAngle=-45,
+                                           labelColor="#94a3b8", labelOverlap="greedy",
+                                           tickCount=min(10, len(eq))))
+                ytitle = "Cumulative " + unit
+                area = (alt.Chart(alt.Data(values=vals)).mark_area(opacity=0.12, color="#4800ff")
+                        .encode(x=xenc, y=alt.Y("Cum:Q", title=ytitle,
+                                                scale=alt.Scale(padding=14))))
+                line = (alt.Chart(alt.Data(values=vals)).mark_line(strokeWidth=2, color="#4800ff")
+                        .encode(x=xenc, y=alt.Y("Cum:Q", title=None, scale=alt.Scale(padding=14))))
+                st.altair_chart(styler(alt.layer(area, line).properties(height=290)),
+                                use_container_width=True)
+                st.caption("Cumulative curve \u00b7 switch the bucket to Month to see each month "
+                           "against your target and max loss.")
+            else:
+                st.info("Not enough data for the equity chart.")
 
         rrs = pd.to_numeric(g["PnL_from_RR"], errors="coerce").dropna()
         n = int(len(rrs))
