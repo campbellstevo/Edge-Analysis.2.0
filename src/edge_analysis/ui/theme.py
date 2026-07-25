@@ -1059,6 +1059,19 @@ def inject_theme():
 
     [data-testid="stMainBlockContainer"] {{ padding-top: 1.3rem !important; }}
 
+    [data-testid="stPopoverBody"] .stButton button {{
+        padding: 4px 10px !important;
+        min-height: 34px !important;
+        font-size: 13.5px !important;
+    }}
+    [data-testid="stPopoverBody"] [data-testid="stSlider"] {{
+        padding-top: 0 !important;
+        margin-bottom: -6px !important;
+    }}
+    [data-testid="stPopoverBody"] [data-testid="stElementContainer"] {{
+        margin-bottom: 0.35rem !important;
+    }}
+
     /* No copy-link icons on heading hover */
     [data-testid="stHeaderActionElements"] {{ display: none !important; }}
     h1 > a, h2 > a, h3 > a, h4 > a {{ display: none !important; }}

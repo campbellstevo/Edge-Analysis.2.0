@@ -591,18 +591,18 @@ def _month_card(f: pd.DataFrame, styler) -> None:
                                 unsafe_allow_html=True)
                     pc1, pc2 = st.columns(2)
                     with pc1:
-                        st.button(f"Auto \u2014 my data\n{auto_tgt:+.1f}R \u00b7 -6R \u00b7 12t",
-                                  key="pp_auto", use_container_width=True,
+                        st.button(f"Auto ({auto_tgt:+.0f}R)", key="pp_auto",
+                                  use_container_width=True,
                                   on_click=_preset, args=(auto_tgt, -6.0, 12))
-                        st.button("Standard 5%\n+5R \u00b7 -6R \u00b7 12t",
-                                  key="pp_std", use_container_width=True,
+                        st.button("Standard 5% (+5R)", key="pp_std",
+                                  use_container_width=True,
                                   on_click=_preset, args=(5.0, -6.0, 12))
                     with pc2:
-                        st.button("Steady\n+3R \u00b7 -4R \u00b7 8t",
-                                  key="pp_steady", use_container_width=True,
+                        st.button("Steady (+3R)", key="pp_steady",
+                                  use_container_width=True,
                                   on_click=_preset, args=(3.0, -4.0, 8))
-                        st.button("Aggressive\n+8R \u00b7 -8R \u00b7 20t",
-                                  key="pp_aggr", use_container_width=True,
+                        st.button("Aggressive (+8R)", key="pp_aggr",
+                                  use_container_width=True,
                                   on_click=_preset, args=(8.0, -8.0, 20))
                     st.markdown("<div style='font-size:11px;font-weight:700;"
                                 "letter-spacing:0.06em;color:#94a3b8;margin-top:6px;'>"
@@ -615,9 +615,6 @@ def _month_card(f: pd.DataFrame, styler) -> None:
                         st.slider("Trades per month", min_value=1, max_value=40,
                                   step=1, key="ea_m_cap")
                         st.form_submit_button("Save", type="primary", on_click=_plan_dirty)
-                    st.caption(f"{TGT_R:.1f}R target \u00b7 {STOP_R:+.0f}R stop \u00b7 "
-                               f"{int(st.session_state.get('ea_m_cap', 12))} trades "
-                               f"\u2248 {max(1, round(int(st.session_state.get('ea_m_cap', 12)) / 4))} a week")
 
         if md.empty:
             st.info("No trades this month yet.")
