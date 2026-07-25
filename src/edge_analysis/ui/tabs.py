@@ -4499,24 +4499,34 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                 with _budget(1):
                     _cost_drag(_data, styler)
 
-    # ── Psychology ─────────────────────────────────────────────────────────
+    # ── Psychology: discipline card, losses card, WHOOP card ──────────────
     with t_psych:
-        _section_header("Discipline", "You versus your rules — tilt, mental state and rule breaks.")
-        _psychology_tab(f_perf, df_all_safe, styler)
+        with st.container(border=True):
+            st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
+            _card_header("Discipline", "You versus your rules \u2014 tilt, mental state and rule breaks.")
+            with _budget(1):
+                _psychology_tab(f_perf, df_all_safe, styler)
 
-        _section_header("Where losses come from", "Your own loss tags and mistakes, ranked by damage.")
-        _loss_postmortem(f_perf)
-        if _mt5:
-            _gap()
-            _tilt(_data, styler)
-            _gap()
-            _mistake_section(_data, styler)
-            _gap()
-            _discipline_section(_data, styler)
+        with st.container(border=True):
+            st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
+            _card_header("Where losses come from", "Your own loss tags and mistakes, ranked by damage.")
+            with _budget(1):
+                _loss_postmortem(f_perf)
+                if _mt5:
+                    _gap(18)
+                    _tilt(_data, styler)
+                    _gap(18)
+                    _mistake_section(_data, styler)
+                    _gap(18)
+                    _discipline_section(_data, styler)
+
         if _whoop_on:
-            _section_header("Recovery (WHOOP)", "What your body says about your trading.")
-            from edge_analysis.ui.whoop_tab import render_whoop_tab
-            render_whoop_tab(df_all_safe, styler)
+            with st.container(border=True):
+                st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
+                _card_header("Recovery (WHOOP)", "What your body says about your trading.")
+                with _budget(1):
+                    from edge_analysis.ui.whoop_tab import render_whoop_tab
+                    render_whoop_tab(df_all_safe, styler)
 
     # ── Plan ───────────────────────────────────────────────────────────────
     with t_plan:

@@ -36,3 +36,4 @@ fpdf2==2.7.9
 # rebuild 26
 # rebuild 27
 # rebuild 28
+# rebuild 29
