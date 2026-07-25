@@ -133,91 +133,49 @@ def _line_metric(rows, title, styler, value="Avg R", x_order=None, x_title="",
 # ── 1. MAE / MFE efficiency ───────────────────────────────────────────────────
 def _mae_mfe_section(df: pd.DataFrame, styler) -> None:
     t = _t()
-    st.markdown("### Trade Efficiency — MAE / MFE")
-    st.caption(
-        "MFE = how far a trade ran in your favour before closing (in R). "
-        "MAE = how far it dipped against you first. "
-        "Capture = how much of the favourable move you actually banked."
-    )
-    mfe = _num(df, "MFE (R)"); rr = _num(df, "Closed RR"); mae = _num(df, "MAE (R)")
+    st.markdown("### Trade efficiency \u2014 what you keep of each move")
+    st.caption("Peak = how far trades run in your favour \u00b7 dip = the heat they take first \u00b7 "
+               "capture = how much of the favourable move you bank.")
+    mfe = _num(df, "MFE (R)")
+    mae = _num(df, "MAE (R)")
+    rr = _num(df, "Closed RR")
     if mfe is None or rr is None:
-        t._unavailable("Trade Efficiency (MAE/MFE)"); return
-
+        t._unavailable("Trade efficiency"); return
     g = df.copy()
     g["__mfe"] = mfe.values
     g["__rr"] = rr.values
-    g["__mae"] = mae.values if mae is not None else np.nan
+    if mae is not None:
+        g["__mae"] = mae.values
     g = g[pd.notna(g["__mfe"]) & pd.notna(g["__rr"])]
-    if g.empty:
-        t._unavailable("Trade Efficiency (MAE/MFE)"); return
-
-    wins = g[g["__rr"] > 0]
-    capwins = wins[wins["__mfe"] > 0]
-    cap_eff = float((capwins["__rr"] / capwins["__mfe"]).clip(0, 1).mean() * 100) if not capwins.empty else float("nan")
+    if len(g) < 5:
+        t._unavailable("Trade efficiency"); return
     avg_mfe = float(g["__mfe"].mean())
-    avg_mae = float(g["__mae"].mean()) if pd.notna(g["__mae"]).any() else float("nan")
-    avg_giveback = float((capwins["__mfe"] - capwins["__rr"]).clip(lower=0).mean()) if not capwins.empty else float("nan")
-
-    # Prefer MT5's native computed columns when present (exact, not estimated)
-    _eff = _num(df, "MFE Efficiency %")
-    if _eff is not None:
-        _m = float(_eff.mean())
-        if 0.0 <= _m <= 100.0:
-            cap_eff = _m
-    if not np.isnan(cap_eff):
-        cap_eff = float(min(max(cap_eff, 0.0), 100.0))
-    _gb = _num(df, "Give-back after MFE (R)")
-    if _gb is not None:
-        avg_giveback = float(_gb.mean())
-    _tgt = _num(df, "Target Achieved %")
-    avg_tgt = float(_tgt.mean()) if _tgt is not None else float("nan")
-
-    cols = st.columns(5 if not np.isnan(avg_tgt) else 4)
-    with cols[0]: _kpi("Avg MFE (favour)", f"{avg_mfe:.2f}R", "avg peak in your favour")
-    with cols[1]: _kpi("Avg MAE (heat)", "—" if np.isnan(avg_mae) else f"{avg_mae:.2f}R", "avg dip before close")
-    with cols[2]: _kpi("Capture efficiency", "—" if np.isnan(cap_eff) else f"{cap_eff:.0f}%", "of favour banked on wins")
-    with cols[3]: _kpi("Avg give-back", "—" if np.isnan(avg_giveback) else f"{avg_giveback:.2f}R", "left on table per win")
-    if not np.isnan(avg_tgt):
-        with cols[4]: _kpi("Target achieved", f"{avg_tgt:.0f}%", "of planned target hit")
-
-    plot = g.copy()
-    plot["OutcomeC"] = _outcome(plot)
-    plot = plot.rename(columns={"__mfe": "MFE_R", "__rr": "Captured_R"})
-    vals = t._to_alt_values(plot[["MFE_R", "Captured_R", "OutcomeC"]])
-    if vals:
-        hi = float(max(1.0, plot["MFE_R"].max()))
-        scatter = (
-            alt.Chart(alt.Data(values=vals)).mark_circle(size=80, opacity=0.6, stroke="#fff", strokeWidth=1)
-            .encode(
-                x=alt.X("MFE_R:Q", title="MFE — favourable move available (R)",
-                        axis=alt.Axis(grid=True, gridColor="#eef0f5", labelColor="#94a3b8", titleColor="#94a3b8")),
-                y=alt.Y("Captured_R:Q", title="Captured (R)",
-                        axis=alt.Axis(grid=True, gridColor="#eef0f5", labelColor="#94a3b8", titleColor="#94a3b8")),
-                color=alt.Color("OutcomeC:N", title=None,
-                                scale=alt.Scale(domain=["Win", "BE", "Loss"],
-                                                range=["#16a34a", "#9ca3af", "#ef4444"])),
-                tooltip=[alt.Tooltip("MFE_R:Q", title="MFE", format=".2f"),
-                         alt.Tooltip("Captured_R:Q", title="Captured", format=".2f"),
-                         alt.Tooltip("OutcomeC:N", title="Outcome")],
-            )
-        )
-        diag = (alt.Chart(alt.Data(values=[{"x": 0, "y": 0}, {"x": hi, "y": hi}]))
-                .mark_line(strokeDash=[4, 4], color=PURPLE)
-                .encode(x=alt.X("x:Q", title=None), y=alt.Y("y:Q", title=None)))
-        st.altair_chart(styler(alt.layer(scatter, diag).properties(height=320)), use_container_width=True)
-        st.caption("Dashed line = captured the full favourable move. Points well below it = exited early.")
-
-    if not np.isnan(cap_eff):
-        if cap_eff < 60:
+    avg_mae = float(g["__mae"].mean()) if "__mae" in g.columns and g["__mae"].notna().any() else float("nan")
+    wins = g[g["__rr"] > 0.15]
+    cap = float((wins["__rr"] / wins["__mfe"]).replace([pd.NA], pd.NA).clip(0, 1).mean() * 100) \
+        if len(wins) and (wins["__mfe"] > 0).all() else float("nan")
+    give = float((wins["__mfe"] - wins["__rr"]).clip(lower=0).mean()) if len(wins) else float("nan")
+    c1, c2, c3, c4 = st.columns(4)
+    with c1: _kpi("Avg peak", f"{avg_mfe:+.2f}R", "how far trades run for you")
+    with c2: _kpi("Avg dip", "\u2014" if avg_mae != avg_mae else f"{avg_mae:+.2f}R",
+                  "heat taken before close", "#ef4444")
+    with c3: _kpi("Capture", "\u2014" if cap != cap else f"{cap:.0f}%",
+                  "of the favourable move banked", "#16a34a" if cap == cap and cap >= 60 else PURPLE)
+    with c4: _kpi("Give-back", "\u2014" if give != give else f"{give:.2f}R",
+                  "left on the table per win", "#ef4444" if give == give and give >= 0.75 else PURPLE)
+    if cap == cap and give == give and len(wins) >= 8:
+        if give >= 0.75:
             t._insight_box(
-                f"You're banking only <b>{cap_eff:.0f}%</b> of the favourable move on winners "
-                f"(avg give-back <b>{avg_giveback:.1f}R</b> per win). Consider letting winners run "
-                f"closer to structure before managing.", "warn")
+                f"You bank <b>{cap:.0f}%</b> of what the market gives you and leave "
+                f"<b>{give:.2f}R per win</b> on the table. A mechanical partial at +1R "
+                "(decided before entry) is the usual fix \u2014 test it on the exit optimizer below.",
+                "warn")
         else:
-            t._insight_box(f"Strong capture — banking <b>{cap_eff:.0f}%</b> of the favourable move on winners.", "good")
+            t._insight_box(
+                f"You bank <b>{cap:.0f}%</b> of the favourable move and give back only "
+                f"<b>{give:.2f}R per win</b> \u2014 exits are doing their job.", "good")
 
 
-# ── 2. Dollar P&L ─────────────────────────────────────────────────────────────
 def _dollar_pnl_section(df: pd.DataFrame, styler) -> None:
     t = _t()
     st.markdown("### Dollar P&L")

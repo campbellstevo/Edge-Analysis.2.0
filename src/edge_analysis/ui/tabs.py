@@ -488,6 +488,9 @@ def _perf_settings(g: pd.DataFrame):
         st.session_state["ea_m_stop"] = float(auto_stop)
     if "ea_m_cap" not in st.session_state:
         st.session_state["ea_m_cap"] = 12
+    st.session_state["ea_m_tgt"] = float(min(20.0, max(0.5, st.session_state["ea_m_tgt"])))
+    st.session_state["ea_m_stop"] = float(min(-1.0, max(-15.0, st.session_state["ea_m_stop"])))
+    st.session_state["ea_m_cap"] = int(min(40, max(1, st.session_state["ea_m_cap"])))
     return (float(st.session_state["ea_m_tgt"]),
             float(st.session_state["ea_m_stop"]), auto_tgt)
 
@@ -574,24 +577,47 @@ def _month_card(f: pd.DataFrame, styler) -> None:
                     pop = st.popover("✎")
                 except Exception:
                     pop = st.expander("✎")
+                def _plan_dirty():
+                    st.session_state["ea_mplan_dirty"] = True
+
                 with pop:
-                    def _plan_dirty():
+                    def _preset(t_, s_, c_):
+                        st.session_state["ea_m_tgt"] = float(t_)
+                        st.session_state["ea_m_stop"] = float(s_)
+                        st.session_state["ea_m_cap"] = int(c_)
                         st.session_state["ea_mplan_dirty"] = True
-                    st.number_input("Target (R)", min_value=0.5, max_value=50.0,
-                                    step=0.5, key="ea_m_tgt", on_change=_plan_dirty)
-                    st.number_input("Max loss (R)", min_value=-30.0, max_value=-1.0,
-                                    step=0.5, key="ea_m_stop", on_change=_plan_dirty)
-                    st.number_input("Trades / month", min_value=1, max_value=200,
-                                    step=1, key="ea_m_cap", on_change=_plan_dirty)
-                    rc1, rc2 = st.columns([1, 1.4])
-                    with rc1:
-                        if st.button("Reset to auto", key="ea_m_reset"):
-                            st.session_state.pop("ea_m_tgt", None)
-                            st.session_state.pop("ea_m_stop", None)
-                            st.session_state["ea_mplan_clear"] = True
-                            _st_rerun_safe()
-                    with rc2:
-                        st.caption(f"Auto: {auto_tgt:+.1f}R · -6R (your rule)")
+                    st.markdown("<div style='font-size:11px;font-weight:700;"
+                                "letter-spacing:0.06em;color:#94a3b8;'>PICK A PACE</div>",
+                                unsafe_allow_html=True)
+                    pc1, pc2 = st.columns(2)
+                    with pc1:
+                        st.button(f"Auto \u2014 my data\n{auto_tgt:+.1f}R \u00b7 -6R \u00b7 12t",
+                                  key="pp_auto", use_container_width=True,
+                                  on_click=_preset, args=(auto_tgt, -6.0, 12))
+                        st.button("Standard 5%\n+5R \u00b7 -6R \u00b7 12t",
+                                  key="pp_std", use_container_width=True,
+                                  on_click=_preset, args=(5.0, -6.0, 12))
+                    with pc2:
+                        st.button("Steady\n+3R \u00b7 -4R \u00b7 8t",
+                                  key="pp_steady", use_container_width=True,
+                                  on_click=_preset, args=(3.0, -4.0, 8))
+                        st.button("Aggressive\n+8R \u00b7 -8R \u00b7 20t",
+                                  key="pp_aggr", use_container_width=True,
+                                  on_click=_preset, args=(8.0, -8.0, 20))
+                    st.markdown("<div style='font-size:11px;font-weight:700;"
+                                "letter-spacing:0.06em;color:#94a3b8;margin-top:6px;'>"
+                                "FINE-TUNE</div>", unsafe_allow_html=True)
+                    with st.form("plan_form", border=False):
+                        st.slider("Monthly target (R)", min_value=0.5, max_value=20.0,
+                                  step=0.5, key="ea_m_tgt")
+                        st.slider("Max monthly loss (R)", min_value=-15.0, max_value=-1.0,
+                                  step=0.5, key="ea_m_stop")
+                        st.slider("Trades per month", min_value=1, max_value=40,
+                                  step=1, key="ea_m_cap")
+                        st.form_submit_button("Save", type="primary", on_click=_plan_dirty)
+                    st.caption(f"{TGT_R:.1f}R target \u00b7 {STOP_R:+.0f}R stop \u00b7 "
+                               f"{int(st.session_state.get('ea_m_cap', 12))} trades "
+                               f"\u2248 {max(1, round(int(st.session_state.get('ea_m_cap', 12)) / 4))} a week")
 
         if md.empty:
             st.info("No trades this month yet.")
