@@ -3000,31 +3000,28 @@ def _conditions_tab(f: pd.DataFrame, show_table):
             else:
                 cells[state] = ("\u2014", "#c3c9d4")
         grid.append((tf_titles.get(col, col), cells))
-    def _cell_pill(val, col):
-        if col == "#c3c9d4":
-            return (f"<span style='display:inline-block;min-width:120px;text-align:center;"
-                    f"background:#f4f5f8;color:#a6adbb;border-radius:999px;"
-                    f"padding:7px 14px;font-size:14px;font-weight:700;'>{val}</span>")
-        bg = "#e7f6ec" if col == "#16a34a" else "#fdeaea"
-        return (f"<span style='display:inline-block;min-width:120px;text-align:center;"
-                f"background:{bg};color:{col};border-radius:999px;"
-                f"padding:7px 14px;font-size:14px;font-weight:800;'>{val}</span>")
-    head = ("<div style='display:flex;align-items:center;padding:12px 18px 8px;'>"
-            "<div style='flex:1;'></div>"
-            "<div style='width:170px;text-align:center;font-size:11px;font-weight:700;"
-            "letter-spacing:0.09em;color:#94a3b8;'>TRENDING</div>"
-            "<div style='width:170px;text-align:center;font-size:11px;font-weight:700;"
-            "letter-spacing:0.09em;color:#94a3b8;'>RANGING</div></div>")
-    rows_html = ""
-    for i, (lab, cells) in enumerate(grid):
-        t_v, t_c = cells["Trending"]; r_v, r_c = cells["Ranging"]
-        rows_html += (f"<div style='display:flex;align-items:center;padding:8px 18px;'>"
-                      f"<div style='flex:1;font-size:14.5px;font-weight:700;color:#0f172a;'>{lab}</div>"
-                      f"<div style='width:170px;text-align:center;'>{_cell_pill(t_v, t_c)}</div>"
-                      f"<div style='width:170px;text-align:center;'>{_cell_pill(r_v, r_c)}</div></div>")
-    st.markdown("<div style='background:#fff;border:1px solid #eef0f4;border-radius:12px;"
-                "overflow:hidden;margin:4px 0 8px;padding:2px 0 10px;'>" + head + rows_html + "</div>",
-                unsafe_allow_html=True)
+    bar_rows = []
+    hidden = 0
+    for col in present_cols:
+        col_data = counted[counted[col].notna()].copy()
+        for state in ("Trending", "Ranging"):
+            grp = col_data[col_data[col].astype(str).str.contains(state, case=False, na=False)]
+            rr = grp["__rr"].dropna()
+            if len(grp) >= 3 and len(rr) > 0:
+                avg = float(rr.mean())
+                bar_rows.append({"Category": f"{tf_titles.get(col, col)} \u00b7 {state}",
+                                 "Avg R": round(avg, 2), "Trades": len(grp)})
+                all_rows.append({"Condition": f"{tf_titles.get(col, col)} \u00b7 {state}",
+                                 "Expectancy": avg, "N": len(grp)})
+            elif len(grp) > 0:
+                hidden += 1
+    if not bar_rows:
+        st.caption("Not enough logged conditions yet \u2014 rows appear at 3+ trades per state.")
+    else:
+        _rank_dots(bar_rows, "Category", "Avg R")
+        if hidden:
+            st.caption(f"+{hidden} more state{'s' if hidden != 1 else ''} with under 3 trades "
+                       "\u2014 shown once they have a sample.")
 
     all_rows = [r for r in all_rows if r.get("N", 0) >= 8]
     if all_rows:
