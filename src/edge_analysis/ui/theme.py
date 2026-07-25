@@ -1387,6 +1387,33 @@ def inject_dark_overlay():
         background: #161b27 !important;
         border-color: rgba(255,255,255,0.09) !important;
     }
+    div[style*="background: rgb(251, 252, 254)"] {
+        background: #1a1f2b !important;
+        border-color: rgba(255,255,255,0.09) !important;
+    }
+    div[style*="background: rgb(233, 247, 239)"] {
+        background: #132a1d !important;
+        border-color: #2f5942 !important;
+    }
+    div[style*="background: rgb(233, 247, 239)"] * { color: #8fd6ab !important; }
+    div[style*="background: rgb(253, 246, 232)"] {
+        background: #2b2214 !important;
+        border-color: #5c4726 !important;
+    }
+    div[style*="background: rgb(253, 246, 232)"] * { color: #e6b566 !important; }
+    div[style*="background: rgb(253, 232, 232)"] {
+        background: #2b1616 !important;
+        border-color: #5c2626 !important;
+    }
+    div[style*="background: rgb(253, 232, 232)"] * { color: #f09a9a !important; }
+    span[style*="background: rgb(226, 245, 233)"] {
+        background: #143024 !important;
+        color: #7fd6a4 !important;
+    }
+    span[style*="background: rgb(253, 232, 232)"] {
+        background: #2b1616 !important;
+        color: #f09a9a !important;
+    }
     .ea-pb-lab { color: #e5e7eb !important; }
     .ea-pb-n { color: #6b7280 !important; }
     .ea-pb-track { background: #1a1f2b !important; }

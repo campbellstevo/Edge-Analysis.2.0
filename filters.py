@@ -113,6 +113,8 @@ def render_filters(
     except Exception:
         flt = st.expander(_flabel)
     with flt:
+        st.markdown("<div style='font-size:11px;font-weight:700;letter-spacing:0.06em;"
+                    "color:#94a3b8;margin-bottom:2px;'>FILTERS</div>", unsafe_allow_html=True)
         c1, c2 = st.columns(2, gap="small")
         with c1:
             sel_inst = st.selectbox(
@@ -142,19 +144,7 @@ def render_filters(
                 key="filters_sess_select",
             )
             sel_acct = "All"
-        c3, c4 = st.columns(2, gap="small")
-        sel_tot = "All"
-        with c3:
-            current_mode = st.session_state.get("filters_date_mode", "All")
-            if current_mode not in date_mode_options:
-                current_mode = "All"
-            date_mode = st.selectbox(
-                "Date range",
-                date_mode_options,
-                index=date_mode_options.index(current_mode),
-                key="filters_date_mode",
-            )
-        with c4:
+            sel_tot = "All"
             # one box, two journals: MT5 templates filter by Trade Type,
             # the SR template filters by Account
             _has_tot = bool(tot_opts) and len(tot_opts) > 1
@@ -179,6 +169,17 @@ def render_filters(
                     index=acct_opts.index(_cur_acct),
                     key="filters_acct_select",
                 )
+        c3, c4 = st.columns(2, gap="small")
+        with c3:
+            current_mode = st.session_state.get("filters_date_mode", "All")
+            if current_mode not in date_mode_options:
+                current_mode = "All"
+            date_mode = st.selectbox(
+                "Date range",
+                date_mode_options,
+                index=date_mode_options.index(current_mode),
+                key="filters_date_mode",
+            )
         date_range: Optional[DateRange] = None
         if date_mode == "Last 30 days":
             date_range = (max_date - __import__("datetime").timedelta(days=29), max_date)
@@ -230,7 +231,12 @@ def render_filters(
             _cur_page = st.session_state.get(SessionKeys.NAV_PAGE, PageNames.DASHBOARD)
             st.session_state["ea_menu"] = (_cur_page if _cur_page in _menu_opts
                                            else PageNames.DASHBOARD)
-        st.selectbox("Page", _menu_opts, key="ea_menu", on_change=_menu_cb)
+        st.markdown("<div style='border-top:1px solid rgba(148,163,184,0.25);margin:10px 0 6px;'></div>"
+                    "<div style='font-size:11px;font-weight:700;letter-spacing:0.06em;"
+                    "color:#94a3b8;margin-bottom:2px;'>PAGE &amp; ACTIONS</div>",
+                    unsafe_allow_html=True)
+        st.selectbox("Page", _menu_opts, key="ea_menu", on_change=_menu_cb,
+                     label_visibility="collapsed")
     if st.session_state.pop("ea_show_qr", False):
         if _qr_dialog is not None:
             _qr_dialog()
