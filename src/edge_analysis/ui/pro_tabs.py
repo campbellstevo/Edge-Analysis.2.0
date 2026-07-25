@@ -262,7 +262,7 @@ def _a_game(df, styler) -> None:
     with c2: _kpi("All trades", f"{alls['wr']:.0f}%", f"{alls['n']} trades · {alls['exp']:+.2f}R")
     with c3:
         if off:
-            _kpi("Off-plan cost", f"{off['net']:+.0f}R", f"{off['n']} off-plan trades", "#ef4444" if off['net'] < 0 else PURPLE)
+            _kpi("Off-plan cost", f"{off['net']:+.0f}R", f"total across {off['n']} off-plan trades", "#ef4444" if off['net'] < 0 else PURPLE)
         else:
             _kpi("Off-plan cost", "—", "no off-plan trades")
     st.caption("A-Game = " + " + ".join(used) + ".")
@@ -277,7 +277,7 @@ def _a_game(df, styler) -> None:
 def _heatmap_hour_day(df, styler) -> None:
     t = _t()
     st.markdown("### When You Trade Best")
-    st.caption("Your best and worst trading windows — average R per trade by weekday and hour (Melbourne time), minimum 2 trades.")
+    st.caption("Your best and worst trading windows — average R per trade by weekday and hour (Melbourne time), minimum 3 trades.")
     g = df.copy()
     g["__rr"] = pd.to_numeric(g.get("Closed RR"), errors="coerce")
     hour = _num(df, "Hour (Melb)")
@@ -309,7 +309,7 @@ def _heatmap_hour_day(df, styler) -> None:
 def _symbol_session_matrix(df, styler) -> None:
     t = _t()
     st.markdown("### Where Your Edge Lives")
-    st.caption("Average R per trade by instrument and session — your strongest and weakest combinations, minimum 2 trades.")
+    st.caption("Average R per trade by instrument and session — your strongest and weakest combinations, minimum 3 trades.")
     g = df.copy()
     g["__rr"] = pd.to_numeric(g.get("Closed RR"), errors="coerce")
     sym = next((c for c in ["Instrument", "Pair", "Symbol"] if c in g.columns), None)

@@ -898,7 +898,7 @@ def inject_theme():
 
     /* Hidden JS helper components must take no space (white strips fix) */
     iframe[title="streamlit_js_eval.streamlit_js_eval"] {{ display: none !important; }}
-    div[data-testid="stElementContainer"]:has(> iframe[title="streamlit_js_eval.streamlit_js_eval"]) {{
+    div[data-testid="stElementContainer"]:has(iframe[title="streamlit_js_eval.streamlit_js_eval"]) {{
       display: none !important; height: 0 !important; margin: 0 !important;
     }}
     div[data-testid="stCustomComponentV1"] {{ background: transparent !important; }}
@@ -1125,7 +1125,7 @@ def inject_theme():
     div[data-testid="stTabs"]:has(~ div[data-testid="stTabs"]) {{ display: none !important; }}
 
     /* Inside forms, dragging needs feedback before Run is pressed */
-    [data-testid="stForm"] [data-testid="stSliderThumbValue"] {{
+    [data-testid="stPopoverBody"] [data-testid="stForm"] [data-testid="stSliderThumbValue"] {{
         display: block !important;
         font-family: "Source Sans Pro", -apple-system, sans-serif !important;
         font-size: 12px !important;
@@ -1275,6 +1275,9 @@ def inject_dark_overlay():
     .proj-stat-cell { background: #161b27 !important; border-color: rgba(255,255,255,0.09) !important; }
     .proj-stat-label { color: #9aa4b4 !important; }
     .proj-stat-value { color: #e8ebf1; }
+    .proj-table-header, .proj-table-total { background: #232a3a !important; color: #e8ebf1 !important; }
+    .proj-table-row { border-color: rgba(255,255,255,0.08) !important; }
+    .proj-table-row:nth-child(even) { background: #1a2030 !important; }
     .proj-table-row { background: #161b27 !important; color: #c9d0dc !important; }
     .proj-table-row:nth-child(even) { background: #191f2c !important; }
     .stSelectbox [data-baseweb="select"] div {

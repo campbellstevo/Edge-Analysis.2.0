@@ -2652,45 +2652,93 @@ def _breaker_strip(df_raw: pd.DataFrame) -> None:
         f"</div></div>", unsafe_allow_html=True)
 
 
+def _more_detail_has_content(f: pd.DataFrame, df_all: pd.DataFrame) -> bool:
+    """True when the More-detail card would actually show a comparison."""
+    try:
+        if f is not None and not f.empty:
+            g = _ensure_instrument_column(f)
+            if "Instrument" in g.columns:
+                vals = g["Instrument"].astype(str).str.strip()
+                vals = vals[~vals.isin(["", "nan", "NaN", "None"])]
+                if vals.nunique() > 1:
+                    return True
+            lm = {str(c).strip().lower(): c for c in f.columns}
+            ac = lm.get("account") or lm.get("accounts") or lm.get("account name")
+            if ac is not None:
+                av = f[ac].astype(str).str.strip()
+                av = av[~av.isin(["", "nan", "NaN", "None"])]
+                if av.nunique() > 1:
+                    return True
+        if df_all is not None and not df_all.empty and "Result" in df_all.columns:
+            if df_all["Result"].astype(str).str.contains("Early Close", na=False).any():
+                return True
+    except Exception:
+        return True  # never hide data because the probe broke
+    return False
+
+
 def _powered_on_panel(df: pd.DataFrame) -> None:
-    """Which app features this journal's columns unlock."""
+    """Which app features this journal's columns unlock — and which are present
+    but unlogged (column exists, too few values to power anything)."""
     if df is None or df.empty:
         return
-    cols = set(str(c).strip() for c in df.columns)
+    colmap = {str(c).strip(): c for c in df.columns}
 
-    def has(*names):
-        return any(n in cols for n in names)
+    def state(*names):
+        present = [colmap[n] for n in names if n in colmap]
+        if not present:
+            return "off"
+        for c in present:
+            v = df[c]
+            if v.dtype == object:
+                nn = v.astype(str).str.strip()
+                nn = nn[~nn.isin(["", "nan", "NaN", "None", "[]"])]
+                cnt = int(nn.notna().sum())
+            else:
+                cnt = int(v.notna().sum())
+            if cnt >= 3:
+                return "on"
+        return "unlogged"
 
     feats = [
-        ("Entry models", has("Entry Model", "Entry Models List"), "Entry Model"),
-        ("Entry criteria", has("Sweep?", "DIV?", "Multi Entry Model Setup", "Double Confirmation"),
+        ("Entry models", state("Entry Model", "Entry Models List"), "Entry Model"),
+        ("Entry criteria", state("Sweep?", "DIV?", "Multi Entry Model Setup", "Double Confirmation"),
          "Sweep? / DIV? / Multi Entry Model Setup"),
-        ("Market conditions", has("Conditions ETF", "Conditions MTF", "Conditions HTF"),
+        ("Market conditions", state("Conditions ETF", "Conditions MTF", "Conditions HTF"),
          "Conditions ETF/MTF/HTF"),
-        ("Overbought / Oversold", has("Oversold or Overbought?"), "Oversold or Overbought?"),
-        ("External factors board", has("Volatility", "News Aspect", "GAP Alignment"),
+        ("Overbought / Oversold", state("Oversold or Overbought?"), "Oversold or Overbought?"),
+        ("External factors board", state("Volatility", "News Aspect", "GAP Alignment"),
          "Volatility / News Aspect / GAP Alignment"),
-        ("Loss post-mortem", has("Reason of loss"), "Reason of loss"),
-        ("Mental state gate", has("Mental State"), "Mental State"),
-        ("Timing (sessions & hours)", has("Session", "Session Norm", "Hour (Melb)", "Date"),
+        ("Loss post-mortem", state("Reason of loss"), "Reason of loss"),
+        ("Mental state gate", state("Mental State"), "Mental State"),
+        ("Timing (sessions & hours)", state("Session", "Session Norm", "Hour (Melb)", "Date"),
          "Session or a datetime column"),
-        ("Dollar P&L", has("PnL (USD)", "PnL"), "PnL (USD)"),
-        ("Trade efficiency (MAE/MFE)", has("MFE (R)", "MAE (R)"), "MAE (R) / MFE (R)"),
-        ("Discipline scorecard", has("Rules Followed?"), "Rules Followed?"),
-        ("Mistake leaks", has("Mistake"), "Mistake"),
+        ("Dollar P&L", state("PnL (USD)", "PnL"), "PnL (USD)"),
+        ("Trade efficiency (MAE/MFE)", state("MFE (R)", "MAE (R)"), "MAE (R) / MFE (R)"),
+        ("Discipline scorecard", state("Rules Followed?"), "Rules Followed?"),
+        ("Mistake leaks", state("Mistake"), "Mistake"),
     ]
-    on = sum(1 for _, ok, _ in feats if ok)
+    on = sum(1 for _, st_, _ in feats if st_ == "on")
+    unlogged = sum(1 for _, st_, _ in feats if st_ == "unlogged")
     st.markdown(f"### What your template powers on")
-    st.caption(f"{on} of {len(feats)} features active \u00b7 add the missing column in Notion to unlock a feature.")
+    cap = f"{on} of {len(feats)} features active"
+    if unlogged:
+        cap += f" \u00b7 {unlogged} waiting on logged values"
+    cap += " \u00b7 add the missing column in Notion to unlock a feature."
+    st.caption(cap)
     import html as _h
     parts = []
-    for name, ok, need in feats:
-        mark = "\u2713" if ok else "\u2014"
-        mc = "#16a34a" if ok else "#c3c9d4"
-        tc = "#0f172a" if ok else "#94a3b8"
-        fw = 700 if ok else 500
-        hint = "" if ok else ("<span style='font-size:11.5px;color:#c3c9d4;'>needs "
-                              + _h.escape(need) + "</span>")
+    for name, st_, need in feats:
+        if st_ == "on":
+            mark, mc, tc, fw, hint = "\u2713", "#16a34a", "#0f172a", 700, ""
+        elif st_ == "unlogged":
+            mark, mc, tc, fw = "\u25d0", "#b45309", "#7c4a03", 600
+            hint = ("<span style='font-size:11.5px;color:#c9a36a;'>column there \u2014 "
+                    "log it on a few trades</span>")
+        else:
+            mark, mc, tc, fw = "\u2014", "#c3c9d4", "#94a3b8", 500
+            hint = ("<span style='font-size:11.5px;color:#c3c9d4;'>needs "
+                    + _h.escape(need) + "</span>")
         parts.append(
             "<div style='display:flex;align-items:center;gap:10px;padding:7px 4px;"
             "flex:1 1 46%;min-width:280px;'>"
@@ -3252,8 +3300,11 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
         text-align: center;
     }
     .proj-stat-label {
-        font-size: 0.75rem;
-        color: #666;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #94a3b8;
         margin-bottom: 4px;
     }
     .proj-stat-value {
@@ -3262,8 +3313,8 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
         color: #4800ff;
     }
     .proj-table-header {
-        background: #1a0066;
-        color: white;
+        background: #f4f2ff;
+        color: #1a0066;
         padding: 10px 14px;
         border-radius: 8px 8px 0 0;
         font-weight: 700;
@@ -3288,8 +3339,8 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
         font-weight: 700;
         font-size: 0.85rem;
         text-align: center;
-        background: #1a0066;
-        color: white;
+        background: #f4f2ff;
+        color: #1a0066;
         border-radius: 0 0 8px 8px;
     }
     .proj-positive { color: #00a86b; font-weight: 600; }
@@ -3357,8 +3408,7 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
         except Exception:
             pass
 
-    # ── Header ───────────────────────────────────────────────────────────────
-    st.markdown("### Monte Carlo Projections")
+    # ── Header (card title comes from the card) ──────────────────────────────
     st.caption(
         f"Auto-filled from **{total_incl_be} completed trades** — "
         f"Win rate: **{base_wr:.1%}** · Break-even: **{base_be:.1%}** · "
@@ -3464,10 +3514,11 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
         t_idx    = 0
         tpm      = int(trades_per_month)
         from datetime import date
-        start_year = date.today().year + 1
+        _t = date.today()
         for m in range(int(total_months)):
-            year  = start_year + m // 12
-            month = (m % 12) + 1
+            _ym   = _t.year * 12 + _t.month + m   # first projected month = next month
+            year  = _ym // 12
+            month = _ym % 12 + 1
             month_rr = rr_matrix[path_idx, t_idx: t_idx + tpm]
             t_idx   += tpm
             start_bal = balance
@@ -3691,7 +3742,7 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
         use_container_width=True
     )
     st.caption(
-        f"Dashed line = your current sample ({total} trades). "
+        f"Dashed line = your current sample ({total} win/loss trades \u2014 break-evens sit outside the win rate). "
         "Shaded band = 90% confidence interval — narrows as sample grows."
     )
 
@@ -4376,7 +4427,17 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
                                                                        "#ef4444"])),
                                 tooltip=[alt.Tooltip("Month:N"),
                                          alt.Tooltip("Cum:Q", format="+.2f")]))
-                st.altair_chart(styler(alt.layer(*lays, past, curl, dots)
+                labs = (alt.Chart(alt.Data(values=endpts))
+                        .mark_text(align="left", dx=9, dy=-2, fontSize=11.5,
+                                   fontWeight=700)
+                        .encode(x=alt.X("Day:Q", title=None, scale=xsc),
+                                y=alt.Y("Cum:Q", title=None, scale=ysc),
+                                text="Month:N",
+                                color=alt.Color("col:N", legend=None,
+                                                scale=alt.Scale(domain=["cur", "up", "down"],
+                                                                range=["#4800ff", "#16a34a",
+                                                                       "#ef4444"]))))
+                st.altair_chart(styler(alt.layer(*lays, past, curl, dots, labs)
                                        .properties(height=300)),
                                 use_container_width=True)
             else:
@@ -4545,21 +4606,22 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
         _month_card(f_perf, styler)
         _targets_tab(df_all_safe, styler)
         _alltime_card(f_perf, styler)
-        with st.container(border=True):
-            st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
-            _card_header("More detail", "Early closes, assets and accounts \u2014 when there's something to compare.")
-            with _budget(1):
-                _instruments_tab(f_perf, show_table)
-                if not _salty:
-                    _early_close_tab(df_all_safe, styler)
-                    _gap(18)
-                    _account_comparison_tab(f_perf, styler)
-                else:
-                    _early_close_tab_salty(df_all_safe, styler)
+        if _more_detail_has_content(f_perf, df_all_safe):
+            with st.container(border=True):
+                st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
+                _card_header("More detail", "Early closes, assets and accounts \u2014 when there's something to compare.")
+                with _budget(1):
+                    _instruments_tab(f_perf, show_table)
+                    if not _salty:
+                        _early_close_tab(df_all_safe, styler)
+                        _gap(18)
+                        _account_comparison_tab(f_perf, styler)
+                    else:
+                        _early_close_tab_salty(df_all_safe, styler)
 
         with st.container(border=True):
             st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
-            _card_header("Projections", "What this edge does over the next 12 months if you keep showing up.")
+            _card_header("Projections", "What this edge does over the months ahead if you keep showing up.")
             with _budget(1):
                 _projections_tab(df_all_safe, styler)
 
