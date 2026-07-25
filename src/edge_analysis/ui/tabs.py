@@ -577,16 +577,12 @@ def _month_card(f: pd.DataFrame, styler) -> None:
                 with pop:
                     def _plan_dirty():
                         st.session_state["ea_mplan_dirty"] = True
-                    e1, e2, e3 = st.columns(3)
-                    with e1:
-                        st.number_input("Target (R)", min_value=0.5, max_value=50.0,
-                                        step=0.5, key="ea_m_tgt", on_change=_plan_dirty)
-                    with e2:
-                        st.number_input("Max loss (R)", min_value=-30.0, max_value=-1.0,
-                                        step=0.5, key="ea_m_stop", on_change=_plan_dirty)
-                    with e3:
-                        st.number_input("Trades / month", min_value=1, max_value=200,
-                                        step=1, key="ea_m_cap", on_change=_plan_dirty)
+                    st.number_input("Target (R)", min_value=0.5, max_value=50.0,
+                                    step=0.5, key="ea_m_tgt", on_change=_plan_dirty)
+                    st.number_input("Max loss (R)", min_value=-30.0, max_value=-1.0,
+                                    step=0.5, key="ea_m_stop", on_change=_plan_dirty)
+                    st.number_input("Trades / month", min_value=1, max_value=200,
+                                    step=1, key="ea_m_cap", on_change=_plan_dirty)
                     rc1, rc2 = st.columns([1, 1.4])
                     with rc1:
                         if st.button("Reset to auto", key="ea_m_reset"):
