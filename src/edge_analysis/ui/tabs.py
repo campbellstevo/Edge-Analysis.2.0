@@ -703,7 +703,7 @@ def _alltime_card(f: pd.DataFrame, styler) -> None:
                 view = st.radio("Units", ["R", "$"], horizontal=True, key="eq_units",
                                 label_visibility="collapsed") or "R"
         with h3:
-            bucket = st.selectbox("Time Bucket", ["Day", "Week", "Month"], index=1,
+            bucket = st.selectbox("Time Bucket", ["Day", "Week", "Month"], index=2,
                                   key="growth_bucket", label_visibility="collapsed")
         gi = g.set_index("__Date")
         if view == "$" and has_usd:
