@@ -4558,10 +4558,6 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                 if _mt5:
                     _gap(18)
                     _holdtime_section(_data, styler)
-                    _gap(18)
-                    _heatmap_hour_day(_data, styler)
-                    _gap(18)
-                    _symbol_session_matrix(_data, styler)
 
         if _mt5 or _salty:
             with st.container(border=True):
@@ -4594,6 +4590,11 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                 _obos_section(f_perf)
                 _gap(18)
                 _confluence_board(f_perf, scope="external")
+                if _mt5:
+                    _gap(18)
+                    _heatmap_hour_day(_data, styler)
+                    _gap(18)
+                    _symbol_session_matrix(_data, styler)
         if _mt5:
             with st.container(border=True):
                 st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
