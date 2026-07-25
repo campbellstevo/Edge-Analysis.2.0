@@ -29,7 +29,7 @@ def _stamp_sync():
         pass
 
 
-@st.cache_data(show_spinner=False, ttl=1800)
+@st.cache_data(show_spinner=False, ttl=21600)
 def _load_live_df_cached(token: Optional[str], dbid: Optional[str]):
     """Returns (df, fetched_at_epoch) — the stamp lives with the cache entry, so
     cache hits report the true age of the data, not the age of the rerun."""

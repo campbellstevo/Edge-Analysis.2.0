@@ -1387,7 +1387,9 @@ def inject_dark_overlay():
         background: #161b27 !important;
         border-color: rgba(255,255,255,0.09) !important;
     }
-    div[style*="background: rgb(251, 252, 254)"] {
+    div[style*="background: rgb(241, 245, 249)"],
+div[style*="background:#f1f5f9"] { background: #232a3a !important; }
+div[style*="background: rgb(251, 252, 254)"] {
         background: #1a1f2b !important;
         border-color: rgba(255,255,255,0.09) !important;
     }

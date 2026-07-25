@@ -521,6 +521,11 @@ def _perf_prep(f: pd.DataFrame):
             g["__Date"] = g["__Date"].dt.tz_localize(None)
     except Exception:
         pass
+    try:
+        from edge_analysis.ui.plan_tabs import get_tz_offset
+        g["__Date"] = g["__Date"] + pd.Timedelta(hours=get_tz_offset(g))
+    except Exception:
+        pass
     if "PnL_from_RR" not in g.columns:
         rr_col = "Closed RR Num" if "Closed RR Num" in g.columns else "Closed RR"
         g["PnL_from_RR"] = g.get(rr_col, 0.0).fillna(0.0)

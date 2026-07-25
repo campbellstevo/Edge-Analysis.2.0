@@ -323,7 +323,7 @@ def cached_daily_df(token: str, start_iso: str, end_iso: str) -> pd.DataFrame:
     """Fetch + build the daily DataFrame, cached for 30 min by (token, window)."""
     import streamlit as st
 
-    @st.cache_data(ttl=1800, show_spinner=False)
+    @st.cache_data(ttl=21600, show_spinner=False)
     def _run(_token: str, _start: str, _end: str) -> pd.DataFrame:
         raw = fetch_raw(_token, _start, _end)
         return build_daily_df(raw["cycles"], raw["recoveries"],

@@ -988,6 +988,8 @@ def _restore_device_auth() -> bool:
     """Try to log in from browser storage. Returns True if login completed."""
     saved = _js_eval(f"localStorage.getItem({json.dumps(_DEVICE_AUTH_KEY)}) || ''",
                      key="ea_auth_load")
+    if saved is None:
+        return None  # component still resolving — caller may wait briefly
     if not saved:
         return False
     try:
@@ -1063,7 +1065,19 @@ def _require_notion_login():
         return
 
     # Login saved on this device (set after any previous successful login).
-    if _restore_device_auth():
+    _restored = _restore_device_auth()
+    if _restored:
+        _st_rerun()
+        return
+    if _restored is None and st.session_state.get("ea_auth_tries", 0) < 4:
+        # localStorage read still in flight — don't dump the user on the
+        # Connect page yet (under load the report can lag a few runs).
+        st.session_state["ea_auth_tries"] = st.session_state.get("ea_auth_tries", 0) + 1
+        st.markdown("<div style='text-align:center;color:#94a3b8;font-size:14px;"
+                    "padding:120px 0 8px;'>Restoring your session…</div>",
+                    unsafe_allow_html=True)
+        import time as _t
+        _t.sleep(0.8)
         _st_rerun()
         return
 
