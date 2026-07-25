@@ -2564,6 +2564,108 @@ def _entry_criteria(f: pd.DataFrame) -> None:
                                            title="Entry criteria \u2014 full numbers"))
 
 
+def _breaker_strip(df_raw: pd.DataFrame) -> None:
+    """Circuit-breaker status: month MTD vs the max-loss line, week volume vs 3."""
+    if df_raw is None or df_raw.empty or "Date" not in df_raw.columns:
+        return
+    g = df_raw.copy()
+    g["__dt"] = pd.to_datetime(g["Date"], errors="coerce")
+    try:
+        from edge_analysis.ui.plan_tabs import get_tz_offset
+        if getattr(g["__dt"].dt, "tz", None) is not None:
+            g["__dt"] = g["__dt"].dt.tz_localize(None)
+        g["__dt"] = g["__dt"] + pd.Timedelta(hours=get_tz_offset(g))
+    except Exception:
+        pass
+    g = g[g["__dt"].notna()]
+    rr_col = next((c for c in ["Closed RR", "RR", "Closed R"] if c in g.columns), None)
+    if rr_col is None or g.empty:
+        return
+    g["__rr"] = pd.to_numeric(g[rr_col], errors="coerce")
+    g = g[g["__rr"].notna()]
+    if g.empty:
+        return
+    stop_r = float(st.session_state.get("ea_m_stop", -6.0))
+    now = pd.Timestamp.now()
+    cur = g[g["__dt"].dt.to_period("M") == now.to_period("M")]
+    mtd = float(cur["__rr"].sum()) if not cur.empty else 0.0
+    mon = (now - pd.Timedelta(days=int(now.dayofweek))).normalize()
+    wk_n = int((g["__dt"] >= mon).sum())
+    closed = mtd <= stop_r
+    if closed:
+        bg, bc, ic, icon = "#fde8e8", "#f3b8b8", "#7f1d1d", "\u25a0"
+        head = "Month closed \u2014 circuit breaker hit"
+        sub = (f"{mtd:+.1f}R this month is at your {stop_r:+.0f}R max loss. "
+               "Flat until the 1st \u2014 that's the rule that keeps the account.")
+    else:
+        room = mtd - stop_r
+        warn = room < 2 or wk_n > 3
+        bg, bc = ("#fdf6e8", "#ecd4a2") if warn else ("#e9f7ef", "#bfe6cd")
+        ic = "#7c4a03" if warn else "#14532d"
+        icon = "\u26a0" if warn else "\u2713"
+        head = "Circuit breaker \u2014 month open"
+        bits = [f"{mtd:+.1f}R this month", f"{room:.1f}R above the {stop_r:+.0f}R stop",
+                f"{wk_n} of 3 trades this week"]
+        sub = " \u00b7 ".join(bits)
+    st.markdown(
+        f"<div style='display:flex;align-items:center;gap:14px;background:{bg};"
+        f"border:1px solid {bc};border-radius:12px;padding:13px 18px;margin:2px 0 10px;'>"
+        f"<div style='font-size:19px;color:{ic};font-weight:800;'>{icon}</div>"
+        f"<div><div style='font-size:15.5px;font-weight:800;color:{ic};'>{head}</div>"
+        f"<div style='font-size:13px;color:{ic};opacity:0.85;margin-top:1px;'>{sub}</div>"
+        f"</div></div>", unsafe_allow_html=True)
+
+
+def _powered_on_panel(df: pd.DataFrame) -> None:
+    """Which app features this journal's columns unlock."""
+    if df is None or df.empty:
+        return
+    cols = set(str(c).strip() for c in df.columns)
+
+    def has(*names):
+        return any(n in cols for n in names)
+
+    feats = [
+        ("Entry models", has("Entry Model", "Entry Models List"), "Entry Model"),
+        ("Entry criteria", has("Sweep?", "DIV?", "Multi Entry Model Setup", "Double Confirmation"),
+         "Sweep? / DIV? / Multi Entry Model Setup"),
+        ("Market conditions", has("Conditions ETF", "Conditions MTF", "Conditions HTF"),
+         "Conditions ETF/MTF/HTF"),
+        ("Overbought / Oversold", has("Oversold or Overbought?"), "Oversold or Overbought?"),
+        ("External factors board", has("Volatility", "News Aspect", "GAP Alignment"),
+         "Volatility / News Aspect / GAP Alignment"),
+        ("Loss post-mortem", has("Reason of loss"), "Reason of loss"),
+        ("Mental state gate", has("Mental State"), "Mental State"),
+        ("Timing (sessions & hours)", has("Session", "Session Norm", "Hour (Melb)", "Date"),
+         "Session or a datetime column"),
+        ("Dollar P&L", has("PnL (USD)", "PnL"), "PnL (USD)"),
+        ("Trade efficiency (MAE/MFE)", has("MFE (R)", "MAE (R)"), "MAE (R) / MFE (R)"),
+        ("Discipline scorecard", has("Rules Followed?"), "Rules Followed?"),
+        ("Mistake leaks", has("Mistake"), "Mistake"),
+    ]
+    on = sum(1 for _, ok, _ in feats if ok)
+    st.markdown(f"### What your template powers on")
+    st.caption(f"{on} of {len(feats)} features active \u00b7 add the missing column in Notion to unlock a feature.")
+    import html as _h
+    parts = []
+    for name, ok, need in feats:
+        mark = "\u2713" if ok else "\u2014"
+        mc = "#16a34a" if ok else "#c3c9d4"
+        tc = "#0f172a" if ok else "#94a3b8"
+        fw = 700 if ok else 500
+        hint = "" if ok else ("<span style='font-size:11.5px;color:#c3c9d4;'>needs "
+                              + _h.escape(need) + "</span>")
+        parts.append(
+            "<div style='display:flex;align-items:center;gap:10px;padding:7px 4px;"
+            "flex:1 1 46%;min-width:280px;'>"
+            f"<span style='color:{mc};font-weight:800;font-size:15px;'>{mark}</span>"
+            f"<span style='font-size:13.5px;font-weight:{fw};color:{tc};'>{_h.escape(name)}</span>"
+            + hint + "</div>")
+    rows = "".join(parts)
+    st.markdown("<div style='display:flex;flex-wrap:wrap;gap:0 18px;'>" + rows + "</div>",
+                unsafe_allow_html=True)
+
+
 def _obos_section(f: pd.DataFrame) -> None:
     """Overbought/Oversold extreme vs not — expectancy head to head."""
     if f is None or f.empty or "Oversold or Overbought?" not in f.columns:
@@ -4528,13 +4630,28 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                     from edge_analysis.ui.whoop_tab import render_whoop_tab
                     render_whoop_tab(df_all_safe, styler)
 
-    # ── Plan ───────────────────────────────────────────────────────────────
+    # ── Plan: breaker + plan card, refinements card, template card ─────────
     with t_plan:
-        render_plan_tab(df_all_safe, styler)
-        _section_header("Refinements", "Data-backed tweaks worth testing next.")
-        _refinements_tab(f_perf, df_all_safe, styler)
-        _section_header("My template", "Your connected journal and what it's tracking.")
-        _data_tab(df_all_safe, show_table)
+        with st.container(border=True):
+            st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
+            _card_header("Trading plan", "The rules, ranked by what they're worth \u2014 and the breaker that guards the month.")
+            with _budget(1):
+                _breaker_strip(df_all_safe)
+                render_plan_tab(df_all_safe, styler)
+
+        with st.container(border=True):
+            st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
+            _card_header("Refinements", "Data-backed tweaks worth testing next.")
+            with _budget(1):
+                _refinements_tab(f_perf, df_all_safe, styler)
+
+        with st.container(border=True):
+            st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
+            _card_header("My template", "Your connected journal and what it unlocks.")
+            with _budget(1):
+                _powered_on_panel(df_all_safe)
+                _gap(18)
+                _data_tab(df_all_safe, show_table)
 
     # ── Review ─────────────────────────────────────────────────────────────
     with t_review:
