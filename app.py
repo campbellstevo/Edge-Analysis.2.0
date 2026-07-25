@@ -1642,11 +1642,14 @@ def main() -> None:
                     _pb = json.loads(_raw_plan)
                     st.session_state.setdefault("ea_m_tgt", float(_pb["t"]))
                     st.session_state.setdefault("ea_m_stop", float(_pb["s"]))
+                    if "c" in _pb:
+                        st.session_state.setdefault("ea_m_cap", int(_pb["c"]))
                 except Exception:
                     pass
     if st.session_state.pop("ea_mplan_dirty", False):
         _pb = {"t": float(st.session_state.get("ea_m_tgt", 5.0)),
-               "s": float(st.session_state.get("ea_m_stop", -6.0))}
+               "s": float(st.session_state.get("ea_m_stop", -6.0)),
+               "c": int(st.session_state.get("ea_m_cap", 12))}
         _js_eval("localStorage.setItem('ea_mplan', " + json.dumps(json.dumps(_pb)) + ")",
                  key="ea_mplan_save")
     if st.session_state.pop("ea_mplan_clear", False):

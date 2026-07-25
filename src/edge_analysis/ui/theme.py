@@ -1057,6 +1057,8 @@ def inject_theme():
         padding: 0;
     }}
 
+    [data-testid="stMainBlockContainer"] {{ padding-top: 1.3rem !important; }}
+
     /* No copy-link icons on heading hover */
     [data-testid="stHeaderActionElements"] {{ display: none !important; }}
     h1 > a, h2 > a, h3 > a, h4 > a {{ display: none !important; }}

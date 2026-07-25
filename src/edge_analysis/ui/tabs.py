@@ -486,6 +486,8 @@ def _perf_settings(g: pd.DataFrame):
         st.session_state["ea_m_tgt"] = float(auto_tgt)
     if "ea_m_stop" not in st.session_state:
         st.session_state["ea_m_stop"] = float(auto_stop)
+    if "ea_m_cap" not in st.session_state:
+        st.session_state["ea_m_cap"] = 12
     return (float(st.session_state["ea_m_tgt"]),
             float(st.session_state["ea_m_stop"]), auto_tgt)
 
@@ -575,13 +577,16 @@ def _month_card(f: pd.DataFrame, styler) -> None:
                 with pop:
                     def _plan_dirty():
                         st.session_state["ea_mplan_dirty"] = True
-                    e1, e2 = st.columns(2)
+                    e1, e2, e3 = st.columns(3)
                     with e1:
                         st.number_input("Target (R)", min_value=0.5, max_value=50.0,
                                         step=0.5, key="ea_m_tgt", on_change=_plan_dirty)
                     with e2:
                         st.number_input("Max loss (R)", min_value=-30.0, max_value=-1.0,
                                         step=0.5, key="ea_m_stop", on_change=_plan_dirty)
+                    with e3:
+                        st.number_input("Trades / month", min_value=1, max_value=200,
+                                        step=1, key="ea_m_cap", on_change=_plan_dirty)
                     rc1, rc2 = st.columns([1, 1.4])
                     with rc1:
                         if st.button("Reset to auto", key="ea_m_reset"):
@@ -620,15 +625,20 @@ def _month_card(f: pd.DataFrame, styler) -> None:
             st.altair_chart(styler(alt.layer(*lays, ln, pt).properties(height=290)),
                             use_container_width=True)
 
-            prog = max(0.0, min(1.0, cur / TGT_R)) if TGT_R > 0 else 0.0
-            neg = max(0.0, min(1.0, cur / STOP_R)) if STOP_R < 0 else 0.0
-            barw = prog if cur >= 0 else neg
-            barc = "#16a34a" if cur >= 0 else "#ef4444"
-            sub = (f"{cur:+.1f}R now · {max(0.0, TGT_R - cur):.1f}R to go"
-                   + (f" · {cur - STOP_R:.1f}R above the stop" if cur < 0 else ""))
+            if cur >= 0:
+                bar_title = "PROGRESS TO TARGET"
+                barw = max(0.0, min(1.0, cur / TGT_R)) if TGT_R > 0 else 0.0
+                barc = "#16a34a"
+                sub = f"{cur:+.1f}R now · {max(0.0, TGT_R - cur):.1f}R to go"
+            else:
+                bar_title = "STOP USED"
+                barw = max(0.0, min(1.0, cur / STOP_R)) if STOP_R < 0 else 0.0
+                barc = "#ef4444"
+                sub = (f"{cur:+.1f}R now · {barw * 100:.0f}% of the {STOP_R:+.0f}R stop used "
+                       f"· {cur - STOP_R:.1f}R of room left")
             st.markdown(
-                "<div style='font-size:11px;font-weight:700;letter-spacing:0.06em;"
-                "color:#94a3b8;margin-top:2px;'>PROGRESS TO TARGET</div>"
+                f"<div style='font-size:11px;font-weight:700;letter-spacing:0.06em;"
+                f"color:#94a3b8;margin-top:2px;'>{bar_title}</div>"
                 f"<div style='background:#f1f5f9;border-radius:7px;height:13px;margin:7px 0 6px;'>"
                 f"<div style='width:{barw * 100:.1f}%;height:13px;border-radius:7px;"
                 f"background:{barc};'></div></div>"
@@ -636,13 +646,14 @@ def _month_card(f: pd.DataFrame, styler) -> None:
                 unsafe_allow_html=True)
 
             maxdd = float((md["Cum"].cummax() - md["Cum"]).max())
-            pace_c = "#ef4444" if n_tr > 12 else "#0f172a"
+            cap = int(st.session_state.get("ea_m_cap", 12))
+            pace_c = "#ef4444" if n_tr > cap else "#0f172a"
             chips = [("TO TARGET", f"{max(0.0, TGT_R - cur):.1f}R",
                       "#16a34a" if cur >= TGT_R else "#0f172a"),
                      ("MAX DRAWDOWN", f"-{maxdd:.1f}R", "#ef4444" if maxdd > 0 else "#64748b"),
                      ("STOP ROOM", f"{cur - STOP_R:.1f}R",
                       "#ef4444" if cur - STOP_R < 2 else "#0f172a"),
-                     ("TRADES · PACE", f"{n_tr} of 12" + (" ⚠" if n_tr > 12 else ""),
+                     ("TRADES · PACE", f"{n_tr} of {cap}" + (" ⚠" if n_tr > cap else ""),
                       pace_c)]
             st.markdown(
                 "<div style='display:flex;gap:12px;flex-wrap:wrap;margin-top:12px;'>" + "".join(
@@ -2586,6 +2597,7 @@ def _breaker_strip(df_raw: pd.DataFrame) -> None:
     if g.empty:
         return
     stop_r = float(st.session_state.get("ea_m_stop", -6.0))
+    wk_cap = max(1, round(int(st.session_state.get("ea_m_cap", 12)) / 4))
     now = pd.Timestamp.now()
     cur = g[g["__dt"].dt.to_period("M") == now.to_period("M")]
     mtd = float(cur["__rr"].sum()) if not cur.empty else 0.0
@@ -2599,13 +2611,13 @@ def _breaker_strip(df_raw: pd.DataFrame) -> None:
                "Flat until the 1st \u2014 that's the rule that keeps the account.")
     else:
         room = mtd - stop_r
-        warn = room < 2 or wk_n > 3
+        warn = room < 2 or wk_n > wk_cap
         bg, bc = ("#fdf6e8", "#ecd4a2") if warn else ("#e9f7ef", "#bfe6cd")
         ic = "#7c4a03" if warn else "#14532d"
         icon = "\u26a0" if warn else "\u2713"
         head = "Circuit breaker \u2014 month open"
         bits = [f"{mtd:+.1f}R this month", f"{room:.1f}R above the {stop_r:+.0f}R stop",
-                f"{wk_n} of 3 trades this week"]
+                f"{wk_n} of {wk_cap} trades this week"]
         sub = " \u00b7 ".join(bits)
     st.markdown(
         f"<div style='display:flex;align-items:center;gap:14px;background:{bg};"
@@ -4512,18 +4524,23 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
         _month_card(f_perf, styler)
         _targets_tab(df_all_safe, styler)
         _alltime_card(f_perf, styler)
-        _gap()
-        _instruments_tab(f_perf, show_table)
-        _gap()
-        if not _salty:
-            _early_close_tab(df_all_safe, styler)
-            _gap()
-            _account_comparison_tab(f_perf, styler)
-        else:
-            _early_close_tab_salty(df_all_safe, styler)
+        with st.container(border=True):
+            st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
+            _card_header("More detail", "Early closes, assets and accounts \u2014 when there's something to compare.")
+            with _budget(1):
+                _instruments_tab(f_perf, show_table)
+                if not _salty:
+                    _early_close_tab(df_all_safe, styler)
+                    _gap(18)
+                    _account_comparison_tab(f_perf, styler)
+                else:
+                    _early_close_tab_salty(df_all_safe, styler)
 
-        _section_header("Projections", "What this edge does over the next 12 months if you keep showing up.")
-        _projections_tab(df_all_safe, styler)
+        with st.container(border=True):
+            st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
+            _card_header("Projections", "What this edge does over the next 12 months if you keep showing up.")
+            with _budget(1):
+                _projections_tab(df_all_safe, styler)
 
     # ── Entry: three cards — setups, timing, managing ─────────────────────
     with t_entry:
