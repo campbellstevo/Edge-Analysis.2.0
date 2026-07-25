@@ -1289,7 +1289,19 @@ def render_dashboard(mobile: bool):
     st.markdown("<div class='spacer-12'></div>", unsafe_allow_html=True)
 
     # Render tabs with data
-    render_all_tabs(f, df, styler, show_light_table, hero_fn=None)
+    try:
+        render_all_tabs(f, df, styler, show_light_table, hero_fn=None)
+    except Exception:
+        import traceback as _tb
+        st.error("Something broke rendering this view — usually a template/column mismatch. "
+                 "Screenshot the details below to report it.")
+        with st.expander("Error details"):
+            st.code(_tb.format_exc())
+    st.markdown(
+        "<div style='text-align:center;font-size:12px;color:#b3bac6;margin:34px 0 10px;'>"
+        "Your data stays in your Notion — nothing is stored on this server · "
+        "Edge Analysis is a journal, not financial advice.</div>",
+        unsafe_allow_html=True)
 
 
 # --------------------------------- Router -------------------------------------

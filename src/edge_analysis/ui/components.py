@@ -1,6 +1,7 @@
 from __future__ import annotations
 import pandas as pd
 import streamlit as st
+import html as _h
 
 def show_light_table(df: pd.DataFrame, hide_index: bool = True):
     if df is None or df.empty:
@@ -74,7 +75,7 @@ def render_entry_model_table(df: pd.DataFrame, title: str = "Entry Model Perform
     rows = []
     for _, r in df.iterrows():
         row_cells = [
-            f'<td class="text">{r.get("Entry_Model","")}</td>',
+            f'<td class="text">{_h.escape(str(r.get("Entry_Model","")))}</td>',
             f'<td class="num">{_fmt_int(r.get("Trades"))}</td>',
             f'<td class="num">{_fmt_num(r.get("Win %"))}</td>',
             f'<td class="num">{_fmt_num(r.get("BE %"))}</td>',
@@ -121,7 +122,7 @@ def render_session_performance_table(df: pd.DataFrame, title: str = "Session Per
     rows = []
     for _, r in df.iterrows():
         row_cells = [
-            f'<td class="text">{r.get("Session","")}</td>',
+            f'<td class="text">{_h.escape(str(r.get("Session","")))}</td>',
             f'<td class="num">{_fmt_int(r.get("Trades"))}</td>',
             f'<td class="num">{_fmt_num(r.get("Win %"))}</td>',
             f'<td class="num">{_fmt_num(r.get("BE %"))}</td>',
@@ -168,7 +169,7 @@ def render_day_performance_table(df: pd.DataFrame, title: str = "Day Performance
     rows = []
     for _, r in df.iterrows():
         row_cells = [
-            f'<td class="text">{r.get("Day","")}</td>',
+            f'<td class="text">{_h.escape(str(r.get("Day","")))}</td>',
             f'<td class="num">{_fmt_int(r.get("Trades"))}</td>',
             f'<td class="num">{_fmt_num(r.get("Win %"))}</td>',
             f'<td class="num">{_fmt_num(r.get("BE %"))}</td>',
@@ -219,7 +220,7 @@ def render_timeframe_table(df: pd.DataFrame, title: str = "Timeframe Performance
     rows = []
     for _, r in df.iterrows():
         row_cells = [
-            f'<td class="text">{r.get("Entry_Model","")}</td>',
+            f'<td class="text">{_h.escape(str(r.get("Entry_Model","")))}</td>',
             f'<td class="num">{_fmt_int(r.get("Trades"))}</td>',
             f'<td class="num">{_fmt_num(r.get("Win %"))}</td>',
             f'<td class="num">{_fmt_num(r.get("BE %"))}</td>',
