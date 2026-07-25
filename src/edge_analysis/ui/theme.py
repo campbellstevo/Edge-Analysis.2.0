@@ -1050,6 +1050,13 @@ def inject_theme():
     div[data-testid="stElementContainer"]:has(> .ea-card-anchor),
     .ea-card-anchor {{ display: none !important; }}
 
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-card-anchor) .entry-card {{
+        background: transparent;
+        box-shadow: none;
+        border: 0;
+        padding: 0;
+    }}
+
     /* No copy-link icons on heading hover */
     [data-testid="stHeaderActionElements"] {{ display: none !important; }}
     h1 > a, h2 > a, h3 > a, h4 > a {{ display: none !important; }}

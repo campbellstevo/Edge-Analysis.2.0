@@ -54,7 +54,38 @@ def _unavailable(label: str) -> None:
     st.caption(f"{label}: nothing to show yet — once you log this in Notion, it fills in automatically.")
 
 
+_INSIGHT_BUDGET = None
+
+
+class _budget:
+    """Card-scope cap on insight boxes: with _budget(1): ... shows at most one."""
+    def __init__(self, n=1):
+        self.n = n
+    def __enter__(self):
+        global _INSIGHT_BUDGET
+        _INSIGHT_BUDGET = self.n
+    def __exit__(self, *a):
+        global _INSIGHT_BUDGET
+        _INSIGHT_BUDGET = None
+
+
+def _card_header(title: str, sub: str = "") -> None:
+    st.markdown(
+        f"<div style='font-size:21px;font-weight:800;color:#0f172a;'>{title}</div>"
+        + (f"<div style='font-size:14px;color:#8a93a6;margin:2px 0 8px;'>{sub}</div>" if sub else ""),
+        unsafe_allow_html=True)
+
+
 def _insight_box(body: str, kind: str = "info") -> None:
+    global _INSIGHT_BUDGET
+    if _INSIGHT_BUDGET is not None:
+        if _INSIGHT_BUDGET <= 0:
+            return
+        _INSIGHT_BUDGET -= 1
+    return _insight_box_raw(body, kind)
+
+
+def _insight_box_raw(body: str, kind: str = "info") -> None:
     """Live-data insight callout. Always purple — kind only affects the prefix icon."""
     icons = {"info": "", "warn": "⚠ ", "good": "✓ ", "bad": "✕ "}
     prefix = icons.get(kind, "")
@@ -2471,6 +2502,67 @@ def _double_confirmation_section(f: pd.DataFrame) -> None:
                      f"({y['avg']:+.2f}R over {y['n']} vs {n_['avg']:+.2f}R over {n_['n']}).")
 
 
+def _entry_criteria(f: pd.DataFrame) -> None:
+    """All logged entry criteria head to head: DIV, Sweep, double confirmation."""
+    if f is None or f.empty:
+        return
+    g = f.copy()
+    rr_col = next((c for c in ["Closed RR", "RR", "Closed R"] if c in g.columns), None)
+    if rr_col is None:
+        return
+    g["__rr"] = pd.to_numeric(g[rr_col], errors="coerce")
+    g = g[g["__rr"].notna()]
+    if len(g) < 8:
+        return
+
+    def _yes(col):
+        return g[col].astype(str).str.strip().str.lower().isin(["yes", "true", "__yes__", "1"])
+
+    masks = []
+    if "Sweep?" in g.columns:
+        masks.append(("Sweep", _yes("Sweep?")))
+    if "DIV?" in g.columns:
+        masks.append(("Divergence", _yes("DIV?")))
+    dc_col = next((c for c in ["Multi Entry Model Setup", "Double Confirmation"]
+                   if c in g.columns), None)
+    if dc_col:
+        if dc_col == "Multi Entry Model Setup":
+            m = _yes(dc_col)
+        else:
+            m = g[dc_col].astype(str).str.contains("Double Confirmation", case=False, na=False)
+        masks.append(("Double confirmation", m))
+    rows, trows = [], []
+    for lab, m in masks:
+        sub = g.loc[m, "__rr"]
+        if len(sub) < 3:
+            continue
+        n_ = len(sub)
+        rows.append({"Category": lab, "Avg R": round(float(sub.mean()), 2),
+                     "Trades": n_, "Win %": 100.0 * float((sub > 0.15).sum()) / n_})
+        trows.append({"Entry_Model": lab, "Trades": n_,
+                      "Win %": round(100.0 * float((sub > 0.15).sum()) / n_, 2),
+                      "BE %": round(100.0 * float(((sub >= -0.15) & (sub <= 0.15)).sum()) / n_, 2),
+                      "Loss %": round(100.0 * float((sub < -0.15).sum()) / n_, 2),
+                      "Net PnL (R)": round(float(sub.sum()), 2),
+                      "Expectancy (R)": round(float(sub.mean()), 2)})
+    if not rows:
+        return
+    st.markdown("### Entry criteria")
+    st.caption("Each criterion you log, measured when it was present \u00b7 min 3 trades.")
+    if len(rows) >= 2:
+        best = max(rows, key=lambda r: r["Avg R"])
+        worst = min(rows, key=lambda r: r["Avg R"])
+        if (best["Trades"] + worst["Trades"]) >= 8 and best["Category"] != worst["Category"]:
+            _insight_box(
+                f"<b>{best['Category']}</b> is the strongest criterion right now "
+                f"({best['Avg R']:+.2f}R over {best['Trades']}). "
+                f"<b>{worst['Category']}</b> trails at {worst['Avg R']:+.2f}R.")
+    _flip("crit_flip",
+          lambda: _edge_tiles(rows, "Category", "Avg R"),
+          lambda: render_entry_model_table(pd.DataFrame(trows),
+                                           title="Entry criteria \u2014 full numbers"))
+
+
 def _obos_section(f: pd.DataFrame) -> None:
     """Overbought/Oversold extreme vs not — expectancy head to head."""
     if f is None or f.empty or "Oversold or Overbought?" not in f.columns:
@@ -4292,7 +4384,7 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
     from edge_analysis.ui.mt5_tabs import (
         _section_header, _mae_mfe_section, _missed_runner_section,
         _direction_section, _conviction_section, _holdtime_section,
-        _timing_section, _discipline_section, _mistake_section, _execution_section,
+        _discipline_section, _mistake_section, _execution_section,
     )
     from edge_analysis.ui.pro_tabs import (
         _exit_optimizer, _mae_stop_optimizer, _tilt, _a_game,
@@ -4330,57 +4422,62 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
         _section_header("Projections", "What this edge does over the next 12 months if you keep showing up.")
         _projections_tab(df_all_safe, styler)
 
-    # ── Entry ──────────────────────────────────────────────────────────────
+    # ── Entry: three cards — setups, timing, managing ─────────────────────
     with t_entry:
-        _section_header("Setups", "Which entries earn and which cost — ranked from your own trades.")
-        _entry_models_tab(f_perf, show_table)
-        _gap()
-        _div_vs_sweep(f_perf)
-        _gap()
-        _double_confirmation_section(f_perf)
-        _gap()
-        _confluences_tab(f_perf, show_table)
-        _gap()
-        _timeframes_tab(f_perf, show_table)
-        if _mt5:
-            _gap()
-            _direction_section(_data, styler)
-            _gap()
-            _conviction_section(_data, styler)
-            _gap()
-            _a_game(_data, styler)
+        with st.container(border=True):
+            st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
+            _card_header("Setups", "Which entries earn and which cost \u2014 ranked from your own trades.")
+            with _budget(1):
+                _entry_models_tab(f_perf, show_table)
+                _gap(18)
+                _entry_criteria(f_perf)
+                _gap(18)
+                _confluences_tab(f_perf, show_table)
+                _gap(18)
+                _timeframes_tab(f_perf, show_table)
+                if _mt5:
+                    _gap(18)
+                    _direction_section(_data, styler)
+                    _gap(18)
+                    _conviction_section(_data, styler)
+                    _gap(18)
+                    _a_game(_data, styler)
 
-        _section_header("Timing", "When your edge shows up — hours, sessions and days.")
-        _hourly_expectancy_clock(df_all_safe)
-        _gap()
-        _sessions_tab(f_perf, show_table)
-        _gap()
-        _time_days_tab(f_perf, show_table)
-        if _mt5:
-            _gap()
-            _timing_section(_data, styler)
-            _gap()
-            _holdtime_section(_data, styler)
-            _gap()
-            _heatmap_hour_day(_data, styler)
-            _gap()
-            _symbol_session_matrix(_data, styler)
+        with st.container(border=True):
+            st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
+            _card_header("Timing", "When your edge shows up \u2014 hours, sessions and days.")
+            with _budget(1):
+                _hourly_expectancy_clock(df_all_safe)
+                _gap(18)
+                _sessions_tab(f_perf, show_table)
+                _gap(18)
+                _time_days_tab(f_perf, show_table)
+                if _mt5:
+                    _gap(18)
+                    _holdtime_section(_data, styler)
+                    _gap(18)
+                    _heatmap_hour_day(_data, styler)
+                    _gap(18)
+                    _symbol_session_matrix(_data, styler)
 
         if _mt5 or _salty:
-            _section_header("Managing the trade",
-                            "What happens after entry — efficiency, exits, stops and what got away.")
-            if _mt5:
-                _mae_mfe_section(_data, styler)
-                _gap()
-                _execution_section(_data, styler)
-                _gap()
-                _exit_optimizer(_data, styler)
-                _gap()
-                _mae_stop_optimizer(_data, styler)
-                _gap()
-                _missed_runner_section(_data, styler)
-            if _salty:
-                _salty_execution_quality_tab(f_perf)
+            with st.container(border=True):
+                st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
+                _card_header("Managing the trade",
+                             "What happens after entry \u2014 efficiency, exits, stops and what got away.")
+                with _budget(1):
+                    if _mt5:
+                        _mae_mfe_section(_data, styler)
+                        _gap(18)
+                        _execution_section(_data, styler)
+                        _gap(18)
+                        _exit_optimizer(_data, styler)
+                        _gap(18)
+                        _mae_stop_optimizer(_data, styler)
+                        _gap(18)
+                        _missed_runner_section(_data, styler)
+                    if _salty:
+                        _salty_execution_quality_tab(f_perf)
 
     # ── Externals ──────────────────────────────────────────────────────────
     with t_ext:
