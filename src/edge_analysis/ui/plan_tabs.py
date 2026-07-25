@@ -414,7 +414,6 @@ def _rules_section(good, bad, need_weekly_cap: float) -> None:
 def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
     t = _t()
     g = _prep(df_raw)
-    st.markdown("### Weekly Review")
     if g is None or g["__dt"].isna().all():
         t._unavailable("Weekly Review")
         return

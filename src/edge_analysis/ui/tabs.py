@@ -4654,6 +4654,10 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                 _gap(18)
                 _data_tab(df_all_safe, show_table)
 
-    # ── Review ─────────────────────────────────────────────────────────────
+    # ── Review: one weekly card ────────────────────────────────────────────
     with t_review:
-        render_review_tab(df_all_safe, styler)
+        with st.container(border=True):
+            st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
+            _card_header("Weekly review", "Pick a week \u2014 the scoreboard, the fixes, and how it compares.")
+            with _budget(2):
+                render_review_tab(df_all_safe, styler)
