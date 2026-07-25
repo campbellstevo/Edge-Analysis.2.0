@@ -1572,15 +1572,32 @@ def _whoop_bootstrap() -> None:
         _whoop_persist()
         return
 
-    # Access token expired → refresh (once per run) using the refresh token.
+    # Access token expired. FIRST adopt the newest shared credentials from the
+    # Notion store — if another device refreshed within the hour, we reuse its
+    # access token and never touch the (reuse-sensitive) refresh token at all.
+    nb = _whoop_notion_read()
+    if nb and nb.get("at") and time.time() < float(nb.get("exp", 0) or 0):
+        st.session_state["whoop_at"] = nb["at"]
+        st.session_state["whoop_at_exp"] = float(nb.get("exp", 0) or 0)
+        if nb.get("rt"):
+            st.session_state["whoop_rt"] = nb["rt"]
+        st.session_state["whoop_boot"] = "ready"
+        _whoop_persist()
+        return
+    # Genuinely need a refresh: always use the FRESHEST refresh token known
+    # (Notion beats device beats session) — refreshing with a stale token can
+    # revoke the whole family (WHOOP reuse detection).
+    if nb and nb.get("rt"):
+        st.session_state["whoop_rt"] = nb["rt"]
     rt = st.session_state.get("whoop_rt")
-    if rt and st.session_state.get("whoop_refresh_done"):
-        # one refresh attempt per session — a failing WHOOP API must never
+    _tried_key = "whoop_refresh_done_" + (rt or "")[-8:]
+    if rt and st.session_state.get(_tried_key):
+        # one attempt per token per session — a failing WHOOP API must never
         # turn every rerun into a 20s network stall (this looped the app)
         st.session_state["whoop_boot"] = "ready"
         return
     if rt:
-        st.session_state["whoop_refresh_done"] = True
+        st.session_state[_tried_key] = True
         try:
             _store_whoop_tokens(whoop.refresh_tokens(rt, cid, csec))
             st.session_state["whoop_boot"] = "ready"

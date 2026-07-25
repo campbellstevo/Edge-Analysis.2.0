@@ -164,7 +164,12 @@ def render_whoop_tab(df_all: pd.DataFrame, styler) -> None:
         daily = whoop.cached_daily_df(token, start_iso, end_iso)
     except Exception as e:
         if "401" in str(e):
-            st.warning("WHOOP session expired. Click Disconnect and reconnect.")
+            import streamlit as _st2
+            if _st2.session_state.get("whoop_rt"):
+                _st2.caption("WHOOP is reconnecting \u2014 refresh the page in a minute. "
+                             "Your connection is kept in your Notion, so no re-login is needed.")
+            else:
+                _st2.warning("WHOOP connection lost \u2014 click Disconnect, then Connect WHOOP again.")
         else:
             st.error(f"Couldn't load WHOOP data: {e}")
         return
