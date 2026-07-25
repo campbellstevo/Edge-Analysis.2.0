@@ -542,18 +542,21 @@ def _month_card(f: pd.DataFrame, styler) -> None:
                 except Exception:
                     pop = st.expander("✎")
                 with pop:
+                    def _plan_dirty():
+                        st.session_state["ea_mplan_dirty"] = True
                     e1, e2 = st.columns(2)
                     with e1:
                         st.number_input("Target (R)", min_value=0.5, max_value=50.0,
-                                        step=0.5, key="ea_m_tgt")
+                                        step=0.5, key="ea_m_tgt", on_change=_plan_dirty)
                     with e2:
                         st.number_input("Max loss (R)", min_value=-30.0, max_value=-1.0,
-                                        step=0.5, key="ea_m_stop")
+                                        step=0.5, key="ea_m_stop", on_change=_plan_dirty)
                     rc1, rc2 = st.columns([1, 1.4])
                     with rc1:
                         if st.button("Reset to auto", key="ea_m_reset"):
                             st.session_state.pop("ea_m_tgt", None)
                             st.session_state.pop("ea_m_stop", None)
+                            st.session_state["ea_mplan_clear"] = True
                             _st_rerun_safe()
                     with rc2:
                         st.caption(f"Auto: {auto_tgt:+.1f}R · -6R (your rule)")

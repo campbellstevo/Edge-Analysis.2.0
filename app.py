@@ -1633,6 +1633,24 @@ def main() -> None:
         _js_eval("localStorage.setItem('ea_view', "
                  + json.dumps(st.session_state.get("ea_view_pref", "Chart")) + ")",
                  key="ea_view_save")
+    if "ea_mplan_boot" not in st.session_state:
+        _raw_plan = _js_eval("localStorage.getItem('ea_mplan') || ''", key="ea_mplan_load")
+        if _raw_plan is not None:
+            st.session_state["ea_mplan_boot"] = True
+            if _raw_plan:
+                try:
+                    _pb = json.loads(_raw_plan)
+                    st.session_state.setdefault("ea_m_tgt", float(_pb["t"]))
+                    st.session_state.setdefault("ea_m_stop", float(_pb["s"]))
+                except Exception:
+                    pass
+    if st.session_state.pop("ea_mplan_dirty", False):
+        _pb = {"t": float(st.session_state.get("ea_m_tgt", 5.0)),
+               "s": float(st.session_state.get("ea_m_stop", -6.0))}
+        _js_eval("localStorage.setItem('ea_mplan', " + json.dumps(json.dumps(_pb)) + ")",
+                 key="ea_mplan_save")
+    if st.session_state.pop("ea_mplan_clear", False):
+        _js_eval("localStorage.removeItem('ea_mplan')", key="ea_mplan_clear_js")
     if "ea_theme_pref" not in st.session_state:
         _saved_theme = _js_eval("localStorage.getItem('ea_theme') || ''", key="ea_theme_load")
         if _saved_theme in ("dark", "light"):
