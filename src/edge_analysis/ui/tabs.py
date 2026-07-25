@@ -1710,9 +1710,10 @@ def _entry_models_tab(f: pd.DataFrame, show_table):
         _flip("em_flip",
               lambda: _edge_tiles(df_em, "Entry_Model", "Expectancy (R)"),
               lambda: render_entry_model_table(df_em, title="Entry Model Performance"))
-        if not df_em.empty and int(pd.to_numeric(df_em["Trades"], errors="coerce").max() or 0) >= 8:
-            best_em = df_em.iloc[0]
-            worst_em = df_em.iloc[-1]
+        df_em3 = df_em[pd.to_numeric(df_em["Trades"], errors="coerce") >= 3]
+        if len(df_em3) >= 2 and int(pd.to_numeric(df_em3["Trades"], errors="coerce").max() or 0) >= 8:
+            best_em = df_em3.iloc[0]
+            worst_em = df_em3.iloc[-1]
             if best_em["Entry_Model"] != worst_em["Entry_Model"]:
                 _insight_box(
                     f"<b>{best_em['Entry_Model']}</b> leads with <b>{best_em['Win %']:.1f}%</b> win rate "
@@ -4479,17 +4480,24 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                     if _salty:
                         _salty_execution_quality_tab(f_perf)
 
-    # ── Externals ──────────────────────────────────────────────────────────
+    # ── Externals: market conditions card + costs card ────────────────────
     with t_ext:
-        _section_header("Market conditions", "The market around your trades — trend, volatility, news and gaps.")
-        _conditions_tab(f_perf, show_table)
-        _gap()
-        _obos_section(f_perf)
-        _gap()
-        _confluence_board(f_perf, scope="external")
+        with st.container(border=True):
+            st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
+            _card_header("Market conditions",
+                         "The market around your trades \u2014 trend, volatility, news and gaps.")
+            with _budget(1):
+                _conditions_tab(f_perf, show_table)
+                _gap(18)
+                _obos_section(f_perf)
+                _gap(18)
+                _confluence_board(f_perf, scope="external")
         if _mt5:
-            _section_header("Costs", "What fees and slippage quietly take from the edge.")
-            _cost_drag(_data, styler)
+            with st.container(border=True):
+                st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
+                _card_header("Costs", "What fees and slippage quietly take from the edge.")
+                with _budget(1):
+                    _cost_drag(_data, styler)
 
     # ── Psychology ─────────────────────────────────────────────────────────
     with t_psych:
