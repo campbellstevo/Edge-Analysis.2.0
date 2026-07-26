@@ -1465,6 +1465,11 @@ def inject_dark_overlay():
         background: #161b27 !important;
         border-color: rgba(255,255,255,0.09) !important;
     }
+    div[style*="background:#f3e3c0"], div[style*="background: rgb(243, 227, 192)"] { background: #3a2c15 !important; }
+    div[style*="background:#f1f3f8"], div[style*="background: rgb(241, 243, 248)"] { background: #232a3a !important; }
+    span[style*="background:#e2e8f0"], span[style*="background: rgb(226, 232, 240)"] { background: #2a3143 !important; }
+    div[style*="background:#f6f7fb"], div[style*="background: rgb(246, 247, 251)"] { background: transparent !important; }
+    div[style*="background:#fafbfd"], div[style*="background: rgb(250, 251, 253)"] { background: #1a2030 !important; }
     div[style*="background: rgb(248, 249, 252)"] { background: #1f2534 !important; border-color: rgba(255,255,255,0.08) !important; }
     div[style*="background: rgb(241, 245, 249)"],
 div[style*="background:#f1f5f9"] { background: #232a3a !important; }
