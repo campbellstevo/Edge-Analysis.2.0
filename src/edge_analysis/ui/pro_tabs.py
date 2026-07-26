@@ -185,8 +185,8 @@ def _monte_carlo(df, styler) -> None:
 # ── 4. Tilt / Post-Loss behaviour ─────────────────────────────────────────────
 def _tilt(df, styler) -> None:
     t = _t()
-    st.markdown("### Tilt / Post-Loss Behaviour")
-    st.caption("What happens to your trading right after a loss — the fingerprint of revenge trading.")
+    st.markdown("### Tilt check — the trade after a loss")
+    st.caption("Next-trade average by prior outcome, and how fast you get back in after a red one.")
     g = df.copy()
     g["__dt"] = pd.to_datetime(g.get("Date"), errors="coerce")
     if g["__dt"].isna().all():
@@ -207,13 +207,36 @@ def _tilt(df, styler) -> None:
                      "Net R": round(float(sub["__rr"].sum()), 1)})
     if not rows:
         t._unavailable("Tilt / Post-Loss Behaviour"); return
-    from edge_analysis.ui.mt5_tabs import _line_metric
-    order = [c for c in ["After a Win", "After a BE", "After a Loss"] if c in {r["Category"] for r in rows}]
-    _line_metric(pd.DataFrame(rows), "", styler, value="Win %", x_order=order,
-                 x_title="", baseline=50.0, fmt=".0f", suffix="%",
-                 caption="Win rate by prior-trade outcome. A slope falling to the right = tilt after losses.")
     after_loss = next((r for r in rows if r["Category"] == "After a Loss"), None)
     after_win = next((r for r in rows if r["Category"] == "After a Win"), None)
+    rev = 0
+    _lts = g.loc[pd.Series(g["__oc"]).eq("Loss"), "__dt"].tolist()
+    for _, _r0 in g.iterrows():
+        for _lt in _lts:
+            if _lt < _r0["__dt"] and (_r0["__dt"] - _lt) <= pd.Timedelta(minutes=120):
+                rev += 1
+                break
+
+    def _tchip(lab, val, sub, col):
+        return (f"<div style='flex:1;min-width:170px;background:#f8f9fc;border-radius:10px;"
+                f"padding:12px 16px;'><div style='font-size:11px;font-weight:700;"
+                f"letter-spacing:0.06em;color:#94a3b8;'>{lab}</div>"
+                f"<div style='font-size:21px;font-weight:800;color:{col};'>{val}</div>"
+                f"<div style='font-size:11.5px;color:#64748b;'>{sub}</div></div>")
+
+    _chips = []
+    if after_loss:
+        _c = "#ef4444" if after_loss["Avg R"] < 0 else "#16a34a"
+        _chips.append(_tchip("AFTER A LOSS", f"{after_loss['Avg R']:+.2f}R",
+                             f"next trade \u00b7 {after_loss['Trades']} samples \u00b7 {after_loss['Win %']:.0f}% win", _c))
+    if after_win:
+        _c = "#16a34a" if after_win["Avg R"] >= 0 else "#ef4444"
+        _chips.append(_tchip("AFTER A WIN", f"{after_win['Avg R']:+.2f}R",
+                             f"next trade \u00b7 {after_win['Trades']} samples \u00b7 {after_win['Win %']:.0f}% win", _c))
+    _chips.append(_tchip("QUICK RE-ENTRIES", str(rev), "within 2h of a loss",
+                         "#b45309" if rev else "#16a34a"))
+    st.markdown("<div style='display:flex;gap:12px;flex-wrap:wrap;margin:6px 0 8px;'>"
+                + "".join(_chips) + "</div>", unsafe_allow_html=True)
     if after_loss and after_win:
         d = after_win["Win %"] - after_loss["Win %"]
         if d > 8:

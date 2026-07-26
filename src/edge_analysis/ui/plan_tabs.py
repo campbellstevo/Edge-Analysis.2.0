@@ -453,13 +453,53 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
                 f"<div style='font-size:22px;font-weight:800;color:{col};'>{val}</div>"
                 f"<div style='font-size:12px;color:#64748b;'>{sub}</div></div>")
 
-    cards = [card("TRADES", f"{n}", f"{n_w}W · {n_be}BE · {n_l}L", "#0f172a"),
-             card("NET R", _fmt_r(net), f"ex-best: {_fmt_r(ex_best)}", GREEN if net >= 0 else RED)]
-    if net_usd is not None:
-        cards.append(card("NET P&L", f"{'-' if net_usd < 0 else '+'}${abs(net_usd):,.2f}",
-                          "dollars, from MT5", GREEN if net_usd >= 0 else RED))
+    manual = [c for c in ["A+ Setup?", "Conviction (1-5)", "Mental State", "Mistake"] if c in wk.columns]
+
+    def _tagged(row):
+        return all(str(row.get(c, "") or "").strip().lower() not in
+                   ("", "nan", "none", "na", "[]") for c in manual)
+
+    full_n = int(wk.apply(_tagged, axis=1).sum()) if manual else None
+    rules_kept = rules_known = None
+    if "Rules Followed?" in wk.columns:
+        _rv = wk["Rules Followed?"].astype(str).str.strip().str.lower()
+        _kn = _rv.isin(["yes", "no", "true", "false", "__yes__", "__no__", "1", "0"])
+        if int(_kn.sum()):
+            rules_known = int(_kn.sum())
+            rules_kept = int((_rv.isin(["yes", "true", "__yes__", "1"]) & _kn).sum())
+    apl = None
+    if "A+ Setup?" in wk.columns:
+        apl = int(wk["A+ Setup?"].astype(str).str.strip().str.lower()
+                  .isin(["yes", "true", "__yes__", "1"]).sum())
+    comps = []
+    if full_n is not None and n:
+        comps.append(full_n / n)
+    if rules_known:
+        comps.append(rules_kept / rules_known)
+    if give == give and (max(net, 0.0) + float(give)) > 0:
+        comps.append(max(net, 0.0) / (max(net, 0.0) + float(give)))
+    grade = None
+    if comps:
+        _sc = sum(comps) / len(comps) * 100
+        grade = "A" if _sc >= 85 else "B" if _sc >= 70 else "C" if _sc >= 55 else "D" if _sc >= 40 else "F"
+
+    cards = []
+    if full_n is not None:
+        cards.append(card("LOGGED IN FULL", f"{full_n} of {n}",
+                          " · ".join(c.replace("?", "") for c in manual)[:36],
+                          "#0f172a" if full_n == n else "#b45309"))
+    if rules_known:
+        cards.append(card("RULES FOLLOWED", f"{rules_kept} of {rules_known}", "by your own tag",
+                          "#0f172a" if rules_kept == rules_known else "#b45309"))
+    if apl is not None:
+        cards.append(card("A+ SETUPS", f"{apl}", f"of {n} trades · {n_w}W {n_be}BE {n_l}L", "#0f172a"))
     if give == give:
-        cards.append(card("R LEFT ON TABLE", f"{give:.2f}R", "MFE given back", RED if give > 2 else "#0f172a"))
+        cards.append(card("GIVEN BACK", f"{give:.1f}R", "MFE not banked", RED if give > 2 else "#0f172a"))
+    if grade:
+        cards.append(card("WEEK GRADE", grade, "process, not profit", PURPLE))
+    if not cards:
+        cards = [card("TRADES", f"{n}", f"{n_w}W · {n_be}BE · {n_l}L", "#0f172a"),
+                 card("NET R", _fmt_r(net), f"ex-best: {_fmt_r(ex_best)}", GREEN if net >= 0 else RED)]
     st.markdown("<div style='display:flex;gap:12px;flex-wrap:wrap;margin:6px 0 12px;'>"
                 + "".join(cards) + "</div>", unsafe_allow_html=True)
 
@@ -484,14 +524,34 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
         mfe_s = "—" if pd.isna(mfe_v) else f"+{mfe_v:.2f}R"
         lots = pd.to_numeric(pd.Series([r.get("Lot Size")]), errors="coerce").iloc[0]
         lots_s = "—" if pd.isna(lots) else f"{lots:g}"
+        import html as _hh
+        extras = ""
+        for _tc in ["A+ Setup?", "Conviction (1-5)", "Rules Followed?", "Mistake"]:
+            if _tc not in wk.columns:
+                continue
+            _v = str(r.get(_tc, "") or "").strip()
+            if _v.lower() in ("", "nan", "none", "na", "[]"):
+                extras += "<td class='text' style='color:#b45309;'>—</td>"
+            else:
+                _vl = _v.lower()
+                if _tc != "Mistake":
+                    _v = "Yes" if _vl in ("yes", "true", "__yes__", "1") else (
+                        "No" if _vl in ("no", "false", "__no__", "0") else _v)
+                extras += f"<td class='text'>{_hh.escape(_v[:26])}</td>"
         rows += (f"<tr><td class='text'>{day} · {sess}</td><td class='text'>{dirn}</td>"
                  f"<td class='text' style='color:{rescol};font-weight:700;'>{res}</td>"
                  f"<td class='num' style='color:{GREEN if rv >= 0 else RED};font-weight:700;'>{rv:+.2f}</td>"
-                 f"<td class='num'>{pnl_s}</td><td class='num'>{mfe_s}</td><td class='num'>{lots_s}</td></tr>")
+                 f"<td class='num'>{pnl_s}</td><td class='num'>{mfe_s}</td><td class='num'>{lots_s}</td>"
+                 + extras + "</tr>")
+    _tag_ths = "".join(
+        f"<th class='text'>{_l}</th>" for _c, _l in (("A+ Setup?", "A+"), ("Conviction (1-5)", "Conv"),
+                                                     ("Rules Followed?", "Rules"), ("Mistake", "Mistake"))
+        if _c in wk.columns)
     st.markdown(
         "<div class='table-wrap'><table><thead><tr><th class='text'>Day / Session</th>"
         "<th class='text'>Dir</th><th class='text'>Result</th><th class='num'>R</th>"
-        "<th class='num'>P&L</th><th class='num'>MFE</th><th class='num'>Lots</th></tr></thead>"
+        "<th class='num'>P&L</th><th class='num'>MFE</th><th class='num'>Lots</th>"
+        + _tag_ths + "</tr></thead>"
         f"<tbody>{rows}</tbody></table></div>", unsafe_allow_html=True)
 
     # what worked / didn't
@@ -568,13 +628,36 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
 
     # vs last week
     if not pw.empty:
-        st.markdown("#### vs last week")
+        st.markdown("#### vs last week — process, not profit")
         pr = pw["__rr"]
         pn = len(pw)
-        c1 = card("LAST WEEK", _fmt_r(float(pr.sum())), f"{pn} trades", GREEN if pr.sum() >= 0 else RED)
-        c2 = card("THIS WEEK", _fmt_r(net), f"{n} trades", GREEN if net >= 0 else RED)
-        st.markdown(f"<div style='display:flex;gap:12px;flex-wrap:wrap;'>{c1}{c2}</div>",
-                    unsafe_allow_html=True)
+        p_full = int(pw.apply(_tagged, axis=1).sum()) if manual else None
+        p_rk = p_kn = None
+        if "Rules Followed?" in pw.columns:
+            _pv = pw["Rules Followed?"].astype(str).str.strip().str.lower()
+            _pk = _pv.isin(["yes", "no", "true", "false", "__yes__", "__no__", "1", "0"])
+            if int(_pk.sum()):
+                p_kn = int(_pk.sum())
+                p_rk = int((_pv.isin(["yes", "true", "__yes__", "1"]) & _pk).sum())
+        p_mfe = pd.to_numeric(pw["MFE (R)"], errors="coerce") if "MFE (R)" in pw.columns else None
+        p_give = float(((p_mfe - pr).clip(lower=0)).sum()) if p_mfe is not None and p_mfe.notna().any() else float("nan")
+        _cmp = []
+        if full_n is not None and p_full is not None and pn:
+            _cmp.append(("Fully logged", f"{p_full} of {pn}", f"{full_n} of {n}",
+                         (full_n / max(1, n)) >= (p_full / max(1, pn))))
+        if rules_known and p_kn:
+            _cmp.append(("Rules followed", f"{round(p_rk / p_kn * 100)}%", f"{round(rules_kept / rules_known * 100)}%",
+                         (rules_kept / rules_known) >= (p_rk / p_kn)))
+        if give == give and p_give == p_give:
+            _cmp.append(("Given back", f"{p_give:.1f}R", f"{give:.1f}R", float(give) <= p_give))
+        if not _cmp:
+            _cmp.append(("Net R", _fmt_r(float(pr.sum())), _fmt_r(net), net >= float(pr.sum())))
+        st.markdown("".join(
+            f"<div style='display:flex;gap:18px;align-items:center;padding:5px 0;'>"
+            f"<div style='flex:0 0 150px;font-size:13.5px;font-weight:700;color:#0f172a;'>{_l}</div>"
+            f"<div style='flex:0 0 140px;font-size:12.5px;color:#94a3b8;'>last {_a}</div>"
+            f"<div style='font-size:13px;font-weight:800;color:{GREEN if _ok else RED};'>now {_b}</div></div>"
+            for _l, _a, _b, _ok in _cmp), unsafe_allow_html=True)
         if n > pn and net < float(pr.sum()):
             t._insight_box("Activity up, edge down — more trades produced less R than last week. "
                            "Fewer, better entries beat more entries.", "warn")

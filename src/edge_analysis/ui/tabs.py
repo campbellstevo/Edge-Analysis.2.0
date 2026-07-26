@@ -6,6 +6,7 @@ import streamlit as st
 from pathlib import Path
 import re
 import os
+import html as _html
 from datetime import time as dt_time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -1196,18 +1197,17 @@ def _psych_session_alert(df: pd.DataFrame, styler) -> None:
 
 
 def _psych_mental_state_gate(df: pd.DataFrame, styler) -> None:
-    st.markdown("### Mental State Gate")
     ms_col   = next((c for c in ["Mental State","Mental state","mental_state"] if c in df.columns), None)
     bias_col = next((c for c in ["Execution/Bias","Execution / Bias","Bias"] if c in df.columns), None)
     if ms_col is None:
-        st.info("No Mental State column found — add it to your Notion database.")
-        return
+        return  # column missing — the template panel carries that message
     g = df.copy()
     g["__ms"] = g[ms_col].astype(str).str.strip()
     g = g[~g["__ms"].isin(["","nan","NaN","None"])]
-    if g.empty:
-        st.info("No mental state data.")
-        return
+    if len(g) < 3:
+        return  # present but unlogged — powered-on panel shows the half-moon
+    st.divider()
+    st.markdown("### Mental State Gate")
     states, rows = ["Good","Okay","Bad"], []
     for state in states:
         sub = g[g["__ms"]==state]
@@ -1255,14 +1255,16 @@ def _psych_mental_state_gate(df: pd.DataFrame, styler) -> None:
 
 
 def _psych_bad_beat_tracker(df: pd.DataFrame) -> None:
-    st.markdown("### Bad Beat Tracker")
     result_col = next((c for c in ["Result","result"] if c in df.columns), None)
     if result_col is None:
-        st.info("No Result column found — bad beat tracking requires a Result field.")
         return
     g = df.copy()
     bbs = g[g[result_col].astype(str).str.strip()=="Bad Beat"]
     n_bb, total = len(bbs), len(g)
+    if n_bb == 0:
+        return  # nothing to track — stay silent instead of a zero wall
+    st.divider()
+    st.markdown("### Bad Beat Tracker")
     bb_pct = round(n_bb/max(1,total)*100,1)
     recent = "—"
     dcol = next((c for c in ["Date & Time","Day/Time/Date of Trade","Date","Datetime"] if c in g.columns), None)
@@ -1484,6 +1486,37 @@ def _psych_3sl_compliance(df: pd.DataFrame, styler) -> None:
             pass
 
 
+def _journal_completeness_strip(df: pd.DataFrame) -> None:
+    """Amber banner when manual tag columns exist but are mostly unlogged."""
+    if df is None or df.empty:
+        return
+    tag_cols = [c for c in ["A+ Setup?", "Conviction (1-5)", "Mental State",
+                            "Mistake", "Rules Followed?"] if c in df.columns]
+    if len(tag_cols) < 2:
+        return
+    def _filled(row):
+        return all(str(row.get(c, "") or "").strip().lower() not in
+                   ("", "nan", "none", "na", "[]") for c in tag_cols)
+    full = int(df.apply(_filled, axis=1).sum())
+    total = len(df)
+    pct = full / max(1, total)
+    if pct >= 0.9:
+        return
+    fill_w = max(3, int(round(pct * 100)))
+    nice = ", ".join(c.replace("?", "") for c in tag_cols)
+    st.markdown(
+        f"<div style='display:flex;align-items:center;gap:16px;background:#fdf6e8;"
+        f"border:1px solid #ecd4a2;border-radius:12px;padding:14px 18px;margin:2px 0 10px;'>"
+        f"<div style='font-size:19px;color:#7c4a03;font-weight:800;'>\u26a0</div>"
+        f"<div style='flex:1;'><div style='font-size:15.5px;font-weight:800;color:#7c4a03;'>"
+        f"Journal completeness: {full} of {total} trades fully tagged</div>"
+        f"<div style='font-size:12.5px;color:#9a6b1f;margin-top:1px;'>This page reads only tagged trades "
+        f"\u2014 backfill {_html.escape(nice)} in Notion and it sharpens fast.</div></div>"
+        f"<div style='flex:0 0 180px;background:#f3e3c0;border-radius:8px;height:12px;overflow:hidden;'>"
+        f"<div style='width:{fill_w}%;height:12px;background:#b45309;'></div></div>"
+        f"</div>", unsafe_allow_html=True)
+
+
 def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
     st.markdown('<div class="section">', unsafe_allow_html=True)
 
@@ -1572,6 +1605,16 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
         else "#ef4444"
     )
 
+    rules_kept = rules_known = None
+    if "Rules Followed?" in g.columns:
+        _rv = g["Rules Followed?"].astype(str).str.strip().str.lower()
+        _kn = _rv.isin(["yes", "no", "true", "false", "__yes__", "__no__", "1", "0"])
+        if int(_kn.sum()) >= 3:
+            rules_known = int(_kn.sum())
+            rules_kept = int((_rv.isin(["yes", "true", "__yes__", "1"]) & _kn).sum())
+    _cap = int(st.session_state.get("ea_m_cap", 12))
+    _month_n = int((g["__local_ts"].dt.to_period("M") == pd.Timestamp.now().to_period("M")).sum())
+
     st.markdown("### Discipline")
     k1, k2, k3, k4 = st.columns(4)
     with k1:
@@ -1582,18 +1625,28 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
               <div class='muted'>{clean_days} / {total_days} clean days</div>
             </div>""", unsafe_allow_html=True)
     with k2:
-        st.markdown(f"""
+        if rules_known:
+            _rc = "#16a34a" if rules_kept == rules_known else ("#b45309" if rules_kept / rules_known < 0.7 else "#4800ff")
+            st.markdown(f"""
+            <div class='kpi'>
+              <div class='label'>Rules Followed</div>
+              <div class='value' style='color:{_rc}'>{rules_kept} of {rules_known}</div>
+              <div class='muted'>by your own tag</div>
+            </div>""", unsafe_allow_html=True)
+        else:
+            st.markdown(f"""
             <div class='kpi'>
               <div class='label'>Avg Trades — Win Day</div>
               <div class='value' style='color:#4800ff'>{avg_win_day:.1f}</div>
               <div class='muted'>trades per winning day</div>
             </div>""", unsafe_allow_html=True)
     with k3:
+        _cc = "#ef4444" if _month_n > _cap else "#4800ff"
         st.markdown(f"""
             <div class='kpi'>
-              <div class='label'>Avg Trades — Loss Day</div>
-              <div class='value' style='color:#4800ff'>{avg_loss_day:.1f}</div>
-              <div class='muted'>trades per losing day</div>
+              <div class='label'>Cap Discipline</div>
+              <div class='value' style='color:{_cc}'>{_month_n} of {_cap}</div>
+              <div class='muted'>trades this month vs cap</div>
             </div>""", unsafe_allow_html=True)
     with k4:
         st.markdown(f"""
@@ -1619,25 +1672,6 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
             f"0 overtrading days \u00b7 0 revenge trades \u00b7 {clean_days} of {total_days} clean days"
             "</div></div></div>", unsafe_allow_html=True)
     else:
-        st.markdown("### Tilt Detection")
-        t1, t2 = st.columns(2)
-        with t1:
-            st.markdown(f"""
-                <div class='kpi'>
-                  <div class='label'>Overtrading Days</div>
-                  <div class='value' style='color:#4800ff'>{n_overtrade_days}</div>
-                  <div class='muted'>Days with {OVERTRADE_LIMIT}+ trades</div>
-                </div>""", unsafe_allow_html=True)
-        with t2:
-            st.markdown(f"""
-                <div class='kpi'>
-                  <div class='label'>Revenge Trades</div>
-                  <div class='value' style='color:#4800ff'>{n_revenge}</div>
-                  <div class='muted'>Entries within {REVENGE_WINDOW_MINS}min of a loss</div>
-                </div>""", unsafe_allow_html=True)
-
-        st.divider()
-
         st.markdown("### Discipline Score Over Time")
 
         day_flags["__date"] = pd.to_datetime(day_flags["__date"])
@@ -1685,14 +1719,7 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
     st.divider()
 
     raw = df_raw if df_raw is not None and not df_raw.empty else g
-    _psych_session_alert(raw, styler)
-
-    st.divider()
-
     _psych_mental_state_gate(raw, styler)
-
-    st.divider()
-
     _psych_bad_beat_tracker(raw)
 
     st.divider()
@@ -4708,15 +4735,16 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
 
     # ── Psychology: discipline card, losses card, WHOOP card ──────────────
     with t_psych:
+        _journal_completeness_strip(df_all_safe)
         with st.container(border=True):
             st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
-            _card_header("Discipline", "You versus your rules \u2014 tilt, mental state and rule breaks.")
+            _card_header("Discipline", "One score, its trend, and the habits that build it.")
             with _budget(1):
                 _psychology_tab(f_perf, df_all_safe, styler)
 
         with st.container(border=True):
             st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
-            _card_header("Where losses come from", "Your own loss tags and mistakes, ranked by damage.")
+            _card_header("Where you lose", "Your own loss tags, the mistakes that repeat, and what a loss does to the next trade.")
             with _budget(1):
                 _loss_postmortem(f_perf)
                 if _mt5:
@@ -4724,8 +4752,8 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                     _tilt(_data, styler)
                     _gap(18)
                     _mistake_section(_data, styler)
-                    _gap(18)
-                    _discipline_section(_data, styler)
+                _gap(18)
+                _psych_session_alert(df_all_safe, styler)
 
         if _whoop_on:
             with st.container(border=True):
@@ -4762,6 +4790,6 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
     with t_review:
         with st.container(border=True):
             st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
-            _card_header("Weekly review", "Pick a week \u2014 the scoreboard, the fixes, and how it compares.")
+            _card_header("Weekly debrief", "Process over P&L \u2014 did you trade your system this week? Money lives on Performance.")
             with _budget(2):
                 render_review_tab(df_all_safe, styler)
