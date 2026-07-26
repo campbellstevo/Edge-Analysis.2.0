@@ -2462,7 +2462,11 @@ def _flag_verdicts(f: pd.DataFrame, scope: str = "entry"):
                 continue
             if len(sub) >= 3:
                 short = col.replace("Tiers in pricing ", "Tiers ").replace("?", "")
-                rows.append({"Category": f"{short} · {val[:24]}",
+                if scope != "entry" and any(ch.isalpha() for ch in val):
+                    lab = val[:34]  # value reads on its own — column prefix is noise
+                else:
+                    lab = f"{short} · {val[:24]}"
+                rows.append({"Category": lab,
                              "Avg R": round(float(sub["__rr"].mean()), 2), "Trades": len(sub)})
     return rows
 
