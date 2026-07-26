@@ -203,6 +203,51 @@ def _builtin_answer(q: str, df: pd.DataFrame):
                     "\"what do rule breaks cost me?\" · \"best entry model?\" · "
                     "\"long vs short?\" · \"how much have I given back?\"")
 
+        if has("remove", "cut ", " drop", "stop doing", "get rid", "eliminate", "leak", "holding me back", "stop trading"):
+            cuts = []
+            if sess_col:
+                srows = _rank_by(df, rr, sess_col)
+                if srows and srows[-1][0] < -0.1:
+                    w = srows[-1]
+                    cuts.append(f"{w[2]} session — avg {_fmt(w[0])} over {w[3]} trades")
+            mrows = _rank_by(df, rr, "Entry Model")
+            if mrows and mrows[-1][0] < -0.1:
+                w = mrows[-1]
+                cuts.append(f"{w[2]} entries — avg {_fmt(w[0])} over {w[3]}")
+            if "A+ Setup?" in df.columns:
+                m = df["A+ Setup?"].astype(str).str.strip().str.lower().isin(["yes", "true", "__yes__", "1"])
+                o_ = rr[rr.index.isin(df[~m].index)]
+                if len(o_) >= 8 and float(o_.mean()) < -0.1:
+                    cuts.append(f"non-A+ trades — avg {_fmt(float(o_.mean()))} over {len(o_)}")
+            if "Rules Followed?" in df.columns:
+                rv = df["Rules Followed?"].astype(str).str.strip().str.lower()
+                broke = rr[rr.index.isin(df[rv.isin(["no", "false", "__no__", "0"])].index)]
+                if len(broke) >= 3 and float(broke.mean()) < -0.1:
+                    cuts.append(f"rule-break trades — avg {_fmt(float(broke.mean()))} over {len(broke)}")
+            if not cuts:
+                return ("Nothing in the data screams 'cut' right now — no session, model or tag "
+                        "averages worse than -0.10R with a real sample. The Plan tab keeps the ranking.")
+            listed = " · ".join(cuts[:3])
+            return (f"By the numbers, the cut list is: {listed}. "
+                    "One removal at a time — the Plan tab ranks these with full evidence.")
+
+        if has("early close", "close early", "closed early", "take profit", " tp", "set tp", "auto close"):
+            if "Targeted RR" not in df.columns:
+                return "No Targeted RR column — the TP comparison needs the target you set per trade."
+            tgt = df["Targeted RR"].apply(lambda v: pd.to_numeric(str(v).replace("RR", "").replace("R", ""), errors="coerce"))
+            gg = pd.DataFrame({"rr": rr, "tgt": tgt}).dropna()
+            gg = gg[gg["tgt"] > 0.3]
+            if len(gg) < 5:
+                return "Fewer than 5 trades with a parseable set target — log Targeted RR and ask again."
+            hit = gg[gg["rr"] >= gg["tgt"] - 0.1]
+            stopped = gg[gg["rr"] <= -0.85]
+            early = gg.drop(hit.index).drop(stopped.index)
+            out = (f"Of {len(gg)} trades with a set TP: {len(hit)} ran to target "
+                   f"(avg {_fmt(float(hit['rr'].mean())) if len(hit) else '—'}), "
+                   f"{len(early)} closed before it (avg {_fmt(float(early['rr'].mean())) if len(early) else '—'}), "
+                   f"{len(stopped)} stopped out. Full breakdown: Entry tab → Manual close vs set TP.")
+            return out
+
         if has("session") and sess_col:
             rows = _rank_by(df, rr, sess_col)
             if not rows:
@@ -276,7 +321,8 @@ def _builtin_answer(q: str, df: pd.DataFrame):
             return (f"Breaker is open: {_fmt(net_m)} this month, {net_m - stp:.1f}R above the "
                     f"{stp:+.0f}R line. It's a binary stop — hit it and the month is done.")
 
-        if has("day", "weekday", "monday", "tuesday", "wednesday", "thursday", "friday"):
+        if has("weekday", "best day", "worst day", "which day", "day of week",
+               "monday", "tuesday", "wednesday", "thursday", "friday"):
             col = "DayName" if "DayName" in df.columns else None
             if col is None and "Date" in df.columns:
                 df = df.copy()

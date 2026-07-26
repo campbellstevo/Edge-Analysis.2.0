@@ -131,6 +131,90 @@ def _line_metric(rows, title, styler, value="Avg R", x_order=None, x_title="",
 
 
 # ── 1. MAE / MFE efficiency ───────────────────────────────────────────────────
+def _parse_tgt(val):
+    if pd.isna(val):
+        return float("nan")
+    v = str(val).strip().upper().replace("RR", "").replace("R", "").strip()
+    try:
+        return float(v)
+    except Exception:
+        pass
+    if v.endswith("+"):
+        try:
+            return float(v[:-1]) + 0.5
+        except Exception:
+            return float("nan")
+    import re as _re
+    m = _re.match(r"(\d+\.?\d*)\s*-\s*(\d+\.?\d*)", v)
+    if m:
+        return (float(m.group(1)) + float(m.group(2))) / 2
+    return float("nan")
+
+
+def _close_style_section(df: pd.DataFrame, styler) -> None:
+    """Manual early closes vs trades that ran to the set TP."""
+    t = _t()
+    if df is None or df.empty or "Targeted RR" not in df.columns:
+        return
+    rr = _num(df, "Closed RR")
+    if rr is None:
+        return
+    g = df.copy()
+    g["__rr"] = rr.values
+    g["__tgt"] = g["Targeted RR"].apply(_parse_tgt)
+    mfe = _num(df, "MFE (R)")
+    if mfe is not None:
+        g["__mfe"] = mfe.values
+    g = g[pd.notna(g["__rr"]) & pd.notna(g["__tgt"]) & (g["__tgt"] > 0.3)]
+    if len(g) < 5:
+        return
+    tol = 0.1
+    tagged_early = (g["Result"].astype(str).str.contains("Early Close", na=False)
+                    if "Result" in g.columns else pd.Series(False, index=g.index))
+    hit = g[(g["__rr"] >= g["__tgt"] - tol) & ~tagged_early]
+    stopped = g[(g["__rr"] <= -0.85) & ~tagged_early & (g["__rr"] < g["__tgt"] - tol)]
+    early = g.drop(hit.index).drop(stopped.index)
+    st.markdown("### Manual close vs set TP")
+    st.caption("Trades that ran to the target you set, versus the ones you cut before it — "
+               "and what cutting them provably cost.")
+    left_prov = float("nan")
+    reach_pct = float("nan")
+    if "__mfe" in early.columns and early["__mfe"].notna().any():
+        would_hit = early[pd.notna(early["__mfe"]) & (early["__mfe"] >= early["__tgt"] - tol)]
+        if len(would_hit):
+            left_prov = float((would_hit["__tgt"] - would_hit["__rr"]).clip(lower=0).sum())
+        rest = early[pd.notna(early["__mfe"]) & (early["__mfe"] < early["__tgt"] - tol)]
+        if len(rest):
+            reach_pct = float((rest["__mfe"].clip(lower=0) / rest["__tgt"]).mean() * 100)
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        _kpi("Ran to set TP", f"{len(hit)}",
+             f"avg {float(hit['__rr'].mean()):+.2f}R" if len(hit) else "none yet", "#16a34a")
+    with c2:
+        _kpi("Closed before target", f"{len(early)}",
+             f"avg {float(early['__rr'].mean()):+.2f}R" if len(early) else "none yet", PURPLE)
+    with c3:
+        _kpi("Stopped out", f"{len(stopped)}",
+             f"avg {float(stopped['__rr'].mean()):+.2f}R" if len(stopped) else "none", "#ef4444")
+    with c4:
+        _kpi("Provably left behind", "\u2014" if left_prov != left_prov else f"{left_prov:.1f}R",
+             "early closes whose peak DID reach the target",
+             "#ef4444" if left_prov == left_prov and left_prov >= 1 else PURPLE)
+    if reach_pct == reach_pct:
+        st.caption(f"The other early closes peaked at {reach_pct:.0f}% of target on average — "
+                   "cutting those may have saved you from the reversal; the data can't say.")
+    if len(g) >= 8 and len(early) >= 3:
+        if left_prov == left_prov and left_prov >= 1.5:
+            t._insight_box(
+                f"Cutting winners early has provably cost <b>{left_prov:.1f}R</b> — those trades' "
+                f"peaks reached your target after you closed. Your set TP is better at closing "
+                f"trades than your finger is. Let the ones that reach {tol:.0%} of target run.", "warn")
+        elif len(hit) >= 3:
+            t._insight_box(
+                f"Trades that ran to your set TP average <b>{float(hit['__rr'].mean()):+.2f}R</b> over "
+                f"{len(hit)}; your early closes average <b>{float(early['__rr'].mean()):+.2f}R</b> over "
+                f"{len(early)}. No provable damage from cutting early so far — keep logging.", "good")
+
 def _mae_mfe_section(df: pd.DataFrame, styler) -> None:
     t = _t()
     st.markdown("### Trade efficiency \u2014 what you keep of each move")

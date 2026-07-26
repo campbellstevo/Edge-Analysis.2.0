@@ -2700,9 +2700,7 @@ def _more_detail_has_content(f: pd.DataFrame, df_all: pd.DataFrame) -> bool:
                 av = av[~av.isin(["", "nan", "NaN", "None"])]
                 if av.nunique() > 1:
                     return True
-        if df_all is not None and not df_all.empty and "Result" in df_all.columns:
-            if df_all["Result"].astype(str).str.contains("Early Close", na=False).any():
-                return True
+        # early closes now live on the Entry tab (Manual close vs set TP)
     except Exception:
         return True  # never hide data because the probe broke
     return False
@@ -4610,7 +4608,7 @@ def _flip(key: str, chart_fn, table_fn) -> None:
 
 def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, hero_fn=None):
     from edge_analysis.ui.mt5_tabs import (
-        _section_header, _mae_mfe_section, _missed_runner_section,
+        _section_header, _mae_mfe_section, _close_style_section, _missed_runner_section,
         _direction_section, _conviction_section, _holdtime_section,
         _discipline_section, _mistake_section, _execution_section,
     )
@@ -4644,11 +4642,7 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                 with _budget(1):
                     _instruments_tab(f_perf, show_table)
                     if not _salty:
-                        _early_close_tab(df_all_safe, styler)
-                        _gap(18)
                         _account_comparison_tab(f_perf, styler)
-                    else:
-                        _early_close_tab_salty(df_all_safe, styler)
 
         with st.container(border=True):
             st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
@@ -4698,6 +4692,8 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                 with _budget(1):
                     if _mt5:
                         _mae_mfe_section(_data, styler)
+                        _gap(18)
+                        _close_style_section(_data, styler)
                         _gap(18)
                         _execution_section(_data, styler)
                         _gap(18)
