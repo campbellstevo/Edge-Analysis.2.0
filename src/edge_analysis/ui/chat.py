@@ -188,6 +188,39 @@ def _thin(n):
     return " (thin sample — treat gently)" if n < 8 else ""
 
 
+def _yesmask(df, col):
+    v = df[col].astype(str).str.strip().str.lower()
+    yes = v.isin(["yes", "true", "__yes__", "1"])
+    known = v.isin(["yes", "no", "true", "false", "__yes__", "__no__", "1", "0"])
+    return yes, known
+
+
+def _flag_compare(df, rr, col, label):
+    """avg R with vs without a yes/no flag. None when the data can't say."""
+    if col not in df.columns:
+        return None
+    yes, known = _yesmask(df, col)
+    a = rr[rr.index.isin(df[yes & known].index)]
+    b = rr[rr.index.isin(df[~yes & known].index)]
+    if len(a) < 3 or len(b) < 3:
+        return f"Not enough {label} tags yet — need 3+ trades on each side."
+    gap = float(a.mean()) - float(b.mean())
+    lead = "adds" if gap > 0 else "costs"
+    return (f"{label}: avg {_fmt(float(a.mean()))} over {len(a)} with it vs "
+            f"{_fmt(float(b.mean()))} over {len(b)} without — it {lead} about "
+            f"{_fmt(abs(gap))} per trade.{_thin(min(len(a), len(b)))}")
+
+
+def _clean_cat(series):
+    return (series.astype(str).str.replace(r'[\[\]"]', "", regex=True).str.strip())
+
+
+def _ordered(df, rr):
+    dt = _local_dates(df)
+    g = pd.DataFrame({"rr": rr, "dt": dt}).dropna()
+    return g.sort_values("dt")
+
+
 def _builtin_answer(q: str, df: pd.DataFrame):
     """Deterministic answers for the common questions. Returns None when unsure."""
     try:
@@ -198,11 +231,26 @@ def _builtin_answer(q: str, df: pd.DataFrame):
         has = lambda *ws: any(w in ql for w in ws)
         sess_col = "Session Norm" if "Session Norm" in df.columns else ("Session" if "Session" in df.columns else None)
 
-        if has("help", "what can you", "what do you", "examples"):
-            return ("Try: \"what's my best session?\" · \"am I on pace this month?\" · "
-                    "\"what do rule breaks cost me?\" · \"best entry model?\" · "
-                    "\"long vs short?\" · \"how much have I given back?\"")
+        # ── meta ─────────────────────────────────────────────────────────────
+        if has("help", "what can you", "what do you answer", "examples"):
+            return ("I answer from your own data: sessions · entry models · months & weeks · "
+                    "streaks & drawdown · best/worst trades · pace vs target · the breaker · "
+                    "rules, A+ and conviction · sweep/divergence/double confirmation · "
+                    "conditions, news, gaps, volatility · mistakes & why you lose · "
+                    "give-back & TP discipline · timing (hour/day) · dollars · "
+                    "\"what's working\" and \"what should I cut\".")
 
+        if has("improving", "getting better", "progress", "better than before", "improved"):
+            g = _ordered(df, rr)
+            if len(g) < 12:
+                return "Fewer than 12 trades — too early to call a trend in your edge."
+            half = len(g) // 2
+            e1, e2 = float(g["rr"].iloc[:half].mean()), float(g["rr"].iloc[half:].mean())
+            verdict = "improving" if e2 > e1 + 0.05 else ("slipping" if e2 < e1 - 0.05 else "holding steady")
+            return (f"First {half} trades: expectancy {_fmt(e1)}. Last {len(g) - half}: {_fmt(e2)}. "
+                    f"You're {verdict}.{_thin(half)}")
+
+        # ── keep-list / cut-list (before generic words like "working") ───────
         if has("doing well", "doing right", "doing good", "going well", "working",
                "keep doing", "strength", "good at", "best thing", "what works"):
             keeps = []
@@ -216,13 +264,13 @@ def _builtin_answer(q: str, df: pd.DataFrame):
                 b = mrows[0]
                 keeps.append(f"{b[2]} entries — avg {_fmt(b[0])} over {b[3]}")
             if "A+ Setup?" in df.columns:
-                m = df["A+ Setup?"].astype(str).str.strip().str.lower().isin(["yes", "true", "__yes__", "1"])
-                a = rr[rr.index.isin(df[m].index)]
+                yes, _ = _yesmask(df, "A+ Setup?")
+                a = rr[rr.index.isin(df[yes].index)]
                 if len(a) >= 3 and float(a.mean()) > 0.1:
                     keeps.append(f"your A+ setups — avg {_fmt(float(a.mean()))} over {len(a)}")
             if "Rules Followed?" in df.columns:
-                rv = df["Rules Followed?"].astype(str).str.strip().str.lower()
-                kept = rr[rr.index.isin(df[rv.isin(["yes", "true", "__yes__", "1"])].index)]
+                yes, _ = _yesmask(df, "Rules Followed?")
+                kept = rr[rr.index.isin(df[yes].index)]
                 if len(kept) >= 3 and float(kept.mean()) > 0.1:
                     keeps.append(f"trades where you followed your rules — avg {_fmt(float(kept.mean()))} over {len(kept)}")
             if not keeps:
@@ -230,6 +278,7 @@ def _builtin_answer(q: str, df: pd.DataFrame):
                         "Keep logging; the Refinements card tracks what's working as it emerges.")
             return (f"What's earning its place: {' · '.join(keeps[:3])}. "
                     "More of THIS, logged and repeated, is the whole plan.")
+
         if has("remove", "cut ", " drop", "stop doing", "get rid", "eliminate", "leak",
                "holding me back", "holding back", "hold back", "holding my", "stop trading",
                "biggest problem", "number 1", "number one", "worst thing", "biggest issue",
@@ -245,88 +294,110 @@ def _builtin_answer(q: str, df: pd.DataFrame):
                 w = mrows[-1]
                 cuts.append(f"{w[2]} entries — avg {_fmt(w[0])} over {w[3]}")
             if "A+ Setup?" in df.columns:
-                m = df["A+ Setup?"].astype(str).str.strip().str.lower().isin(["yes", "true", "__yes__", "1"])
-                o_ = rr[rr.index.isin(df[~m].index)]
+                yes, _ = _yesmask(df, "A+ Setup?")
+                o_ = rr[rr.index.isin(df[~yes].index)]
                 if len(o_) >= 8 and float(o_.mean()) < -0.1:
                     cuts.append(f"non-A+ trades — avg {_fmt(float(o_.mean()))} over {len(o_)}")
             if "Rules Followed?" in df.columns:
-                rv = df["Rules Followed?"].astype(str).str.strip().str.lower()
-                broke = rr[rr.index.isin(df[rv.isin(["no", "false", "__no__", "0"])].index)]
+                v = df["Rules Followed?"].astype(str).str.strip().str.lower()
+                broke = rr[rr.index.isin(df[v.isin(["no", "false", "__no__", "0"])].index)]
                 if len(broke) >= 3 and float(broke.mean()) < -0.1:
                     cuts.append(f"rule-break trades — avg {_fmt(float(broke.mean()))} over {len(broke)}")
             if not cuts:
                 return ("Nothing in the data screams 'cut' right now — no session, model or tag "
                         "averages worse than -0.10R with a real sample. The Plan tab keeps the ranking.")
-            listed = " · ".join(cuts[:3])
-            return (f"By the numbers, the cut list is: {listed}. "
+            return (f"By the numbers, the cut list is: {' · '.join(cuts[:3])}. "
                     "One removal at a time — the Plan tab ranks these with full evidence.")
 
-        if has("early close", "close early", "closed early", "take profit", " tp", "set tp", "auto close"):
-            _tc = next((c for c in ["Targeted RR", "Planned R:R", "Planned RR", "RR"]
-                        if c in df.columns), None)
-            if _tc is None:
-                return "No set-target column — the TP comparison needs the target you set per trade."
-            tgt = df[_tc].apply(lambda v: pd.to_numeric(str(v).replace("RR", "").replace("R", ""), errors="coerce"))
-            gg = pd.DataFrame({"rr": rr, "tgt": tgt}).dropna()
-            gg = gg[gg["tgt"] > 0.3]
-            if len(gg) < 5:
-                return "Fewer than 5 trades with a parseable set target — log Targeted RR and ask again."
-            hit = gg[gg["rr"] >= gg["tgt"] - 0.1]
-            stopped = gg[gg["rr"] <= -0.85]
-            early = gg.drop(hit.index).drop(stopped.index)
-            out = (f"Of {len(gg)} trades with a set TP: {len(hit)} ran to target "
-                   f"(avg {_fmt(float(hit['rr'].mean())) if len(hit) else '—'}), "
-                   f"{len(early)} closed before it (avg {_fmt(float(early['rr'].mean())) if len(early) else '—'}), "
-                   f"{len(stopped)} stopped out. Full breakdown: Entry tab → Manual close vs set TP.")
-            return out
+        # ── months / weeks / streaks / drawdown / progress ───────────────────
+        if has("best month", "worst month", "monthly", "month by month", "each month"):
+            g = _ordered(df, rr)
+            m = g.set_index("dt")["rr"].resample("MS").agg(["sum", "count"])
+            m = m[m["count"] > 0]
+            if len(m) < 2:
+                return "Only one month of data so far — the month-by-month story starts next month."
+            bi, wi = m["sum"].idxmax(), m["sum"].idxmin()
+            return (f"Best month: {bi.strftime('%B %Y')} at {_fmt(float(m.loc[bi, 'sum']))} over "
+                    f"{int(m.loc[bi, 'count'])} trades. Worst: {wi.strftime('%B %Y')} at "
+                    f"{_fmt(float(m.loc[wi, 'sum']))} over {int(m.loc[wi, 'count'])}. "
+                    "The Month-by-month card has every one.")
 
-        if has("session") and sess_col:
-            rows = _rank_by(df, rr, sess_col)
-            if not rows:
-                return "No session has 3+ trades yet — the ranking needs a few more."
-            b = rows[0]; w = rows[-1]
-            out = (f"Best session: {b[2]} — avg {_fmt(b[0])} over {b[3]} trades"
-                   f" (net {_fmt(b[1])}){_thin(b[3])}.")
-            if len(rows) > 1 and has("worst", "avoid", "stop"):
-                return (f"Weakest session: {w[2]} — avg {_fmt(w[0])} over {w[3]} trades"
-                        f" (net {_fmt(w[1])}){_thin(w[3])}. {out}")
-            if len(rows) > 1:
-                out += f" Weakest: {w[2]} at avg {_fmt(w[0])} over {w[3]}."
-            return out + " Detail lives on the Entry tab."
+        if has("best week", "worst week"):
+            g = _ordered(df, rr)
+            wsr = g.set_index("dt")["rr"].resample("W-SUN").agg(["sum", "count"])
+            wsr = wsr[wsr["count"] > 0]
+            if len(wsr) < 2:
+                return "Not enough weeks yet for a best/worst call."
+            bi, wi = wsr["sum"].idxmax(), wsr["sum"].idxmin()
+            return (f"Best week: w/c {(bi - pd.Timedelta(days=6)).strftime('%d %b')} at "
+                    f"{_fmt(float(wsr.loc[bi, 'sum']))} ({int(wsr.loc[bi, 'count'])} trades). "
+                    f"Worst: w/c {(wi - pd.Timedelta(days=6)).strftime('%d %b')} at "
+                    f"{_fmt(float(wsr.loc[wi, 'sum']))} ({int(wsr.loc[wi, 'count'])}).")
 
-        if has("entry model", "model", "setup") and not has("a+", "a plus"):
-            rows = _rank_by(df, rr, "Entry Model")
-            if rows:
-                b = rows[0]; w = rows[-1]
-                out = f"Best entry model: {b[2]} — avg {_fmt(b[0])} over {b[3]} trades{_thin(b[3])}."
-                if len(rows) > 1:
-                    out += f" Weakest with 3+ trades: {w[2]} at avg {_fmt(w[0])} over {w[3]}."
-                return out + " Full ranking is on the Entry tab."
+        if has("this week", "week so far", "current week"):
+            g = _ordered(df, rr)
+            now = pd.Timestamp.now()
+            mon = (now - pd.Timedelta(days=int(now.dayofweek))).normalize()
+            wk = g[g["dt"] >= mon]["rr"]
+            if not len(wk):
+                return "No completed trades yet this week."
+            return (f"This week: {_fmt(float(wk.sum()))} over {len(wk)} trades "
+                    f"(avg {_fmt(float(wk.mean()))}). The Weekly debrief has the trade-by-trade.")
 
-        if has("a+", "a plus", "a-game", "a game"):
-            if "A+ Setup?" in df.columns:
-                m = df["A+ Setup?"].astype(str).str.strip().str.lower().isin(["yes", "true", "__yes__", "1"])
-                a = rr[rr.index.isin(df[m].index)]; o_ = rr[rr.index.isin(df[~m].index)]
-                if len(a) >= 3:
-                    return (f"A+ setups: avg {_fmt(float(a.mean()))} over {len(a)} trades vs "
-                            f"{_fmt(float(o_.mean()))} over {len(o_)} for everything else{_thin(len(a))}. "
-                            "The gap is the strongest argument for taking fewer, better trades.")
-                return "Fewer than 3 trades tagged A+ so far — tag them in Notion and ask again."
-            return "No A+ Setup? column in this journal."
+        if has("streak", "in a row", "consecutive"):
+            g = _ordered(df, rr)
+            seq = g["rr"].apply(lambda v: 1 if v > 0.15 else (-1 if v < -0.15 else 0)).tolist()
+            mw = ml = cw = cl = 0
+            for v in seq:
+                cw = cw + 1 if v == 1 else 0
+                cl = cl + 1 if v == -1 else 0
+                mw, ml = max(mw, cw), max(ml, cl)
+            cur = 0
+            for v in reversed(seq):
+                if v == 0:
+                    continue
+                if cur == 0:
+                    cur = v
+                elif (v > 0) == (cur > 0):
+                    cur += v
+                else:
+                    break
+            cur_s = ("no open streak" if cur == 0 else
+                     f"currently {abs(cur)} {'win' if cur > 0 else 'loss'}{'es' if cur < -1 else 's' if cur > 1 else ''} running")
+            return (f"Longest winning streak: {mw}. Longest losing streak: {ml} — that's the number "
+                    f"your risk plan has to survive. Right now: {cur_s}.")
 
-        if has("rule", "rules"):
-            if "Rules Followed?" in df.columns:
-                rv = df["Rules Followed?"].astype(str).str.strip().str.lower()
-                kept = rr[rr.index.isin(df[rv.isin(["yes", "true", "__yes__", "1"])].index)]
-                broke = rr[rr.index.isin(df[rv.isin(["no", "false", "__no__", "0"])].index)]
-                if len(kept) >= 3 and len(broke) >= 3:
-                    gap = float(kept.mean()) - float(broke.mean())
-                    return (f"Rules kept: avg {_fmt(float(kept.mean()))} over {len(kept)}. "
-                            f"Rules broken: avg {_fmt(float(broke.mean()))} over {len(broke)}. "
-                            f"Following your own rules is worth about {_fmt(gap)} per trade.")
-                return "Not enough Rules Followed? tags yet (need 3+ on each side)."
-            return "No Rules Followed? column in this journal."
+        if has("drawdown", "draw down", "biggest dip", "underwater"):
+            g = _ordered(df, rr)
+            cum = g["rr"].cumsum()
+            dd = float((cum - cum.cummax()).min())
+            return (f"Max drawdown: {_fmt(dd)} peak-to-trough across all logged trades. "
+                    f"Your monthly breaker at {float(st.session_state.get('ea_m_stop', -6.0)):+.0f}R "
+                    "exists to keep any single month from getting near that.")
 
+        if has("today", "yesterday"):
+            g = _ordered(df, rr)
+            day = pd.Timestamp.now().normalize() - (pd.Timedelta(days=1) if "yesterday" in ql else pd.Timedelta(0))
+            dsub = g[g["dt"].dt.normalize() == day]["rr"]
+            label = "Yesterday" if "yesterday" in ql else "Today"
+            if not len(dsub):
+                return f"{label}: no completed trades logged."
+            return f"{label}: {_fmt(float(dsub.sum()))} over {len(dsub)} trade{'s' if len(dsub) != 1 else ''}."
+
+        # ── best/worst single trades ─────────────────────────────────────────
+        if has("best trade", "biggest win", "biggest winner", "largest win"):
+            g = _ordered(df, rr)
+            i = g["rr"].idxmax()
+            return (f"Biggest win: {_fmt(float(g.loc[i, 'rr']))} on "
+                    f"{g.loc[i, 'dt'].strftime('%d %b %Y')}.")
+        if has("worst trade", "biggest loss", "biggest loser", "largest loss"):
+            g = _ordered(df, rr)
+            i = g["rr"].idxmin()
+            return (f"Biggest loss: {_fmt(float(g.loc[i, 'rr']))} on "
+                    f"{g.loc[i, 'dt'].strftime('%d %b %Y')}. One number worth checking: "
+                    "was the stop where the plan said?")
+
+        # ── pace / breaker (before generic month words) ──────────────────────
         if has("pace", "on track", "this month", "month so far", "target"):
             dt = _local_dates(df)
             m_mask = dt.dt.to_period("M") == pd.Timestamp.now().to_period("M")
@@ -335,14 +406,13 @@ def _builtin_answer(q: str, df: pd.DataFrame):
             stp = float(st.session_state.get("ea_m_stop", -6.0))
             cap = int(st.session_state.get("ea_m_cap", 12))
             net_m = float(m_rr.sum())
-            room = net_m - stp
             out = (f"This month: {_fmt(net_m)} over {len(m_rr)} trades. Target {tgt:+.1f}R "
-                   f"({_fmt(tgt - net_m)} away), stop {stp:+.1f}R ({room:.1f}R of room). "
+                   f"({_fmt(tgt - net_m)} away), stop {stp:+.1f}R ({net_m - stp:.1f}R of room). "
                    f"Trades: {len(m_rr)} of your {cap} cap")
             out += " — over it, pace discipline first." if len(m_rr) > cap else "."
             return out
 
-        if has("breaker", "circuit", "stop trading", "max loss"):
+        if has("breaker", "circuit", "max loss"):
             dt = _local_dates(df)
             m_rr = rr[rr.index.isin(dt[dt.dt.to_period("M") == pd.Timestamp.now().to_period("M")].index)]
             stp = float(st.session_state.get("ea_m_stop", -6.0))
@@ -353,13 +423,36 @@ def _builtin_answer(q: str, df: pd.DataFrame):
             return (f"Breaker is open: {_fmt(net_m)} this month, {net_m - stp:.1f}R above the "
                     f"{stp:+.0f}R line. It's a binary stop — hit it and the month is done.")
 
+        # ── groups: session / model / weekday / hour / instrument / hold ─────
+        if has("session") and sess_col:
+            rows = _rank_by(df, rr, sess_col)
+            if not rows:
+                return "No session has 3+ trades yet — the ranking needs a few more."
+            b = rows[0]; w = rows[-1]
+            out = (f"Best session: {b[2]} — avg {_fmt(b[0])} over {b[3]} trades"
+                   f" (net {_fmt(b[1])}){_thin(b[3])}.")
+            if len(rows) > 1 and has("worst", "avoid"):
+                return (f"Weakest session: {w[2]} — avg {_fmt(w[0])} over {w[3]} trades"
+                        f" (net {_fmt(w[1])}){_thin(w[3])}. {out}")
+            if len(rows) > 1:
+                out += f" Weakest: {w[2]} at avg {_fmt(w[0])} over {w[3]}."
+            return out + " Detail lives on the Entry tab."
+
+        if has("entry model", "which model", "best model", "worst model", "best setup", "worst setup"):
+            rows = _rank_by(df, rr, "Entry Model")
+            if rows:
+                b = rows[0]; w = rows[-1]
+                out = f"Best entry model: {b[2]} — avg {_fmt(b[0])} over {b[3]} trades{_thin(b[3])}."
+                if len(rows) > 1:
+                    out += f" Weakest with 3+ trades: {w[2]} at avg {_fmt(w[0])} over {w[3]}."
+                return out + " Full ranking is on the Entry tab."
+
         if has("weekday", "best day", "worst day", "which day", "day of week",
                "monday", "tuesday", "wednesday", "thursday", "friday"):
             col = "DayName" if "DayName" in df.columns else None
             if col is None and "Date" in df.columns:
                 df = df.copy()
-                df["__dayname"] = pd.to_datetime(df["Date"].astype(str).str.replace(
-                    r"\s*\(GMT.*\)$", "", regex=True), errors="coerce").dt.day_name()
+                df["__dayname"] = _local_dates(df).dt.day_name()
                 col = "__dayname"
             rows = _rank_by(df, rr, col) if col else []
             if rows:
@@ -367,7 +460,208 @@ def _builtin_answer(q: str, df: pd.DataFrame):
                 return (f"Best weekday: {b[2]} — avg {_fmt(b[0])} over {b[3]} trades{_thin(b[3])}. "
                         f"Weakest: {w[2]} at avg {_fmt(w[0])} over {w[3]}.")
 
-        if has("give back", "giveback", "gave back", "mfe", "left on the table", "partial"):
+        if has("what time", "best time", "which hour", "best hour", "time of day"):
+            hcol = next((c for c in ["Hour (Melb)", "Hour"] if c in df.columns), None)
+            g = df.copy()
+            if hcol is None:
+                g["__hr"] = _local_dates(g).dt.hour
+                hcol = "__hr"
+            g["__hrlab"] = pd.to_numeric(g[hcol], errors="coerce").dropna().astype(int).map(lambda h: f"{h:02d}:00")
+            rows = _rank_by(g, rr, "__hrlab")
+            if rows:
+                b = rows[0]; w = rows[-1]
+                return (f"Best hour: {b[2]} — avg {_fmt(b[0])} over {b[3]} trades{_thin(b[3])}. "
+                        f"Weakest: {w[2]} at avg {_fmt(w[0])} over {w[3]}. "
+                        "The When-You-Trade-Best heatmap on Externals shows the full grid.")
+
+        if has("instrument", "pair", "symbol", "gold", "which market"):
+            icol = next((c for c in ["Instrument", "Pair", "Symbol"] if c in df.columns), None)
+            if icol:
+                rows = _rank_by(df, rr, icol)
+                if len(rows) == 1:
+                    b = rows[0]
+                    return (f"One instrument in the log: {b[2]} — net {_fmt(b[1])} over {b[3]} trades "
+                            f"(avg {_fmt(b[0])}).")
+                if rows:
+                    b = rows[0]; w = rows[-1]
+                    return (f"Best instrument: {b[2]} avg {_fmt(b[0])} over {b[3]}. "
+                            f"Weakest: {w[2]} avg {_fmt(w[0])} over {w[3]}.")
+
+        if has("hold", "duration", "how long"):
+            dcol = next((c for c in ["Duration Bin", "Hold Time", "Duration"] if c in df.columns), None)
+            if dcol:
+                rows = _rank_by(df, rr, dcol)
+                if rows:
+                    b = rows[0]
+                    return (f"Best hold-time window: {b[2]} — avg {_fmt(b[0])} over {b[3]} trades"
+                            f"{_thin(b[3])}. The Hold-Time section on Entry has the curve.")
+            return "No hold-time data in this journal yet (the MT5 sync fills it)."
+
+        # ── criteria & conditions ────────────────────────────────────────────
+        if has("sweep"):
+            r = _flag_compare(df, rr, "Sweep?", "Sweep")
+            if r:
+                return r
+        if has("divergence", " div"):
+            r = _flag_compare(df, rr, "DIV?", "Divergence")
+            if r:
+                return r
+        if has("double confirmation", "multi entry", "confluence"):
+            r = _flag_compare(df, rr, "Multi Entry Model Setup", "Double confirmation")
+            if r:
+                return r
+        if has("overbought", "oversold", "ob/os", "obos"):
+            r = _flag_compare(df, rr, "Oversold or Overbought?", "OB/OS extreme entry")
+            if r:
+                return r
+        if has("conviction"):
+            if "Conviction (1-5)" in df.columns:
+                cv = pd.to_numeric(df["Conviction (1-5)"], errors="coerce")
+                hi = rr[rr.index.isin(df[cv >= 4].index)]
+                lo = rr[rr.index.isin(df[cv.notna() & (cv < 4)].index)]
+                if len(hi) >= 3 and len(lo) >= 3:
+                    return (f"High conviction (4-5): avg {_fmt(float(hi.mean()))} over {len(hi)}. "
+                            f"Lower (1-3): avg {_fmt(float(lo.mean()))} over {len(lo)}. "
+                            "If the gap is real, conviction deserves a place in your entry checklist.")
+                return "Not enough conviction scores logged yet (need 3+ on each side)."
+        if has("mental state", "mood", "state of mind", "mindset"):
+            if "Mental State" in df.columns:
+                ms = df["Mental State"].astype(str)
+                clear = rr[rr.index.isin(df[ms.str.contains("Clear", case=False, na=False)].index)]
+                other = rr[rr.index.isin(df[~ms.str.contains("Clear", case=False, na=False)
+                                            & ~ms.str.strip().isin(["", "nan", "None"])].index)]
+                if len(clear) >= 3 and len(other) >= 3:
+                    return (f"Clear-headed: avg {_fmt(float(clear.mean()))} over {len(clear)}. "
+                            f"Other states: avg {_fmt(float(other.mean()))} over {len(other)}.")
+                return "Not enough Mental State tags yet — log it on a few more trades."
+            return "No Mental State column in this journal."
+        if has("news"):
+            rows = _rank_by(pd.DataFrame({"c": _clean_cat(df["News Aspect"])}).join(df.drop(columns=["News Aspect"], errors="ignore")), rr, "c") if "News Aspect" in df.columns else []
+            if rows:
+                b = rows[0]; w = rows[-1]
+                return (f"News: best case is “{b[2]}” at avg {_fmt(b[0])} over {b[3]}; "
+                        f"worst is “{w[2]}” at {_fmt(w[0])} over {w[3]}.")
+            return "No News Aspect tags with 3+ trades yet."
+        if has(" gap", "gaps"):
+            rows = _rank_by(pd.DataFrame({"c": _clean_cat(df["GAP Alignment"])}).join(df.drop(columns=["GAP Alignment"], errors="ignore")), rr, "c") if "GAP Alignment" in df.columns else []
+            if rows:
+                b = rows[0]; w = rows[-1]
+                return (f"Gaps: “{b[2]}” leads at avg {_fmt(b[0])} over {b[3]}; "
+                        f"“{w[2]}” trails at {_fmt(w[0])} over {w[3]}.")
+            return "No GAP Alignment tags with 3+ trades yet."
+        if has("volatility", "volatile"):
+            rows = _rank_by(pd.DataFrame({"c": _clean_cat(df["Volatility"])}).join(df.drop(columns=["Volatility"], errors="ignore")), rr, "c") if "Volatility" in df.columns else []
+            if rows:
+                b = rows[0]; w = rows[-1]
+                return (f"Volatility: {b[2]} conditions average {_fmt(b[0])} over {b[3]}; "
+                        f"{w[2]} averages {_fmt(w[0])} over {w[3]}.")
+            return "No Volatility tags with 3+ trades yet."
+        if has("trending", "ranging", "market condition", "conditions"):
+            ccol = next((c for c in ["Conditions ETF", "Conditions MTF", "Conditions HTF"] if c in df.columns), None)
+            if ccol:
+                rows = _rank_by(pd.DataFrame({"c": _clean_cat(df[ccol])}).join(df.drop(columns=[ccol], errors="ignore")), rr, "c")
+                if rows:
+                    b = rows[0]; w = rows[-1]
+                    return (f"Market conditions ({ccol.split()[-1]} frame): {b[2]} leads at avg {_fmt(b[0])} "
+                            f"over {b[3]}; {w[2]} trails at {_fmt(w[0])} over {w[3]}. "
+                            "The Conditions bars on Externals rank every state.")
+            return "No conditions tags with 3+ trades yet."
+
+        # ── discipline & psychology ──────────────────────────────────────────
+        if has("rule", "rules"):
+            if "Rules Followed?" in df.columns:
+                yes, known = _yesmask(df, "Rules Followed?")
+                kept = rr[rr.index.isin(df[yes & known].index)]
+                broke = rr[rr.index.isin(df[~yes & known].index)]
+                if len(kept) >= 3 and len(broke) >= 3:
+                    gap = float(kept.mean()) - float(broke.mean())
+                    return (f"Rules kept: avg {_fmt(float(kept.mean()))} over {len(kept)}. "
+                            f"Rules broken: avg {_fmt(float(broke.mean()))} over {len(broke)}. "
+                            f"Following your own rules is worth about {_fmt(gap)} per trade.")
+                return "Not enough Rules Followed? tags yet (need 3+ on each side)."
+            return "No Rules Followed? column in this journal."
+
+        if has("a+", "a plus", "a-game", "a game"):
+            if "A+ Setup?" in df.columns:
+                yes, _ = _yesmask(df, "A+ Setup?")
+                a = rr[rr.index.isin(df[yes].index)]
+                o_ = rr[rr.index.isin(df[~yes].index)]
+                if len(a) >= 3:
+                    return (f"A+ setups: avg {_fmt(float(a.mean()))} over {len(a)} trades vs "
+                            f"{_fmt(float(o_.mean()))} over {len(o_)} for everything else{_thin(len(a))}. "
+                            "The gap is the strongest argument for taking fewer, better trades.")
+                return "Fewer than 3 trades tagged A+ so far — tag them in Notion and ask again."
+            return "No A+ Setup? column in this journal."
+
+        if has("tilt", "after a loss", "revenge"):
+            g = _ordered(df, rr)
+            g["__prev"] = g["rr"].shift(1)
+            al = g[g["__prev"] < -0.15]["rr"]; aw = g[g["__prev"] > 0.15]["rr"]
+            if len(al) >= 3 and len(aw) >= 3:
+                return (f"After a loss your next trade averages {_fmt(float(al.mean()))} "
+                        f"({len(al)} samples) vs {_fmt(float(aw.mean()))} after a win ({len(aw)}). "
+                        + ("Losses are echoing — a forced pause after a red trade would pay. "
+                           if float(al.mean()) < float(aw.mean()) - 0.2 else "No strong tilt signal. ")
+                        + "Detail: Psychology tab.")
+
+        if has("mistake", "mistakes"):
+            if "Mistake" in df.columns:
+                mk = _clean_cat(df["Mistake"])
+                g2 = df.copy(); g2["__mk"] = mk
+                g2 = g2[~g2["__mk"].str.lower().isin(["", "nan", "none", "na"])]
+                if len(g2) >= 3:
+                    agg = []
+                    for name, sub in g2.groupby("__mk"):
+                        srr = rr[rr.index.isin(sub.index)]
+                        agg.append((float(srr.sum()), name, len(sub)))
+                    agg.sort()
+                    worst = agg[0]
+                    return (f"Most expensive mistake: “{worst[1]}” — net {_fmt(worst[0])} across "
+                            f"{worst[2]} trade{'s' if worst[2] != 1 else ''}. "
+                            f"{len(agg)} distinct mistake tags logged; the Mistake-leak report ranks them all.")
+                return "Fewer than 3 trades have a Mistake tag — log them and this gets sharp."
+            return "No Mistake column in this journal."
+
+        if has("why do i lose", "why am i losing", "why i lose", "reason", "losing money"):
+            if "Reason of loss" in df.columns:
+                why = _clean_cat(df["Reason of loss"])
+                g2 = df.copy(); g2["__why"] = why
+                g2 = g2[~g2["__why"].str.lower().isin(["", "nan", "none", "na"])]
+                losses = rr[rr < -0.15]
+                g2 = g2[g2.index.isin(losses.index)]
+                if len(g2):
+                    agg = []
+                    for name, sub in g2.groupby("__why"):
+                        srr = rr[rr.index.isin(sub.index)]
+                        agg.append((float(srr.sum()), name, len(sub)))
+                    agg.sort()
+                    top = agg[:2]
+                    parts = [f"“{n}” ({_fmt(s)} over {c})" for s, n, c in top]
+                    return ("In your own words, the losses come from: " + " and ".join(parts) +
+                            ". The Loss Post-Mortem on Psychology has every tag ranked.")
+                return "No tagged losses yet — fill Reason of loss on red trades and ask again."
+            return "No Reason of loss column in this journal."
+
+        # ── management / money / simple stats ────────────────────────────────
+        if has("early close", "close early", "closed early", "take profit", " tp", "set tp", "auto close", "partial"):
+            _tc = next((c for c in ["Targeted RR", "Planned R:R", "Planned RR", "RR"]
+                        if c in df.columns), None)
+            if _tc is None:
+                return "No set-target column — the TP comparison needs the target you set per trade."
+            tgt = df[_tc].apply(lambda v: pd.to_numeric(str(v).replace("RR", "").replace("R", ""), errors="coerce"))
+            gg = pd.DataFrame({"rr": rr, "tgt": tgt}).dropna()
+            gg = gg[gg["tgt"] > 0.3]
+            if len(gg) < 5:
+                return "Fewer than 5 trades with a parseable set target — log the target and ask again."
+            hit = gg[gg["rr"] >= gg["tgt"] - 0.1]
+            stopped = gg[gg["rr"] <= -0.85]
+            early = gg.drop(hit.index).drop(stopped.index)
+            return (f"Of {len(gg)} trades with a set TP: {len(hit)} ran to target "
+                    f"(avg {_fmt(float(hit['rr'].mean())) if len(hit) else '—'}), "
+                    f"{len(early)} closed before it (avg {_fmt(float(early['rr'].mean())) if len(early) else '—'}), "
+                    f"{len(stopped)} stopped out. Full breakdown: Entry tab → Manual close vs set TP.")
+
+        if has("give back", "giveback", "gave back", "mfe", "left on the table"):
             if "MFE (R)" in df.columns:
                 mfe = pd.to_numeric(df["MFE (R)"], errors="coerce")
                 give = float((mfe - rr).clip(lower=0).sum())
@@ -375,20 +669,17 @@ def _builtin_answer(q: str, df: pd.DataFrame):
                     return (f"You've shown {give:.1f}R of favourable movement that wasn't banked "
                             "(MFE vs close). A pre-defined +1R action — partial or trail — is the fix. "
                             "Detail: Entry tab, Trade efficiency.")
-            return "No MFE (R) column — give-back needs it (MT5 sync fills it)."
+            return "No MFE (R) column — give-back needs it (the MT5 sync fills it)."
 
-        if has("tilt", "after a loss", "revenge"):
-            dcol = _local_dates(df)
-            g = df.loc[rr.index].copy(); g["__rr"] = rr; g["__dt"] = dcol
-            g = g[g["__dt"].notna()].sort_values("__dt")
-            g["__prev_rr"] = g["__rr"].shift(1)
-            al = g[g["__prev_rr"] < -0.15]["__rr"]; aw = g[g["__prev_rr"] > 0.15]["__rr"]
-            if len(al) >= 3 and len(aw) >= 3:
-                return (f"After a loss your next trade averages {_fmt(float(al.mean()))} "
-                        f"({len(al)} samples) vs {_fmt(float(aw.mean()))} after a win ({len(aw)}). "
-                        + ("Losses are echoing — a forced pause after a red trade would pay. "
-                           if float(al.mean()) < float(aw.mean()) - 0.2 else "No strong tilt signal. ")
-                        + "Detail: Psychology tab.")
+        if has("dollar", "money", "$", "usd", "cash"):
+            pcol = next((c for c in ["PnL (USD)", "PnL"] if c in df.columns), None)
+            if pcol:
+                p = pd.to_numeric(df[pcol], errors="coerce").dropna()
+                if len(p):
+                    tot = float(p.sum())
+                    return (f"Net dollars: {'-' if tot < 0 else '+'}${abs(tot):,.2f} over {len(p)} trades. "
+                            "R is the honest measure though — dollar size shifts with lot size.")
+            return "No dollar P&L column in this view."
 
         if has("long", "short", "direction"):
             if "Direction" in df.columns:
@@ -400,11 +691,30 @@ def _builtin_answer(q: str, df: pd.DataFrame):
                             f"Shorts: avg {_fmt(float(sh.mean()))} over {len(sh)}."
                             f"{_thin(min(len(lo), len(sh)))}")
 
-        if has("win rate", "winrate", "win %"):
+        if has("average win", "avg win", "average loss", "avg loss", "average winner", "average loser"):
+            w_ = rr[rr > 0.15]; l_ = rr[rr < -0.15]
+            return (f"Average winner: {_fmt(float(w_.mean())) if len(w_) else '—'} ({len(w_)} wins). "
+                    f"Average loser: {_fmt(float(l_.mean())) if len(l_) else '—'} ({len(l_)} losses). "
+                    f"That ratio is what lets a {int(len(w_) / max(1, len(w_) + len(l_)) * 100)}% win rate pay.")
+
+        if has("break even", "breakeven", "be rate", "scratch"):
+            n = len(rr); bes = int((rr.abs() <= 0.15).sum())
+            return (f"Break-evens: {bes} of {n} trades ({bes / n * 100:.0f}%). "
+                    "A high BE rate usually means stops moved to entry early — safety that costs the winners.")
+
+        if has("win rate", "winrate", "win %", "how often do i win"):
             n = len(rr); wins = int((rr > 0.15).sum()); bes = int((rr.abs() <= 0.15).sum())
+            aw = float(rr[rr > 0.15].mean()) if wins else float("nan")
             return (f"Win rate: {wins / n * 100:.0f}% over {n} completed trades "
-                    f"({wins}W / {bes}BE / {n - wins - bes}L). With your winners averaging "
-                    f"{_fmt(float(rr[rr > 0.15].mean())) if wins else '—'}, a sub-30% win rate can still be a real edge.")
+                    f"({wins}W / {bes}BE / {n - wins - bes}L). With winners averaging "
+                    f"{_fmt(aw) if aw == aw else '—'}, a sub-30% win rate can still be a real edge.")
+
+        if has("profit factor"):
+            pf_den = float(-rr[rr < 0].sum())
+            pf = float(rr[rr > 0].sum()) / pf_den if pf_den > 0 else float("inf")
+            return (f"Profit factor: {pf:.2f} — gross wins ÷ gross losses. "
+                    "Above 1 means the wins outweigh the losses; yours is "
+                    + ("holding above water." if pf >= 1 else "under 1 — the Plan tab ranks what to cut."))
 
         if has("expectancy", "edge", "profitable", "net", "total", "how much", "overall", "how am i"):
             n = len(rr)
@@ -417,6 +727,10 @@ def _builtin_answer(q: str, df: pd.DataFrame):
 
         if has("how many trades", "trade count", "number of trades"):
             return f"{len(rr)} completed trades in the current view."
+
+        if has("sleep", "recovery", "whoop", "strain"):
+            return ("WHOOP questions live on the Psychology tab's Recovery card — the driver "
+                    "leaderboard ranks which body metrics actually move your R.")
     except Exception:
         return None
     return None
