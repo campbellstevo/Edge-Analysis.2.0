@@ -549,6 +549,27 @@ def _builtin_answer(q: str, df: pd.DataFrame):
                 return (f"Gaps: “{b[2]}” leads at avg {_fmt(b[0])} over {b[3]}; "
                         f"“{w[2]}” trails at {_fmt(w[0])} over {w[3]}.")
             return "No GAP Alignment tags with 3+ trades yet."
+        if has("volume", "liquidity", "liquid"):
+            hr = pd.to_numeric(df.get("Hour (Melb)"), errors="coerce") if "Hour (Melb)" in df.columns else _local_dates(df).dt.hour
+            gg = pd.DataFrame({"rr": rr, "hr": hr}).dropna()
+            if len(gg) < 8:
+                return "Not enough hour-stamped trades to split by volume tier yet."
+            def _tier(h):
+                h = int(h)
+                if h >= 22 or h < 3: return "peak (NY+overlap)"
+                if 17 <= h < 22: return "rising (London)"
+                if 3 <= h < 7: return "fading (late NY)"
+                return "dead (Asia)"
+            gg["t"] = gg["hr"].map(_tier)
+            bits = []
+            for name, sub in gg.groupby("t"):
+                if len(sub) >= 3:
+                    bits.append((float(sub["rr"].mean()), f"{name}: avg {_fmt(float(sub['rr'].mean()))} over {len(sub)}"))
+            if not bits:
+                return "No volume window has 3+ trades yet."
+            bits.sort(reverse=True)
+            return ("Your edge by volume tier \u2014 " + " \u00b7 ".join(b for _, b in bits) +
+                    ". The Liquidity Windows bars on Externals keep this live.")
         if has("volatility", "volatile"):
             rows = _rank_by(pd.DataFrame({"c": _clean_cat(df["Volatility"])}).join(df.drop(columns=["Volatility"], errors="ignore")), rr, "c") if "Volatility" in df.columns else []
             if rows:

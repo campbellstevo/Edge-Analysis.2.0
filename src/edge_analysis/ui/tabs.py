@@ -3062,6 +3062,70 @@ def _edge_wheel(rows, cat_col, val_col, fmt="+.2f") -> None:
                 'role="img">' + "".join(parts) + "</svg></div>", unsafe_allow_html=True)
 
 
+def _liquidity_windows(f: pd.DataFrame) -> None:
+    """Your edge by market-volume tier (approximate, local time)."""
+    if f is None or f.empty:
+        return
+    rr_col = next((c for c in ["Closed RR Num", "Closed RR", "RR", "Closed R"] if c in f.columns), None)
+    if rr_col is None:
+        return
+    g = f.copy()
+    g["__rr"] = pd.to_numeric(g[rr_col], errors="coerce")
+    g = g[g["__rr"].notna()]
+    if len(g) < 8:
+        return
+    hr = pd.to_numeric(g.get("Hour (Melb)"), errors="coerce") if "Hour (Melb)" in g.columns else None
+    if hr is None or not hr.notna().any():
+        _dt = pd.to_datetime(g.get("Date", pd.Series(dtype=object)).astype(str)
+                             .str.replace(r"\s*\(GMT.*\)$", "", regex=True), errors="coerce")
+        try:
+            if getattr(_dt.dt, "tz", None) is not None:
+                _dt = _dt.dt.tz_localize(None)
+            from edge_analysis.ui.plan_tabs import get_tz_offset
+            _dt = _dt + pd.Timedelta(hours=get_tz_offset(g))
+        except Exception:
+            pass
+        hr = _dt.dt.hour
+    g["__hr"] = hr
+    g = g[pd.notna(g["__hr"])]
+    if len(g) < 8:
+        return
+
+    def _tier(h):
+        h = int(h)
+        if h >= 22 or h < 3:
+            return "Peak volume \u00b7 NY + overlap"
+        if 17 <= h < 22:
+            return "Rising \u00b7 London"
+        if 3 <= h < 7:
+            return "Fading \u00b7 late NY"
+        return "Dead \u00b7 Asia / pre-session"
+
+    g["__tier"] = g["__hr"].map(_tier)
+    rows = []
+    for name, sub in g.groupby("__tier"):
+        if len(sub) < 3:
+            continue
+        rows.append({"Window": name, "Avg R": round(float(sub["__rr"].mean()), 2),
+                     "Trades": len(sub)})
+    if len(rows) < 2:
+        return
+    st.markdown("### Liquidity Windows")
+    st.caption("Your average R by market-volume tier (approximate gold/FX volume in your local "
+               "time) \u00b7 min 3 trades per window.")
+    _rank_dots(pd.DataFrame(rows), "Window", "Avg R")
+    d_ = {r["Window"]: r for r in rows}
+    pk = next((v for k, v in d_.items() if k.startswith("Peak")), None)
+    dd = next((v for k, v in d_.items() if k.startswith("Dead")), None)
+    if pk and dd and pk["Trades"] >= 5 and dd["Trades"] >= 5:
+        gap = pk["Avg R"] - dd["Avg R"]
+        if gap > 0.3:
+            _insight_box(
+                f"Volume is paying you: peak-volume windows average <b>{pk['Avg R']:+.2f}R</b> "
+                f"({pk['Trades']} trades) vs <b>{dd['Avg R']:+.2f}R</b> in dead hours "
+                f"({dd['Trades']}). That's <b>{gap:+.2f}R per trade</b> for trading when "
+                "the market is actually moving \u2014 your session rule in one number.")
+
 def _conditions_tab(f: pd.DataFrame, show_table):
     st.markdown('<div class="section">', unsafe_allow_html=True)
     st.markdown("### Conditions")
@@ -4746,6 +4810,8 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                 _obos_section(f_perf)
                 _gap(18)
                 _confluence_board(f_perf, scope="external")
+                _gap(18)
+                _liquidity_windows(f_perf)
                 if _mt5:
                     _gap(18)
                     _heatmap_hour_day(_data, styler)
