@@ -615,12 +615,13 @@ def _month_card(f: pd.DataFrame, styler) -> None:
                                 "FINE-TUNE</div>", unsafe_allow_html=True)
                     with st.form("plan_form", border=False):
                         st.slider("Monthly target (R)", min_value=0.5, max_value=20.0,
-                                  step=0.5, key="ea_m_tgt")
+                                  step=0.5, format="%.1f", key="ea_m_tgt")
                         st.slider("Max monthly loss (R)", min_value=-15.0, max_value=-1.0,
-                                  step=0.5, key="ea_m_stop")
+                                  step=0.5, format="%.1f", key="ea_m_stop")
                         st.slider("Trades per month", min_value=1, max_value=40,
                                   step=1, key="ea_m_cap")
-                        st.form_submit_button("Save", type="primary", on_click=_plan_dirty)
+                        st.form_submit_button("Save", type="primary", on_click=_plan_dirty,
+                                              use_container_width=True)
 
         if md.empty:
             st.info("No trades this month yet.")
