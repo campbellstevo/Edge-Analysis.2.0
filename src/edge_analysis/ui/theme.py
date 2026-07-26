@@ -1119,6 +1119,31 @@ def inject_theme():
             mask-image: linear-gradient(to right, black 92%, transparent 100%);
             -webkit-mask-image: linear-gradient(to right, black 92%, transparent 100%);
         }}
+        /* Popovers become centered sheets that always fit the phone */
+        div[data-baseweb="popover"]:has([data-testid="stPopoverBody"]) {{
+            position: fixed !important;
+            left: 50% !important;
+            top: 8vh !important;
+            transform: translateX(-50%) !important;
+            z-index: 99999 !important;
+        }}
+        [data-testid="stPopoverBody"] {{
+            width: min(94vw, 420px) !important;
+            max-width: 94vw !important;
+            max-height: 80vh !important;
+            overflow-y: auto !important;
+            -webkit-overflow-scrolling: touch;
+        }}
+        [data-testid="stPopoverBody"] button p {{
+            white-space: normal !important;
+            font-size: 12.5px !important;
+            line-height: 1.25 !important;
+        }}
+        /* Chat bubble clears the host's Manage-app pill */
+        div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-chatfab) {{
+            bottom: 68px !important;
+            right: 12px !important;
+        }}
     }}
 
     /* Radios as pills (Most Possible / Worst / Best etc.) */
