@@ -192,7 +192,7 @@ def _tilt(df, styler) -> None:
     if g["__dt"].isna().all():
         t._unavailable("Tilt / Post-Loss Behaviour"); return
     g = g[g["__dt"].notna()].sort_values("__dt")
-    g["__rr"] = pd.to_numeric(g.get("Closed RR"), errors="coerce")
+    g["__rr"] = _num(g, "Closed RR") if _num(g, "Closed RR") is not None else pd.to_numeric(g.get("Closed RR"), errors="coerce")
     g["__oc"] = _oc(g).values
     g["__prev"] = g["__oc"].shift(1)
     rows = []
@@ -254,7 +254,7 @@ def _a_game(df, styler) -> None:
     st.markdown("### A-Game vs Everything")
     st.caption("What your stats look like when you trade your best — and what the off-plan trades cost you.")
     g = df.copy()
-    g["__rr"] = pd.to_numeric(g.get("Closed RR"), errors="coerce")
+    g["__rr"] = _num(g, "Closed RR") if _num(g, "Closed RR") is not None else pd.to_numeric(g.get("Closed RR"), errors="coerce")
     g["__oc"] = _oc(g).values
     mask = pd.Series(True, index=g.index)
     used = []
@@ -302,7 +302,7 @@ def _heatmap_hour_day(df, styler) -> None:
     st.markdown("### When You Trade Best")
     st.caption("Your best and worst trading windows — average R per trade by weekday and hour (Melbourne time), minimum 3 trades.")
     g = df.copy()
-    g["__rr"] = pd.to_numeric(g.get("Closed RR"), errors="coerce")
+    g["__rr"] = _num(g, "Closed RR") if _num(g, "Closed RR") is not None else pd.to_numeric(g.get("Closed RR"), errors="coerce")
     hour = _num(df, "Hour (Melb)")
     if hour is not None:
         g["__hr"] = hour.values
@@ -334,7 +334,7 @@ def _symbol_session_matrix(df, styler) -> None:
     st.markdown("### Where Your Edge Lives")
     st.caption("Average R per trade by instrument and session — your strongest and weakest combinations, minimum 3 trades.")
     g = df.copy()
-    g["__rr"] = pd.to_numeric(g.get("Closed RR"), errors="coerce")
+    g["__rr"] = _num(g, "Closed RR") if _num(g, "Closed RR") is not None else pd.to_numeric(g.get("Closed RR"), errors="coerce")
     sym = next((c for c in ["Instrument", "Pair", "Symbol"] if c in g.columns), None)
     sess = next((c for c in ["Session Norm", "Session"] if c in g.columns), None)
     if sym is None or sess is None:

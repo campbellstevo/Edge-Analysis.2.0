@@ -25,7 +25,13 @@ def _t():
 
 
 def _num(df: pd.DataFrame, col: str):
-    """Numeric Series for col, or None if the column is absent / all-empty."""
+    """Numeric Series for col, or None if the column is absent / all-empty.
+    For Closed RR, prefers the parsed 'Closed RR Num' (handles range values)."""
+    if col == "Closed RR" and "Closed RR Num" in df.columns:
+        s = pd.to_numeric(df["Closed RR Num"], errors="coerce")
+        if "Closed RR" in df.columns:
+            s = s.fillna(pd.to_numeric(df["Closed RR"], errors="coerce"))
+        return s if s.notna().any() else None
     if col not in df.columns:
         return None
     s = pd.to_numeric(df[col], errors="coerce")
@@ -507,7 +513,7 @@ def _cat_stats(df: pd.DataFrame, col: str, multi: bool = False, min_n: int = 1):
         g = g[~g["__tok"].str.lower().isin(["", "nan", "none"])]
     if g.empty:
         return None
-    g["__rr"] = pd.to_numeric(g.get("Closed RR"), errors="coerce")
+    g["__rr"] = _num(g, "Closed RR") if _num(g, "Closed RR") is not None else pd.to_numeric(g.get("Closed RR"), errors="coerce")
     g["__oc"] = g["Outcome"] if "Outcome" in g.columns else np.where(
         g["__rr"] > 0, "Win", np.where(g["__rr"] < 0, "Loss", "BE"))
     rows = []
@@ -531,7 +537,7 @@ def _mistake_section(df: pd.DataFrame, styler) -> None:
     if "Mistake" not in df.columns:
         t._unavailable("Mistake Leak Report"); return
     g = df.copy()
-    g["__rr"] = pd.to_numeric(g.get("Closed RR"), errors="coerce")
+    g["__rr"] = _num(g, "Closed RR") if _num(g, "Closed RR") is not None else pd.to_numeric(g.get("Closed RR"), errors="coerce")
     g["__mk"] = g["Mistake"].astype(str)
     clean = g[g["__mk"].str.strip().str.lower().isin(["", "nan", "none", "na"])]
     baseline = float(clean["__rr"].mean()) if not clean.empty and clean["__rr"].notna().any() else float(g["__rr"].mean() or 0.0)
@@ -588,7 +594,7 @@ def _discipline_section(df: pd.DataFrame, styler) -> None:
     st.markdown("### Discipline Scorecard")
     st.caption("What following your rules and taking only A+ setups is actually worth in R.")
     g = df.copy()
-    g["__rr"] = pd.to_numeric(g.get("Closed RR"), errors="coerce")
+    g["__rr"] = _num(g, "Closed RR") if _num(g, "Closed RR") is not None else pd.to_numeric(g.get("Closed RR"), errors="coerce")
     g["__oc"] = g["Outcome"] if "Outcome" in g.columns else np.where(g["__rr"] > 0, "Win", np.where(g["__rr"] < 0, "Loss", "BE"))
 
     def _two(mask_true, label_true, label_false):

@@ -29,16 +29,49 @@ def _stamp_sync():
         pass
 
 
+_FETCHED_THIS_PROCESS: set = set()
+
+
+def _pq_path(token, dbid) -> str:
+    import hashlib
+    key = hashlib.sha1(f"{(token or '')[:12]}|{dbid or ''}".encode()).hexdigest()[:16]
+    return f"/tmp/ea_journal_{key}.parquet"
+
+
 @st.cache_data(show_spinner=False, ttl=21600)
 def _load_live_df_cached(token: Optional[str], dbid: Optional[str]):
     """Returns (df, fetched_at_epoch) — the stamp lives with the cache entry, so
     cache hits report the true age of the data, not the age of the rerun."""
-    return _load_live_df_impl(token, dbid), float(pd.Timestamp.now().timestamp())
+    df = _load_live_df_impl(token, dbid)
+    _FETCHED_THIS_PROCESS.add((str(token)[:12], str(dbid)))
+    try:  # warm-boot copy: cold starts serve this instantly, then refresh
+        if df is not None and not df.empty:
+            df.to_parquet(_pq_path(token, dbid))
+    except Exception:
+        pass
+    return df, float(pd.Timestamp.now().timestamp())
 
 
 def load_live_df(token: Optional[str], dbid: Optional[str]) -> pd.DataFrame:
+    """Serve-stale-while-revalidate: on a cold process, show the last synced
+    journal from disk immediately and fetch fresh on the next run."""
+    import os as _os
+    cache_cold = (str(token)[:12], str(dbid)) not in _FETCHED_THIS_PROCESS
+    pq = _pq_path(token, dbid)
+    if (cache_cold and not st.session_state.get("ea_warm_served")
+            and _os.path.exists(pq)):
+        try:
+            df = pd.read_parquet(pq)
+            if df is not None and not df.empty:
+                st.session_state["ea_warm_served"] = True
+                st.session_state["ea_needs_fresh"] = True
+                st.session_state["ea_last_sync"] = float(_os.path.getmtime(pq))
+                return df
+        except Exception:
+            pass
     df, fetched_at = _load_live_df_cached(token, dbid)
     st.session_state["ea_last_sync"] = fetched_at
+    st.session_state.pop("ea_needs_fresh", None)
     return df
 
 

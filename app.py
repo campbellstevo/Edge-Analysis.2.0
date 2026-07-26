@@ -1325,6 +1325,10 @@ def render_dashboard(mobile: bool):
         render_chat_bubble(f)
     except Exception:
         pass
+    if st.session_state.pop("ea_needs_fresh", False):
+        # First paint came from the warm-boot copy — fetch fresh now that
+        # the user is looking at something.
+        _st_rerun()
 
 
 # --------------------------------- Router -------------------------------------
