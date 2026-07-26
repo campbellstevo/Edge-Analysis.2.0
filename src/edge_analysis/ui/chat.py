@@ -203,7 +203,10 @@ def _builtin_answer(q: str, df: pd.DataFrame):
                     "\"what do rule breaks cost me?\" · \"best entry model?\" · "
                     "\"long vs short?\" · \"how much have I given back?\"")
 
-        if has("remove", "cut ", " drop", "stop doing", "get rid", "eliminate", "leak", "holding me back", "stop trading"):
+        if has("remove", "cut ", " drop", "stop doing", "get rid", "eliminate", "leak",
+               "holding me back", "holding back", "hold back", "holding my", "stop trading",
+               "biggest problem", "number 1", "number one", "worst thing", "biggest issue",
+               "what's wrong", "whats wrong", "improve", "fix my", "weakness"):
             cuts = []
             if sess_col:
                 srows = _rank_by(df, rr, sess_col)
