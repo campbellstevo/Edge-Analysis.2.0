@@ -447,8 +447,8 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
     give = ((mfe - rr).clip(lower=0)).sum() if mfe is not None and mfe.notna().any() else float("nan")
 
     def card(lab, val, sub, col):
-        return (f"<div style='flex:1;min-width:150px;background:#fff;border:1px solid rgba(0,0,0,0.06);"
-                f"border-radius:12px;padding:12px 14px;box-shadow:0 2px 10px rgba(0,0,0,0.04);'>"
+        return (f"<div style='flex:1;min-width:150px;background: rgb(248, 249, 252);border:1px solid rgba(0,0,0,0.06);"
+                f"border-radius:12px;padding:12px 14px;'>"
                 f"<div style='font-size:11px;font-weight:600;letter-spacing:0.06em;color:#94a3b8;'>{lab}</div>"
                 f"<div style='font-size:22px;font-weight:800;color:{col};'>{val}</div>"
                 f"<div style='font-size:12px;color:#64748b;'>{sub}</div></div>")

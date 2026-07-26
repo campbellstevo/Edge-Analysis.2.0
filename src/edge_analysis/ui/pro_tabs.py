@@ -218,7 +218,7 @@ def _tilt(df, styler) -> None:
                 break
 
     def _tchip(lab, val, sub, col):
-        return (f"<div style='flex:1;min-width:170px;background:#f8f9fc;border-radius:10px;"
+        return (f"<div style='flex:1;min-width:170px;background: rgb(248, 249, 252);border-radius:10px;"
                 f"padding:12px 16px;'><div style='font-size:11px;font-weight:700;"
                 f"letter-spacing:0.06em;color:#94a3b8;'>{lab}</div>"
                 f"<div style='font-size:21px;font-weight:800;color:{col};'>{val}</div>"
