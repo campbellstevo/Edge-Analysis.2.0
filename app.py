@@ -1518,14 +1518,29 @@ def _handle_whoop_logout() -> None:
     if not st.session_state.pop("whoop_logout", False):
         return
     for k in ("whoop_at", "whoop_rt", "whoop_at_exp", "whoop_state",
-              "whoop_auth_url", "whoop_saved_sig", "whoop_boot"):
+              "whoop_auth_url", "whoop_saved_sig", "whoop_boot",
+              "whoop_nsig", "whoop_verify"):
         st.session_state.pop(k, None)
+    # drop per-token retry caps so a fresh Connect starts clean
+    for k in [k for k in list(st.session_state.keys())
+              if str(k).startswith("whoop_refresh_done_")]:
+        st.session_state.pop(k, None)
+    # blank the SHARED Notion store — otherwise adoption-first re-seeds the
+    # dead connection on the very next run and Disconnect looks like it did
+    # nothing (the bug Campbell hit)
+    try:
+        _whoop_notion_write({"rt": "", "at": "", "exp": 0})
+    except Exception:
+        pass
+    st.session_state["whoop_logged_out"] = True
+    st.session_state["whoop_nsig"] = None
     _js_eval("localStorage.removeItem('ea_whoop')", key="whoop_clear")
     _st_rerun()
 
 
 def _handle_whoop_callback() -> None:
     """Process the WHOOP OAuth redirect (?code&state where state starts 'whoop')."""
+    st.session_state.pop("whoop_logged_out", None) if _get_all_query_params().get("state") else None
     qp = _get_all_query_params()
     code = qp.get("code")[0] if isinstance(qp.get("code"), list) else qp.get("code")
     rstate = qp.get("state")[0] if isinstance(qp.get("state"), list) else qp.get("state")
@@ -1567,6 +1582,8 @@ def _whoop_bootstrap() -> None:
     """Keep the WHOOP session alive across reloads. Reuses a still-valid access
     token from the device; only refreshes when it has actually expired; never
     drops the session on a transient error."""
+    if st.session_state.get("whoop_logged_out"):
+        return  # user disconnected this session — stay disconnected until Connect
     cid, csec, ruri = _whoop_client()
     if not (cid and csec and ruri):
         return
