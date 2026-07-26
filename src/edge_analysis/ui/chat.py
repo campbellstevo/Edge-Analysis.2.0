@@ -74,6 +74,23 @@ def _group_lines(df, rr, col, title, top=6):
         return []
 
 
+def _local_dates(df: pd.DataFrame):
+    """Date parse matching the dashboard: GMT-suffix strip + trader tz shift."""
+    dt = pd.to_datetime(df.get("Date", pd.Series(dtype=object)).astype(str)
+                        .str.replace(r"\s*\(GMT.*\)$", "", regex=True), errors="coerce")
+    try:
+        if getattr(dt.dt, "tz", None) is not None:
+            dt = dt.dt.tz_localize(None)
+    except Exception:
+        pass
+    try:
+        from edge_analysis.ui.plan_tabs import get_tz_offset
+        dt = dt + pd.Timedelta(hours=get_tz_offset(df))
+    except Exception:
+        pass
+    return dt
+
+
 def _stats_context(df: pd.DataFrame) -> str:
     """Compact, guarded stats block the model answers from."""
     if df is None or df.empty:
@@ -95,9 +112,7 @@ def _stats_context(df: pd.DataFrame) -> str:
     except Exception:
         pass
     try:
-        dt = pd.to_datetime(
-            df.get("Date", pd.Series(dtype=object)).astype(str)
-            .str.replace(r"\s*\(GMT.*\)$", "", regex=True), errors="coerce")
+        dt = _local_dates(df)
         if rr is not None and dt.notna().any():
             now_p = pd.Timestamp.now().to_period("M")
             m_mask = dt.dt.to_period("M") == now_p
@@ -236,8 +251,7 @@ def _builtin_answer(q: str, df: pd.DataFrame):
             return "No Rules Followed? column in this journal."
 
         if has("pace", "on track", "this month", "month so far", "target"):
-            dt = pd.to_datetime(df.get("Date", pd.Series(dtype=object)).astype(str)
-                                .str.replace(r"\s*\(GMT.*\)$", "", regex=True), errors="coerce")
+            dt = _local_dates(df)
             m_mask = dt.dt.to_period("M") == pd.Timestamp.now().to_period("M")
             m_rr = rr[rr.index.isin(dt[m_mask].index)]
             tgt = float(st.session_state.get("ea_m_tgt", 5.0))
@@ -252,8 +266,7 @@ def _builtin_answer(q: str, df: pd.DataFrame):
             return out
 
         if has("breaker", "circuit", "stop trading", "max loss"):
-            dt = pd.to_datetime(df.get("Date", pd.Series(dtype=object)).astype(str)
-                                .str.replace(r"\s*\(GMT.*\)$", "", regex=True), errors="coerce")
+            dt = _local_dates(df)
             m_rr = rr[rr.index.isin(dt[dt.dt.to_period("M") == pd.Timestamp.now().to_period("M")].index)]
             stp = float(st.session_state.get("ea_m_stop", -6.0))
             net_m = float(m_rr.sum())
@@ -287,8 +300,7 @@ def _builtin_answer(q: str, df: pd.DataFrame):
             return "No MFE (R) column — give-back needs it (MT5 sync fills it)."
 
         if has("tilt", "after a loss", "revenge"):
-            dcol = pd.to_datetime(df.get("Date", pd.Series(dtype=object)).astype(str)
-                                  .str.replace(r"\s*\(GMT.*\)$", "", regex=True), errors="coerce")
+            dcol = _local_dates(df)
             g = df.loc[rr.index].copy(); g["__rr"] = rr; g["__dt"] = dcol
             g = g[g["__dt"].notna()].sort_values("__dt")
             g["__prev_rr"] = g["__rr"].shift(1)
