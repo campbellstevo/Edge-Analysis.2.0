@@ -195,9 +195,14 @@ def render_filters(
             )
         _theme_label = ("Light theme" if st.session_state.get("ea_theme_pref") == "dark"
                         else "Dark theme")
-        _menu_opts = [PageNames.DASHBOARD, PageNames.CONNECT, "Getting started",
-                      "Refresh data", "Sign in on iPhone", "What the stats mean",
-                      _theme_label]
+        try:
+            from edge_analysis.ui.chat import feedback_enabled as _fb_on
+            _fb = _fb_on()
+        except Exception:
+            _fb = False
+        _menu_opts = ([PageNames.DASHBOARD, PageNames.CONNECT, "Getting started",
+                       "Refresh data", "Sign in on iPhone", "What the stats mean"]
+                      + (["Send feedback"] if _fb else []) + [_theme_label])
 
         def _menu_cb():
             choice = st.session_state.get("ea_menu")
@@ -220,6 +225,9 @@ def render_filters(
                 st.session_state["ea_menu"] = page_now
             elif choice == "Getting started":
                 st.session_state["ea_show_setup"] = True
+                st.session_state["ea_menu"] = page_now
+            elif choice == "Send feedback":
+                st.session_state["ea_show_feedback"] = True
                 st.session_state["ea_menu"] = page_now
             else:  # theme toggle
                 cur = st.session_state.get("ea_theme_pref", "light")
@@ -255,6 +263,12 @@ def render_filters(
         else:
             with st.expander("Getting started", expanded=True):
                 _setup_body()
+    if st.session_state.pop("ea_show_feedback", False):
+        if _feedback_dialog is not None:
+            _feedback_dialog()
+        else:
+            with st.expander("Send feedback", expanded=True):
+                _fb_body_safe()
 
     return sel_inst, sel_em, sel_sess, date_range, sel_acct, sel_tot
 
@@ -353,3 +367,19 @@ try:
         _setup_body()
 except Exception:
     _setup_dialog = None
+
+
+def _fb_body_safe() -> None:
+    try:
+        from edge_analysis.ui.chat import feedback_body
+        feedback_body()
+    except Exception:
+        st.caption("Feedback isn't available right now.")
+
+
+try:
+    @st.dialog("Send feedback")
+    def _feedback_dialog():
+        _fb_body_safe()
+except Exception:
+    _feedback_dialog = None

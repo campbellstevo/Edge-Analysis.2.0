@@ -1316,6 +1316,11 @@ def render_dashboard(mobile: bool):
         "Your data stays in your Notion — nothing is stored on this server · "
         "Edge Analysis is a journal, not financial advice.</div>",
         unsafe_allow_html=True)
+    try:
+        from edge_analysis.ui.chat import render_chat_bubble
+        render_chat_bubble(f)
+    except Exception:
+        pass
 
 
 # --------------------------------- Router -------------------------------------

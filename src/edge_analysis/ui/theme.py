@@ -896,6 +896,27 @@ def inject_theme():
         border-color: #e5e7eb !important;
     }}
 
+    /* Floating analyst chat */
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-chatfab) {{
+        position: fixed; bottom: 22px; right: 22px; z-index: 998; width: auto;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-chatfab) button {{
+        background: #4800ff !important; color: #ffffff !important;
+        border: none !important; border-radius: 999px !important;
+        padding: 11px 20px !important; font-weight: 700 !important;
+        box-shadow: 0 6px 22px rgba(72,0,255,0.35) !important;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-chatfab) button p {{
+        color: #ffffff !important; font-weight: 700 !important;
+    }}
+    div[data-testid="stPopoverBody"]:has(.ea-chat-body) {{
+        width: 400px !important; max-width: 92vw !important;
+        max-height: 540px; overflow-y: auto;
+    }}
+    div[data-testid="stPopoverBody"]:has(.ea-chat-body) [data-testid="stTextInput"] input {{
+        font-size: 13.5px;
+    }}
+
     /* Hidden JS helper components must take no space (white strips fix) */
     iframe[title="streamlit_js_eval.streamlit_js_eval"] {{ display: none !important; }}
     div[data-testid="stElementContainer"]:has(iframe[title="streamlit_js_eval.streamlit_js_eval"]) {{
