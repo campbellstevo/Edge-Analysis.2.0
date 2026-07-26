@@ -203,6 +203,33 @@ def _builtin_answer(q: str, df: pd.DataFrame):
                     "\"what do rule breaks cost me?\" · \"best entry model?\" · "
                     "\"long vs short?\" · \"how much have I given back?\"")
 
+        if has("doing well", "doing right", "doing good", "going well", "working",
+               "keep doing", "strength", "good at", "best thing", "what works"):
+            keeps = []
+            if sess_col:
+                srows = _rank_by(df, rr, sess_col)
+                if srows and srows[0][0] > 0.1:
+                    b = srows[0]
+                    keeps.append(f"{b[2]} session — avg {_fmt(b[0])} over {b[3]} trades")
+            mrows = _rank_by(df, rr, "Entry Model")
+            if mrows and mrows[0][0] > 0.1:
+                b = mrows[0]
+                keeps.append(f"{b[2]} entries — avg {_fmt(b[0])} over {b[3]}")
+            if "A+ Setup?" in df.columns:
+                m = df["A+ Setup?"].astype(str).str.strip().str.lower().isin(["yes", "true", "__yes__", "1"])
+                a = rr[rr.index.isin(df[m].index)]
+                if len(a) >= 3 and float(a.mean()) > 0.1:
+                    keeps.append(f"your A+ setups — avg {_fmt(float(a.mean()))} over {len(a)}")
+            if "Rules Followed?" in df.columns:
+                rv = df["Rules Followed?"].astype(str).str.strip().str.lower()
+                kept = rr[rr.index.isin(df[rv.isin(["yes", "true", "__yes__", "1"])].index)]
+                if len(kept) >= 3 and float(kept.mean()) > 0.1:
+                    keeps.append(f"trades where you followed your rules — avg {_fmt(float(kept.mean()))} over {len(kept)}")
+            if not keeps:
+                return ("Nothing clears +0.10R with a real sample yet — the edge is still forming. "
+                        "Keep logging; the Refinements card tracks what's working as it emerges.")
+            return (f"What's earning its place: {' · '.join(keeps[:3])}. "
+                    "More of THIS, logged and repeated, is the whole plan.")
         if has("remove", "cut ", " drop", "stop doing", "get rid", "eliminate", "leak",
                "holding me back", "holding back", "hold back", "holding my", "stop trading",
                "biggest problem", "number 1", "number one", "worst thing", "biggest issue",
