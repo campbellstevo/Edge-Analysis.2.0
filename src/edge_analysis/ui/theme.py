@@ -901,6 +901,12 @@ def inject_theme():
         gap: 10px !important; flex-wrap: wrap; margin: 2px 0 10px;
     }}
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-nav) [role="radiogroup"] > label {{
+        margin: 0 !important; flex: 0 0 auto !important;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-nav) [role="radiogroup"] > label > div {{
+        padding-left: 0 !important; margin-left: 0 !important;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-nav) [role="radiogroup"] > label {{
         border: 1px solid rgba(0,0,0,0.08) !important;
         border-radius: 999px !important;
         padding: 9px 22px !important;
