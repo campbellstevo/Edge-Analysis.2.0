@@ -1206,8 +1206,6 @@ def _psych_mental_state_gate(df: pd.DataFrame, styler) -> None:
     g = g[~g["__ms"].isin(["","nan","NaN","None"])]
     if len(g) < 3:
         return  # present but unlogged — powered-on panel shows the half-moon
-    st.divider()
-    st.markdown("### Mental State Gate")
     states, rows = ["Good","Okay","Bad"], []
     for state in states:
         sub = g[g["__ms"]==state]
@@ -1217,8 +1215,9 @@ def _psych_mental_state_gate(df: pd.DataFrame, styler) -> None:
         wb  = round(sub[bias_col].fillna("").str.contains("Wrong Bias").sum()/max(1,len(sub))*100,1) if bias_col else 0.0
         rows.append({"State":state,"Trades":len(sub),"Win Rate":wr,"Wrong Bias %":wb})
     if not rows:
-        st.info("No mental state stats available.")
-        return
+        return  # states logged but none with 3+ trades yet — stay silent
+    st.divider()
+    st.markdown("### Mental State Gate")
     for col, row in zip(st.columns(len(rows)), rows):
         c = "#f59e0b" if row["State"]=="Okay" else "#16a34a" if row["State"]=="Good" else "#6b7280"
         badge = " ⚠" if row["State"]=="Okay" else ""
@@ -1367,32 +1366,28 @@ def _psych_3sl_compliance(df: pd.DataFrame, styler) -> None:
         except Exception:
             pass
 
-    k1, k2, k3, k4 = st.columns(4)
-    with k1:
-        if has_window and comp_pct is not None:
+    _show_window = has_window and total_w > 0
+    _cols = st.columns(4 if _show_window else 1)
+    if _show_window:
+        with _cols[0]:
             col_c = "#4800ff" if comp_pct >= 70 else "#f59e0b" if comp_pct >= 50 else "#ef4444"
             st.markdown(f"<div class='kpi'><div class='label'>Window Compliance</div>"
                         f"<div class='value' style='color:{col_c}'>{comp_pct}%</div>"
                         f"<div class='muted'>{ins_n} inside · {out_n} outside</div></div>",
                         unsafe_allow_html=True)
-        else:
-            st.markdown("<div class='kpi'><div class='label'>Window Compliance</div>"
-                        "<div class='value' style='color:#9ca3af'>—</div>"
-                        "<div class='muted'>No window field in Notion</div></div>",
+        with _cols[1]:
+            v = f"{ins_wr}%" if ins_wr is not None else "—"
+            st.markdown(f"<div class='kpi'><div class='label'>Win Rate (Inside)</div>"
+                        f"<div class='value' style='color:#4800ff'>{v}</div>"
+                        f"<div class='muted'>{ins_n} trades in window</div></div>",
                         unsafe_allow_html=True)
-    with k2:
-        v = f"{ins_wr}%" if ins_wr is not None else "—"
-        st.markdown(f"<div class='kpi'><div class='label'>Win Rate (Inside)</div>"
-                    f"<div class='value' style='color:#4800ff'>{v}</div>"
-                    f"<div class='muted'>{ins_n} trades in window</div></div>",
-                    unsafe_allow_html=True)
-    with k3:
-        v = f"{out_wr}%" if out_wr is not None else "—"
-        st.markdown(f"<div class='kpi'><div class='label'>Win Rate (Outside)</div>"
-                    f"<div class='value' style='color:#4800ff'>{v}</div>"
-                    f"<div class='muted'>{out_n} trades outside window</div></div>",
-                    unsafe_allow_html=True)
-    with k4:
+        with _cols[2]:
+            v = f"{out_wr}%" if out_wr is not None else "—"
+            st.markdown(f"<div class='kpi'><div class='label'>Win Rate (Outside)</div>"
+                        f"<div class='value' style='color:#4800ff'>{v}</div>"
+                        f"<div class='muted'>{out_n} trades outside window</div></div>",
+                        unsafe_allow_html=True)
+    with _cols[-1]:
         msb_color = "#ef4444" if multi_session_breaks > 0 else "#4800ff"
         st.markdown(f"<div class='kpi'><div class='label'>One-Trade Rule Breaks</div>"
                     f"<div class='value' style='color:{msb_color}'>{multi_session_breaks}</div>"
@@ -1495,8 +1490,13 @@ def _journal_completeness_strip(df: pd.DataFrame) -> None:
     if len(tag_cols) < 2:
         return
     def _filled(row):
-        return all(str(row.get(c, "") or "").strip().lower() not in
-                   ("", "nan", "none", "na", "[]") for c in tag_cols)
+        for c in tag_cols:
+            _v = row.get(c)
+            if isinstance(_v, bool):
+                continue  # checkbox state counts as logged either way
+            if str(_v if _v is not None else "").strip().lower() in ("", "nan", "none", "na", "[]"):
+                return False
+        return True
     full = int(df.apply(_filled, axis=1).sum())
     total = len(df)
     pct = full / max(1, total)

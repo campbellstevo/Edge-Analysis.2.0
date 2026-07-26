@@ -456,8 +456,13 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
     manual = [c for c in ["A+ Setup?", "Conviction (1-5)", "Mental State", "Mistake"] if c in wk.columns]
 
     def _tagged(row):
-        return all(str(row.get(c, "") or "").strip().lower() not in
-                   ("", "nan", "none", "na", "[]") for c in manual)
+        for c in manual:
+            _v = row.get(c)
+            if isinstance(_v, bool):
+                continue  # a checkbox state is a logged value either way
+            if str(_v if _v is not None else "").strip().lower() in ("", "nan", "none", "na", "[]"):
+                return False
+        return True
 
     full_n = int(wk.apply(_tagged, axis=1).sum()) if manual else None
     rules_kept = rules_known = None
@@ -529,7 +534,11 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
         for _tc in ["A+ Setup?", "Conviction (1-5)", "Rules Followed?", "Mistake"]:
             if _tc not in wk.columns:
                 continue
-            _v = str(r.get(_tc, "") or "").strip()
+            _raw = r.get(_tc)
+            if isinstance(_raw, bool):
+                _v = "Yes" if _raw else "No"
+            else:
+                _v = str(_raw if _raw is not None else "").strip()
             if _v.lower() in ("", "nan", "none", "na", "[]"):
                 extras += "<td class='text' style='color:#b45309;'>—</td>"
             else:
