@@ -2868,14 +2868,40 @@ def _loss_postmortem(f: pd.DataFrame) -> None:
     st.caption("Your own Reason-of-loss tags — where the red actually comes from.")
     rows = []
     for why, sub in losses.groupby("__why"):
-        rows.append({"Category": why[:36], "Avg R": round(float(sub["__rr"].mean()), 2),
+        rows.append({"Category": why, "Avg R": round(float(sub["__rr"].mean()), 2),
                      "Trades": len(sub), "Net R": round(float(sub["__rr"].sum()), 1)})
     d = pd.DataFrame(rows).sort_values("Net R")
-    _edge_tiles(d, "Category", "Net R", fmt="+.1f")
+    prose = bool(d["Category"].astype(str).str.len().median() > 24)
+    if prose:
+        # free-text reasons: full sentences, ranked by damage, nothing chopped
+        mx = max(abs(float(d["Net R"].min())), 1e-9)
+        items = []
+        for _, r in d.iterrows():
+            why_full = _html.escape(str(r["Category"]))
+            n_ = int(r["Trades"])
+            w_ = max(4, int(round(abs(float(r["Net R"])) / mx * 100)))
+            items.append(
+                f"<div style='background: rgb(248, 249, 252);border-left:4px solid #ef4444;"
+                f"border-radius:0 10px 10px 0;padding:11px 16px;margin:7px 0;'>"
+                f"<div style='display:flex;gap:16px;align-items:flex-start;"
+                f"justify-content:space-between;'>"
+                f"<div style='font-size:13.5px;color:#0f172a;line-height:1.45;'>{why_full}</div>"
+                f"<div style='flex:0 0 132px;text-align:right;'>"
+                f"<span style='font-size:16px;font-weight:800;color:#ef4444;'>{float(r['Net R']):+.1f}R</span>"
+                f"<div style='font-size:11px;color:#94a3b8;'>{n_} trade{'s' if n_ != 1 else ''}"
+                f" · avg {float(r['Avg R']):+.2f}R</div></div></div>"
+                f"<div style='background:#f1f3f8;border-radius:5px;height:6px;margin-top:8px;'>"
+                f"<div style='width:{w_}%;height:6px;border-radius:5px;background:#ef4444;'></div></div>"
+                f"</div>")
+        st.markdown("".join(items), unsafe_allow_html=True)
+    else:
+        _edge_tiles(d, "Category", "Net R", fmt="+.1f")
     worst = d.iloc[0]
-    _insight_box(f"<b>{worst['Category']}</b> is your most expensive failure mode: "
-                 f"<b>{worst['Net R']:+.1f}R</b> across {int(worst['Trades'])} losses. "
-                 f"One rule that eliminates it is worth more than a new setup.", "bad")
+    _wn = int(worst["Trades"])
+    _insight_box(f"\u201c{_html.escape(str(worst['Category']))}\u201d is your most expensive "
+                 f"failure mode: <b>{worst['Net R']:+.1f}R</b> across {_wn} "
+                 f"loss{'es' if _wn != 1 else ''}. One rule that eliminates it is worth more "
+                 f"than a new setup.", "bad")
 
 
 _EA_GREEN, _EA_RED, _EA_GREY = "#16a34a", "#ef4444", "#9ca3af"
@@ -2968,7 +2994,8 @@ def _edge_tiles(rows, cat_col, val_col, fmt="+.2f", suffix="R") -> None:
         if "Win %" in d.columns and pd.notna(r.get("Win %")):
             meta.append(f'{float(r["Win %"]):.0f}% win')
         if "Trades" in d.columns and pd.notna(r.get("Trades")):
-            meta.append(f'{int(r["Trades"])} trades')
+            _tn = int(r["Trades"])
+            meta.append(f'{_tn} trade' + ("s" if _tn != 1 else ""))
         meta_html = f'<div class="ea-et-meta">{" &middot; ".join(meta)}</div>' if meta else ""
         out.append(
             f'<div class="ea-et" style="border-left-color:{c};">'
