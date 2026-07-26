@@ -154,14 +154,18 @@ def _parse_tgt(val):
 def _close_style_section(df: pd.DataFrame, styler) -> None:
     """Manual early closes vs trades that ran to the set TP."""
     t = _t()
-    if df is None or df.empty or "Targeted RR" not in df.columns:
+    if df is None or df.empty:
+        return
+    tgt_col = next((c for c in ["Targeted RR", "Planned R:R", "Planned RR", "RR"]
+                    if c in df.columns), None)
+    if tgt_col is None:
         return
     rr = _num(df, "Closed RR")
     if rr is None:
         return
     g = df.copy()
     g["__rr"] = rr.values
-    g["__tgt"] = g["Targeted RR"].apply(_parse_tgt)
+    g["__tgt"] = g[tgt_col].apply(_parse_tgt)
     mfe = _num(df, "MFE (R)")
     if mfe is not None:
         g["__mfe"] = mfe.values

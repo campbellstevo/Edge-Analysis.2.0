@@ -232,9 +232,11 @@ def _builtin_answer(q: str, df: pd.DataFrame):
                     "One removal at a time — the Plan tab ranks these with full evidence.")
 
         if has("early close", "close early", "closed early", "take profit", " tp", "set tp", "auto close"):
-            if "Targeted RR" not in df.columns:
-                return "No Targeted RR column — the TP comparison needs the target you set per trade."
-            tgt = df["Targeted RR"].apply(lambda v: pd.to_numeric(str(v).replace("RR", "").replace("R", ""), errors="coerce"))
+            _tc = next((c for c in ["Targeted RR", "Planned R:R", "Planned RR", "RR"]
+                        if c in df.columns), None)
+            if _tc is None:
+                return "No set-target column — the TP comparison needs the target you set per trade."
+            tgt = df[_tc].apply(lambda v: pd.to_numeric(str(v).replace("RR", "").replace("R", ""), errors="coerce"))
             gg = pd.DataFrame({"rr": rr, "tgt": tgt}).dropna()
             gg = gg[gg["tgt"] > 0.3]
             if len(gg) < 5:
