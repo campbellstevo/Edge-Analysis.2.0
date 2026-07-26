@@ -4718,12 +4718,16 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
     _salty = _is_salty()
     _data = f_perf if (f_perf is not None and not f_perf.empty) else df_all_safe
 
-    t_results, t_entry, t_ext, t_psych, t_plan, t_review = st.tabs(
-        ["Performance", "Entry", "Externals", "Psychology", "Plan", "Review"]
-    )
+    # Speed: render ONLY the active tab. st.tabs runs all six server-side on
+    # every rerun; this radio-nav (styled as the same pills) does one.
+    _TABS = ["Performance", "Entry", "Externals", "Psychology", "Plan", "Review"]
+    with st.container():
+        st.markdown('<div class="ea-nav"></div>', unsafe_allow_html=True)
+        _active = st.radio("View", _TABS, horizontal=True, key="ea_tab",
+                           label_visibility="collapsed") or "Performance"
 
     # ── Performance ────────────────────────────────────────────────────────
-    with t_results:
+    if _active == "Performance":
         _month_card(f_perf, styler)
         _targets_tab(df_all_safe, styler)
         _alltime_card(f_perf, styler)
@@ -4743,7 +4747,7 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                 _projections_tab(df_all_safe, styler)
 
     # ── Entry: three cards — setups, timing, managing ─────────────────────
-    with t_entry:
+    if _active == "Entry":
         with st.container(border=True):
             st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
             _card_header("Setups", "Which entries earn and which cost \u2014 ranked from your own trades.")
@@ -4800,7 +4804,7 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                         _salty_execution_quality_tab(f_perf)
 
     # ── Externals: market conditions card + costs card ────────────────────
-    with t_ext:
+    if _active == "Externals":
         with st.container(border=True):
             st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
             _card_header("Market conditions",
@@ -4826,7 +4830,7 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                     _cost_drag(_data, styler)
 
     # ── Psychology: discipline card, losses card, WHOOP card ──────────────
-    with t_psych:
+    if _active == "Psychology":
         _journal_completeness_strip(df_all_safe)
         with st.container(border=True):
             st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
@@ -4856,7 +4860,7 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                     render_whoop_tab(df_all_safe, styler)
 
     # ── Plan: breaker + plan card, refinements card, template card ─────────
-    with t_plan:
+    if _active == "Plan":
         with st.container(border=True):
             st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
             _card_header("Trading plan", "The rules, ranked by what they're worth \u2014 and the breaker that guards the month.")
@@ -4879,7 +4883,7 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                 _data_tab(df_all_safe, show_table)
 
     # ── Review: one weekly card ────────────────────────────────────────────
-    with t_review:
+    if _active == "Review":
         with st.container(border=True):
             st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
             _card_header("Weekly debrief", "Process over P&L \u2014 did you trade your system this week? Money lives on Performance.")

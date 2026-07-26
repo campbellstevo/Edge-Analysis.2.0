@@ -896,6 +896,31 @@ def inject_theme():
         border-color: #e5e7eb !important;
     }}
 
+    /* Tab-nav radio styled as the tab pills (st.tabs replaced for speed) */
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-nav) [role="radiogroup"] {{
+        gap: 10px !important; flex-wrap: wrap; margin: 2px 0 10px;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-nav) [role="radiogroup"] > label {{
+        border: 1px solid rgba(0,0,0,0.08) !important;
+        border-radius: 999px !important;
+        padding: 9px 22px !important;
+        background: #ffffff !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        cursor: pointer;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-nav) [role="radiogroup"] > label > div:first-child {{
+        display: none !important;  /* no radio dot — these are tabs */
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-nav) [role="radiogroup"] > label p {{
+        font-size: 14.5px !important; font-weight: 600 !important; color: #475569;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-nav) [role="radiogroup"] > label:has(input:checked) {{
+        background: #4800ff !important; border-color: #4800ff !important;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-nav) [role="radiogroup"] > label:has(input:checked) p {{
+        color: #ffffff !important; font-weight: 700 !important;
+    }}
+
     /* Floating analyst chat */
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-chatfab) {{
         position: fixed; bottom: 22px; right: 22px; z-index: 998; width: auto;
@@ -1321,6 +1346,10 @@ def inject_dark_overlay():
     .proj-stat-cell { background: #161b27 !important; border-color: rgba(255,255,255,0.09) !important; }
     .proj-stat-label { color: #9aa4b4 !important; }
     .proj-stat-value { color: #e8ebf1; }
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-nav) [role="radiogroup"] > label { background: #161b27 !important; border-color: rgba(255,255,255,0.09) !important; }
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-nav) [role="radiogroup"] > label p { color: #c7cddb !important; }
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-nav) [role="radiogroup"] > label:has(input:checked) { background: #4800ff !important; border-color: #4800ff !important; }
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-nav) [role="radiogroup"] > label:has(input:checked) p { color: #ffffff !important; }
     .proj-table-header, .proj-table-total { background: #232a3a !important; color: #e8ebf1 !important; }
     .proj-table-row { border-color: rgba(255,255,255,0.08) !important; }
     .proj-table-row:nth-child(even) { background: #1a2030 !important; }
