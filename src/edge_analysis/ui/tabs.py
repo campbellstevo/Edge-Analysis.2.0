@@ -2644,7 +2644,7 @@ def _breaker_strip(df_raw: pd.DataFrame) -> None:
     except Exception:
         pass
     g = g[g["__dt"].notna()]
-    rr_col = next((c for c in ["Closed RR", "RR", "Closed R"] if c in g.columns), None)
+    rr_col = next((c for c in ["Closed RR Num", "Closed RR", "RR", "Closed R"] if c in g.columns), None)
     if rr_col is None or g.empty:
         return
     g["__rr"] = pd.to_numeric(g[rr_col], errors="coerce")
@@ -4345,7 +4345,7 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
     except Exception:
         pass
     g = g[g["__dt"].notna()]
-    rr_col = next((c for c in ["Closed RR", "RR", "Closed R"] if c in g.columns), None)
+    rr_col = next((c for c in ["Closed RR Num", "Closed RR", "RR", "Closed R"] if c in g.columns), None)
     if rr_col is None or g.empty:
         return
     g["__rr"] = pd.to_numeric(g[rr_col], errors="coerce")
@@ -4693,7 +4693,9 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                     if _mt5:
                         _mae_mfe_section(_data, styler)
                         _gap(18)
-                        _close_style_section(_data, styler)
+                        _close_style_section(
+                            _data if (_data is not None and "Targeted RR" in _data.columns)
+                            else df_all_safe, styler)
                         _gap(18)
                         _execution_section(_data, styler)
                         _gap(18)

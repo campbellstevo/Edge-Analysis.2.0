@@ -1288,7 +1288,11 @@ def render_dashboard(mobile: bool):
 
     # Filtered dataframe
     f = df[mask].copy()
-    f["PnL_from_RR"] = f.get("Closed RR", pd.Series(0.0, index=f.index)).fillna(0.0)
+    _rr_num = pd.to_numeric(f.get("Closed RR Num", pd.Series(index=f.index, dtype=float)),
+                            errors="coerce")
+    _rr_raw = pd.to_numeric(f.get("Closed RR", pd.Series(index=f.index, dtype=float)),
+                            errors="coerce")
+    f["PnL_from_RR"] = _rr_num.fillna(_rr_raw).fillna(0.0)
     stats = generate_overall_stats(f)
 
     # Calculate metrics
@@ -1688,10 +1692,12 @@ def main() -> None:
             if _raw_plan:
                 try:
                     _pb = json.loads(_raw_plan)
-                    st.session_state.setdefault("ea_m_tgt", float(_pb["t"]))
-                    st.session_state.setdefault("ea_m_stop", float(_pb["s"]))
+                    # overwrite, not setdefault: the auto-seed lands before this
+                    # async read resolves, and the SAVED plan must win
+                    st.session_state["ea_m_tgt"] = float(_pb["t"])
+                    st.session_state["ea_m_stop"] = float(_pb["s"])
                     if "c" in _pb:
-                        st.session_state.setdefault("ea_m_cap", int(_pb["c"]))
+                        st.session_state["ea_m_cap"] = int(_pb["c"])
                 except Exception:
                     pass
     if st.session_state.pop("ea_mplan_dirty", False):

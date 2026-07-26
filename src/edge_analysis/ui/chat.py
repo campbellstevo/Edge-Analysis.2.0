@@ -39,7 +39,7 @@ def feedback_enabled() -> bool:
 
 # ─────────────────────────── stats context ───────────────────────────────────
 def _rr_series(df: pd.DataFrame):
-    col = next((c for c in ["Closed RR", "RR", "Closed R"] if c in df.columns), None)
+    col = next((c for c in ["Closed RR Num", "Closed RR", "RR", "Closed R"] if c in df.columns), None)
     if col is None:
         return None
     s = pd.to_numeric(df[col], errors="coerce")
