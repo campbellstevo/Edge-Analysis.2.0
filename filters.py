@@ -107,11 +107,35 @@ def render_filters(
                   if st.session_state.get(k, "All") != "All")
     if st.session_state.get("filters_date_mode", "All") != "All":
         _active += 1
-    _flabel = f"Settings · {_active} filters on" if _active else "Settings"
-    try:
-        flt = st.popover(_flabel, use_container_width=False)
-    except Exception:
-        flt = st.expander(_flabel)
+    _flabel = f"Filters · {_active} on" if _active else "Filters"
+    st.markdown('<div class="ea-hdrbar"></div>', unsafe_allow_html=True)
+    _hc1, _hc2, _hc3 = st.columns([7, 1.5, 0.9])
+    with _hc1:
+        try:
+            flt = st.popover(_flabel, use_container_width=False)
+        except Exception:
+            flt = st.expander(_flabel)
+    with _hc2:
+        _dark_now = st.session_state.get("ea_theme_pref", "light") == "dark"
+        _want = "\u263e" if _dark_now else "\u2600"
+        if st.session_state.get("ea_theme_seg") not in ("\u2600", "\u263e"):
+            st.session_state["ea_theme_seg"] = _want
+
+        def _theme_cb():
+            want = "dark" if st.session_state.get("ea_theme_seg") == "\u263e" else "light"
+            if st.session_state.get("ea_theme_pref", "light") != want:
+                st.session_state["ea_theme_pref"] = want
+                st.session_state["ea_theme_dirty"] = True
+
+        st.markdown('<div class="ea-themeseg"></div>', unsafe_allow_html=True)
+        st.radio("Theme", ["\u2600", "\u263e"], key="ea_theme_seg",
+                 horizontal=True, on_change=_theme_cb, label_visibility="collapsed")
+    with _hc3:
+        st.markdown('<div class="ea-dots"></div>', unsafe_allow_html=True)
+        try:
+            _more = st.popover("\u22ef", use_container_width=False)
+        except Exception:
+            _more = st.expander("More")
     with flt:
         st.markdown("<div style='font-size:11px;font-weight:700;letter-spacing:0.06em;"
                     "color:#94a3b8;margin-bottom:2px;'>FILTERS</div>", unsafe_allow_html=True)
@@ -193,58 +217,52 @@ def render_filters(
                 value=st.session_state.get("filters_date_range", (min_date, max_date)),
                 key="filters_date_range",
             )
-        _theme_label = ("Light theme" if st.session_state.get("ea_theme_pref") == "dark"
-                        else "Dark theme")
+
+    try:
+        from edge_analysis.ui.chat import feedback_enabled as _fb_on
+        _fb = _fb_on()
+    except Exception:
+        _fb = False
+
+    def _go(page):
+        st.session_state[SessionKeys.NAV_TARGET] = page
+        st.session_state["ea_show_qr"] = False
+
+    def _refresh():
         try:
-            from edge_analysis.ui.chat import feedback_enabled as _fb_on
-            _fb = _fb_on()
+            st.cache_data.clear()
         except Exception:
-            _fb = False
-        _menu_opts = ([PageNames.DASHBOARD, PageNames.CONNECT, "Getting started",
-                       "Refresh data", "Sign in on iPhone", "What the stats mean"]
-                      + (["Send feedback"] if _fb else []) + [_theme_label])
+            pass
+        st.session_state.pop("ea_last_sync", None)
+        st.session_state.pop("ea_warm_served", None)
 
-        def _menu_cb():
-            choice = st.session_state.get("ea_menu")
-            page_now = st.session_state.get(SessionKeys.NAV_PAGE, PageNames.DASHBOARD)
-            if choice in (PageNames.DASHBOARD, PageNames.CONNECT):
-                st.session_state[SessionKeys.NAV_TARGET] = choice
-                st.session_state["ea_show_qr"] = False
-            elif choice == "Refresh data":
-                try:
-                    st.cache_data.clear()
-                except Exception:
-                    pass
-                st.session_state.pop("ea_last_sync", None)
-                st.session_state["ea_menu"] = page_now
-            elif choice == "Sign in on iPhone":
-                st.session_state["ea_show_qr"] = True
-                st.session_state["ea_menu"] = page_now
-            elif choice == "What the stats mean":
-                st.session_state["ea_show_help"] = True
-                st.session_state["ea_menu"] = page_now
-            elif choice == "Getting started":
-                st.session_state["ea_show_setup"] = True
-                st.session_state["ea_menu"] = page_now
-            elif choice == "Send feedback":
-                st.session_state["ea_show_feedback"] = True
-                st.session_state["ea_menu"] = page_now
-            else:  # theme toggle
-                cur = st.session_state.get("ea_theme_pref", "light")
-                st.session_state["ea_theme_pref"] = "dark" if cur != "dark" else "light"
-                st.session_state["ea_theme_dirty"] = True
-                st.session_state["ea_menu"] = page_now
+    def _flag(k):
+        st.session_state[k] = True
 
-        if st.session_state.get("ea_menu") not in _menu_opts:
-            _cur_page = st.session_state.get(SessionKeys.NAV_PAGE, PageNames.DASHBOARD)
-            st.session_state["ea_menu"] = (_cur_page if _cur_page in _menu_opts
-                                           else PageNames.DASHBOARD)
-        st.markdown("<div style='border-top:1px solid rgba(148,163,184,0.25);margin:10px 0 6px;'></div>"
-                    "<div style='font-size:11px;font-weight:700;letter-spacing:0.06em;"
-                    "color:#94a3b8;margin-bottom:2px;'>PAGE &amp; ACTIONS</div>",
-                    unsafe_allow_html=True)
-        st.selectbox("Page", _menu_opts, key="ea_menu", on_change=_menu_cb,
-                     label_visibility="collapsed")
+    _eyebrow = ("<div style='font-size:10.5px;font-weight:700;letter-spacing:0.07em;"
+                "color:#94a3b8;margin:2px 0 4px;'>{}</div>")
+    with _more:
+        st.markdown('<div class="ea-moremenu"></div>', unsafe_allow_html=True)
+        _cur = st.session_state.get(SessionKeys.NAV_PAGE, PageNames.DASHBOARD)
+        st.markdown(_eyebrow.format("VIEW"), unsafe_allow_html=True)
+        st.button(("\u2713  " if _cur == PageNames.DASHBOARD else "") + PageNames.DASHBOARD,
+                  key="mm_dash", use_container_width=True,
+                  on_click=_go, args=(PageNames.DASHBOARD,))
+        st.button(PageNames.CONNECT, key="mm_tmpl", use_container_width=True,
+                  on_click=_go, args=(PageNames.CONNECT,))
+        st.markdown(_eyebrow.format("ACTIONS"), unsafe_allow_html=True)
+        st.button("Refresh data", key="mm_refresh", use_container_width=True,
+                  on_click=_refresh)
+        st.button("Sign in on iPhone", key="mm_qr", use_container_width=True,
+                  on_click=_flag, args=("ea_show_qr",))
+        if _fb:
+            st.button("Send feedback", key="mm_fb", use_container_width=True,
+                      on_click=_flag, args=("ea_show_feedback",))
+        st.markdown(_eyebrow.format("HELP"), unsafe_allow_html=True)
+        st.button("Getting started", key="mm_setup", use_container_width=True,
+                  on_click=_flag, args=("ea_show_setup",))
+        st.button("What the stats mean", key="mm_help", use_container_width=True,
+                  on_click=_flag, args=("ea_show_help",))
     if st.session_state.pop("ea_show_qr", False):
         if _qr_dialog is not None:
             _qr_dialog()

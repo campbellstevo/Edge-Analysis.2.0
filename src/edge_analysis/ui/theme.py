@@ -896,6 +896,77 @@ def inject_theme():
         border-color: #e5e7eb !important;
     }}
 
+    /* ── Header bar: filters pill left, theme toggle + more menu right ── */
+    div[data-testid="stHorizontalBlock"]:has(.ea-themeseg) {{
+        align-items: center !important; gap: 8px !important; margin-bottom: 2px;
+    }}
+    div[data-testid="stHorizontalBlock"]:has(.ea-themeseg) > div:nth-child(2),
+    div[data-testid="stHorizontalBlock"]:has(.ea-themeseg) > div:nth-child(3) {{
+        display: flex; justify-content: flex-end;
+    }}
+
+    /* Segmented sun/moon theme toggle */
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-themeseg) [role="radiogroup"] {{
+        gap: 0 !important; background: #ffffff; border: 1px solid rgba(0,0,0,0.08);
+        border-radius: 999px; padding: 3px; box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        width: max-content; margin-left: auto;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-themeseg) [role="radiogroup"] > label {{
+        margin: 0 !important; padding: 5px 15px !important; border-radius: 999px !important;
+        border: none !important; background: transparent !important; cursor: pointer;
+        transition: background 160ms ease, color 160ms ease;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-themeseg) [role="radiogroup"] > label > div:first-child {{
+        display: none !important;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-themeseg) [role="radiogroup"] > label p {{
+        font-size: 14px !important; line-height: 1.1 !important; color: #94a3b8 !important;
+        margin: 0 !important;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-themeseg) [role="radiogroup"] > label:has(input:checked) {{
+        background: #4800ff !important;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-themeseg) [role="radiogroup"] > label:has(input:checked) p {{
+        color: #ffffff !important;
+    }}
+
+    /* Round ⋯ overflow button */
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-dots) button {{
+        width: 42px !important; min-width: 42px !important; height: 38px !important;
+        border-radius: 999px !important; padding: 0 !important;
+        background: #ffffff !important; border: 1px solid rgba(0,0,0,0.08) !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.04) !important;
+        transition: background 160ms ease, border-color 160ms ease;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-dots) button p {{
+        font-size: 19px !important; font-weight: 700 !important; color: #334155 !important;
+        line-height: 1 !important; margin: 0 !important;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-dots) button:hover {{
+        border-color: #4800ff !important;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-dots) button:hover p {{
+        color: #4800ff !important;
+    }}
+
+    /* ⋯ menu items: quiet left-aligned rows, not buttons */
+    div[data-testid="stPopoverBody"]:has(.ea-moremenu) {{ width: 268px !important; }}
+    div[data-testid="stPopoverBody"]:has(.ea-moremenu) button {{
+        background: transparent !important; border: none !important; box-shadow: none !important;
+        padding: 7px 10px !important; border-radius: 9px !important; text-align: left !important;
+        justify-content: flex-start !important; min-height: 0 !important;
+        transition: background 150ms ease;
+    }}
+    div[data-testid="stPopoverBody"]:has(.ea-moremenu) button p {{
+        font-size: 13.5px !important; font-weight: 500 !important; color: #334155 !important;
+        text-align: left !important; width: 100%; margin: 0 !important;
+    }}
+    div[data-testid="stPopoverBody"]:has(.ea-moremenu) button:hover {{ background: #f4f2ff !important; }}
+    div[data-testid="stPopoverBody"]:has(.ea-moremenu) button:hover p {{ color: #4800ff !important; }}
+    div[data-testid="stPopoverBody"]:has(.ea-moremenu) div[data-testid="stElementContainer"] {{
+        margin-bottom: 0 !important;
+    }}
+
     /* Tab-nav radio styled as the tab pills (st.tabs replaced for speed) */
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-nav) [role="radiogroup"] {{
         gap: 10px !important; flex-wrap: wrap; margin: 2px 0 10px;
@@ -1356,6 +1427,12 @@ def inject_dark_overlay():
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-nav) [role="radiogroup"] > label p { color: #c7cddb !important; }
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-nav) [role="radiogroup"] > label:has(input:checked) { background: #4800ff !important; border-color: #4800ff !important; }
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-nav) [role="radiogroup"] > label:has(input:checked) p { color: #ffffff !important; }
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-themeseg) [role="radiogroup"] { background: #161b27 !important; border-color: rgba(255,255,255,0.09) !important; }
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-dots) button { background: #161b27 !important; border-color: rgba(255,255,255,0.09) !important; }
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-dots) button p { color: #c7cddb !important; }
+    div[data-testid="stPopoverBody"]:has(.ea-moremenu) button p { color: #c7cddb !important; }
+    div[data-testid="stPopoverBody"]:has(.ea-moremenu) button:hover { background: #232a3a !important; }
+    div[data-testid="stPopoverBody"]:has(.ea-moremenu) button:hover p { color: #ffffff !important; }
     .proj-table-header, .proj-table-total { background: #232a3a !important; color: #e8ebf1 !important; }
     .proj-table-row { border-color: rgba(255,255,255,0.08) !important; }
     .proj-table-row:nth-child(even) { background: #1a2030 !important; }
