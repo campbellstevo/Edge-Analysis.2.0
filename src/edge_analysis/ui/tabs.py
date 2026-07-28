@@ -2834,12 +2834,33 @@ def _confluence_board(f: pd.DataFrame, scope: str = "entry") -> None:
         f"Costliest: <b>{worst['Category']}</b> ({worst['Avg R']:+.2f}R over {int(worst['Trades'])}).")
 
 
+_LOSS_THEMES = [
+    ("Wrong bias", ("wrong bias", "opposing", "against the bias", "htf bias", "mtf bias")),
+    ("Structure misread", ("structure", "protected high", "protected low", "fbos", "bos",
+                           "internal", "external", "liquidity")),
+    ("Management / BE", ("be ", "breakeven", "break even", "moved stop", "aggressive",
+                         "didnt cover", "didn't cover", "management", "trail")),
+    ("Entry timing", ("early", "chased", "late entry", "pullback", "entry was", "timing")),
+    ("News / volatility", ("news", "spike", "volatile", "nfp", "cpi")),
+    ("Execution error", ("execution", "mistake", "poor exec", "fat finger", "wrong size")),
+]
+
+
+def _loss_theme(text: str) -> str:
+    t = " " + str(text).lower() + " "
+    for name, keys in _LOSS_THEMES:
+        if any(k in t for k in keys):
+            return name
+    return "Other"
+
+
 def _loss_postmortem(f: pd.DataFrame) -> None:
-    """Where the losses come from, by your own Reason-of-loss tags."""
+    """Where the losses come from, grouped into themes from your own tags."""
     if f is None or f.empty or "Reason of loss" not in f.columns:
         return
     g = f.copy()
-    rr_col = next((c for c in ["Closed RR", "RR", "Closed R"] if c in g.columns), None)
+    rr_col = next((c for c in ["Closed RR Num", "Closed RR", "RR", "Closed R"]
+                   if c in g.columns), None)
     if rr_col is None:
         return
     g["__rr"] = pd.to_numeric(g[rr_col], errors="coerce")
@@ -2850,43 +2871,37 @@ def _loss_postmortem(f: pd.DataFrame) -> None:
     if losses.empty:
         return
     st.markdown("### Loss Post-Mortem")
-    st.caption("Your own Reason-of-loss tags — where the red actually comes from.")
+    prose = bool(losses["__why"].str.len().median() > 24)
+    if prose:
+        st.caption("Your written loss notes, grouped into themes \u2014 ranked by the R they cost. "
+                   "The notes themselves stay on each trade in the Weekly debrief.")
+        losses["__theme"] = losses["__why"].map(_loss_theme)
+        key = "__theme"
+    else:
+        st.caption("Your own Reason-of-loss tags \u2014 where the red actually comes from.")
+        key = "__why"
     rows = []
-    for why, sub in losses.groupby("__why"):
-        rows.append({"Category": why, "Avg R": round(float(sub["__rr"].mean()), 2),
+    for why, sub in losses.groupby(key):
+        rows.append({"Category": str(why), "Avg R": round(float(sub["__rr"].mean()), 2),
                      "Trades": len(sub), "Net R": round(float(sub["__rr"].sum()), 1)})
     d = pd.DataFrame(rows).sort_values("Net R")
-    prose = bool(d["Category"].astype(str).str.len().median() > 24)
-    if prose:
-        # free-text reasons: full sentences, ranked by damage, nothing chopped
-        mx = max(abs(float(d["Net R"].min())), 1e-9)
-        items = []
-        for _, r in d.iterrows():
-            why_full = _html.escape(str(r["Category"]))
-            n_ = int(r["Trades"])
-            w_ = max(4, int(round(abs(float(r["Net R"])) / mx * 100)))
-            items.append(
-                f"<div style='background: rgb(248, 249, 252);border-left:4px solid #ef4444;"
-                f"border-radius:0 10px 10px 0;padding:11px 16px;margin:7px 0;'>"
-                f"<div style='display:flex;gap:16px;align-items:flex-start;"
-                f"justify-content:space-between;'>"
-                f"<div style='font-size:13.5px;color:#0f172a;line-height:1.45;'>{why_full}</div>"
-                f"<div style='flex:0 0 132px;text-align:right;'>"
-                f"<span style='font-size:16px;font-weight:800;color:#ef4444;'>{float(r['Net R']):+.1f}R</span>"
-                f"<div style='font-size:11px;color:#94a3b8;'>{n_} trade{'s' if n_ != 1 else ''}"
-                f" · avg {float(r['Avg R']):+.2f}R</div></div></div>"
-                f"<div style='background:#f1f3f8;border-radius:5px;height:6px;margin-top:8px;'>"
-                f"<div style='width:{w_}%;height:6px;border-radius:5px;background:#ef4444;'></div></div>"
-                f"</div>")
-        st.markdown("".join(items), unsafe_allow_html=True)
-    else:
-        _edge_tiles(d, "Category", "Net R", fmt="+.1f")
+    _rank_dots(d, "Category", "Net R", fmt="+.1f")
     worst = d.iloc[0]
     _wn = int(worst["Trades"])
-    _insight_box(f"\u201c{_html.escape(str(worst['Category']))}\u201d is your most expensive "
-                 f"failure mode: <b>{worst['Net R']:+.1f}R</b> across {_wn} "
-                 f"loss{'es' if _wn != 1 else ''}. One rule that eliminates it is worth more "
-                 f"than a new setup.", "bad")
+    if prose:
+        _example = (losses[losses["__theme"] == worst["Category"]]
+                    .sort_values("__rr")["__why"].iloc[0])
+        _example = _html.escape(str(_example)[:150]).strip()
+        _insight_box(f"<b>{_html.escape(str(worst['Category']))}</b> is your most expensive "
+                     f"failure mode: <b>{worst['Net R']:+.1f}R</b> across {_wn} "
+                     f"loss{'es' if _wn != 1 else ''}. Your own words on the worst one: "
+                     f"\u201c{_example}\u2026\u201d One rule that eliminates this theme is worth "
+                     f"more than a new setup.", "bad")
+    else:
+        _insight_box(f"\u201c{_html.escape(str(worst['Category']))}\u201d is your most expensive "
+                     f"failure mode: <b>{worst['Net R']:+.1f}R</b> across {_wn} "
+                     f"loss{'es' if _wn != 1 else ''}. One rule that eliminates it is worth more "
+                     f"than a new setup.", "bad")
 
 
 _EA_GREEN, _EA_RED, _EA_GREY = "#16a34a", "#ef4444", "#9ca3af"
@@ -2894,7 +2909,7 @@ _EA_GREEN, _EA_RED, _EA_GREY = "#16a34a", "#ef4444", "#9ca3af"
 _EA_VIZ_CSS = """<style>
 .ea-pb{display:flex;flex-direction:column;gap:7px;margin:6px 0 10px;}
 .ea-pb-row{display:flex;align-items:center;gap:10px;}
-.ea-pb-lab{flex:0 0 34%;max-width:230px;text-align:right;font-size:13px;font-weight:600;
+.ea-pb-lab{flex:0 0 34%;max-width:230px;min-width:0;text-align:right;font-size:13px;font-weight:600;
   color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .ea-pb-n{color:#94a3b8;font-weight:500;font-size:11px;margin-left:6px;}
 .ea-pb-track{flex:1;position:relative;background:#f8fafc;border-radius:7px;height:14px;}
