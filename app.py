@@ -1517,9 +1517,8 @@ def _whoop_persist() -> None:
 def _handle_whoop_logout() -> None:
     if not st.session_state.pop("whoop_logout", False):
         return
-    for k in ("whoop_at", "whoop_rt", "whoop_at_exp", "whoop_state",
-              "whoop_auth_url", "whoop_saved_sig", "whoop_boot",
-              "whoop_nsig", "whoop_verify"):
+    for k in ("whoop_at", "whoop_rt", "whoop_at_exp",
+              "whoop_saved_sig", "whoop_boot", "whoop_nsig", "whoop_verify"):
         st.session_state.pop(k, None)
     # drop per-token retry caps so a fresh Connect starts clean
     for k in [k for k in list(st.session_state.keys())
@@ -1540,7 +1539,8 @@ def _handle_whoop_logout() -> None:
 
 def _handle_whoop_callback() -> None:
     """Process the WHOOP OAuth redirect (?code&state where state starts 'whoop')."""
-    st.session_state.pop("whoop_logged_out", None) if _get_all_query_params().get("state") else None
+    if _get_all_query_params().get("state"):
+        st.session_state.pop("whoop_logged_out", None)
     qp = _get_all_query_params()
     code = qp.get("code")[0] if isinstance(qp.get("code"), list) else qp.get("code")
     rstate = qp.get("state")[0] if isinstance(qp.get("state"), list) else qp.get("state")
@@ -1582,10 +1582,19 @@ def _whoop_bootstrap() -> None:
     """Keep the WHOOP session alive across reloads. Reuses a still-valid access
     token from the device; only refreshes when it has actually expired; never
     drops the session on a transient error."""
-    if st.session_state.get("whoop_logged_out"):
-        return  # user disconnected this session — stay disconnected until Connect
     cid, csec, ruri = _whoop_client()
     if not (cid and csec and ruri):
+        return
+    if st.session_state.get("whoop_logged_out"):
+        # Disconnected this session: skip token adoption/refresh, but still
+        # build the consent URL so the Connect button renders.
+        st.session_state["whoop_boot"] = "ready"
+        if not st.session_state.get("whoop_auth_url"):
+            _state = st.session_state.get("whoop_state")
+            if not _state:
+                _state = WHOOP_STATE_PREFIX + secrets.token_urlsafe(12)
+                st.session_state["whoop_state"] = _state
+            st.session_state["whoop_auth_url"] = whoop.authorize_url(cid, ruri, _state)
         return
 
     # Already have a live access token — make sure the device copy is current.
@@ -1706,6 +1715,24 @@ def main() -> None:
         _js_eval("localStorage.setItem('ea_view', "
                  + json.dumps(st.session_state.get("ea_view_pref", "Chart")) + ")",
                  key="ea_view_save")
+    if "ea_filters_boot" not in st.session_state:
+        _raw_f = _js_eval("localStorage.getItem('ea_filters') || ''", key="ea_filters_load")
+        if _raw_f is not None:
+            st.session_state["ea_filters_boot"] = True
+            if _raw_f:
+                try:
+                    for _k, _v in (json.loads(_raw_f) or {}).items():
+                        if str(_k).startswith("filters_") and isinstance(_v, str):
+                            st.session_state.setdefault(_k, _v)
+                except Exception:
+                    pass
+    if st.session_state.pop("ea_filters_dirty", False):
+        _fp = {_k: st.session_state.get(_k)
+               for _k in ("filters_inst_select", "filters_em_select", "filters_sess_select",
+                          "filters_acct_select", "filters_tot_select", "filters_date_mode")
+               if isinstance(st.session_state.get(_k), str)}
+        _js_eval("localStorage.setItem('ea_filters', " + json.dumps(json.dumps(_fp)) + ")",
+                 key="ea_filters_save")
     if "ea_mplan_boot" not in st.session_state:
         _raw_plan = _js_eval("localStorage.getItem('ea_mplan') || ''", key="ea_mplan_load")
         if _raw_plan is not None:

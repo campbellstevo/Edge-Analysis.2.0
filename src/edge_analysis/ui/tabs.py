@@ -1455,29 +1455,13 @@ def _psych_3sl_compliance(df: pd.DataFrame, styler) -> None:
 
     if has_session_rule and multi_session_breaks > 0 and not session_counts.empty:
         try:
-            breaks_df = session_counts[session_counts["n"] > 1].copy()
-            breaks_df = breaks_df.rename(columns={"__date": "Date", "__sess_clean": "Session"})
-            breaks_df["Date"] = breaks_df["Date"].astype(str)
-            breaks_df["Extra trades"] = (breaks_df["n"] - 1).astype(int)
-            st.markdown("#### One-trade rule breaks by session")
-            _rb = breaks_df[["Date", "Session", "Extra trades"]].head(10)
-            rows_html = "".join(
-                f"<div style='display:flex;justify-content:space-between;gap:12px;"
-                f"padding:9px 16px;border-bottom:1px solid #f1f5f9;font-size:13px;color:#334155;'>"
-                f"<span>{d}</span><span style='color:#64748b;'>{sess}</span>"
-                f"<span style='font-weight:700;color:#ef4444;'>+{int(x)} extra</span></div>"
-                for d, sess, x in _rb.itertuples(index=False, name=None)
-            )
-            more = len(breaks_df) - len(_rb)
-            if more > 0:
-                rows_html += (f"<div style='padding:9px 16px;font-size:12px;color:#94a3b8;'>"
-                              f"… and {more} more</div>")
-            st.markdown(
-                "<div style='background:#fff;border:1px solid rgba(0,0,0,0.06);"
-                "border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,0.04);"
-                "overflow:hidden;margin:4px 0 10px;'>" + rows_html + "</div>",
-                unsafe_allow_html=True,
-            )
+            # Which SESSIONS repeat — the pattern is actionable; the dates aren't.
+            brk = session_counts[session_counts["n"] > 1].copy()
+            per_sess = (brk.groupby("__sess_clean")["n"].agg(
+                lambda v: int((v - 1).sum())).sort_values(ascending=False))
+            bits = [f"{name} \u00d7{int(x)}" for name, x in per_sess.items() if int(x) > 0]
+            if bits:
+                st.caption("Where it happens: " + " \u00b7 ".join(bits[:4]))
         except Exception:
             pass
 

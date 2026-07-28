@@ -1236,6 +1236,17 @@ def inject_theme():
             overflow-y: auto !important;
             -webkit-overflow-scrolling: touch;
         }}
+        div[data-testid="stPopoverBody"]:has(.ea-chat-body) {{
+            width: 94vw !important; max-width: 94vw !important;
+            max-height: 72vh !important;
+        }}
+        div[data-testid="stPopoverBody"]:has(.ea-chat-body) div[style*="margin:4px 0 4px 48px"],
+        div[data-testid="stPopoverBody"]:has(.ea-chat-body) div[style*="margin:4px 48px 4px 0"] {{
+            margin-left: 8px !important; margin-right: 8px !important;
+        }}
+        div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-chatfab) button {{
+            padding: 10px 16px !important; font-size: 13px !important;
+        }}
         [data-testid="stPopoverBody"] button p {{
             white-space: normal !important;
             font-size: 12.5px !important;
@@ -1271,6 +1282,16 @@ def inject_theme():
 
     /* If two tab strips ever coexist mid-rerun, hide the older sibling */
     div[data-testid="stTabs"]:has(~ div[data-testid="stTabs"]) {{ display: none !important; }}
+    /* Same for duplicated header/nav rows during a rerun (ghosting) */
+    div[data-testid="stHorizontalBlock"]:has(.ea-themeseg):has(~ div[data-testid="stHorizontalBlock"] .ea-themeseg) {{
+        display: none !important;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-nav):has(~ div[data-testid="stVerticalBlock"] .ea-nav) {{
+        display: none !important;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-chatfab):has(~ div[data-testid="stVerticalBlock"] .ea-chatfab) {{
+        display: none !important;
+    }}
 
     /* Inside forms, dragging needs feedback before Run is pressed */
     [data-testid="stPopoverBody"] [data-testid="stForm"] [data-testid="stSliderThumbValue"] {{

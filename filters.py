@@ -102,6 +102,16 @@ def render_filters(
     def _inst_label(v: str) -> str:
         return "GOLD" if v == "Gold" else v
 
+    def _filters_dirty():
+        st.session_state["ea_filters_dirty"] = True
+
+    # A restored value that no longer exists in this journal must not stick
+    for _k, _opts in (("filters_inst_select", inst_opts), ("filters_em_select", em_opts),
+                      ("filters_sess_select", sess_opts), ("filters_acct_select", acct_opts),
+                      ("filters_tot_select", tot_opts), ("filters_date_mode", date_mode_options)):
+        if _k in st.session_state and st.session_state.get(_k) not in (_opts or []):
+            st.session_state.pop(_k, None)
+
     _active = sum(1 for k in ["filters_inst_select", "filters_sess_select",
                               "filters_em_select", "filters_tot_select"]
                   if st.session_state.get(k, "All") != "All")
@@ -148,7 +158,7 @@ def render_filters(
                 if st.session_state.get("filters_inst_select", "All") in inst_opts
                 else 0,
                 format_func=_inst_label,
-                key="filters_inst_select",
+                key="filters_inst_select", on_change=_filters_dirty,
             )
             sel_em = st.selectbox(
                 "Entry Model",
@@ -156,7 +166,7 @@ def render_filters(
                 index=em_opts.index(st.session_state.get("filters_em_select", "All"))
                 if st.session_state.get("filters_em_select", "All") in em_opts
                 else 0,
-                key="filters_em_select",
+                key="filters_em_select", on_change=_filters_dirty,
             )
         with c2:
             sel_sess = st.selectbox(
@@ -165,7 +175,7 @@ def render_filters(
                 index=sess_opts.index(st.session_state.get("filters_sess_select", "All"))
                 if st.session_state.get("filters_sess_select", "All") in sess_opts
                 else 0,
-                key="filters_sess_select",
+                key="filters_sess_select", on_change=_filters_dirty,
             )
             sel_acct = "All"
             sel_tot = "All"
@@ -181,7 +191,7 @@ def render_filters(
                     "Trade Type",
                     tot_opts,
                     index=tot_opts.index(_cur_tot),
-                    key="filters_tot_select",
+                    key="filters_tot_select", on_change=_filters_dirty,
                 )
             elif _has_acct:
                 _cur_acct = st.session_state.get("filters_acct_select", "All")
@@ -191,7 +201,7 @@ def render_filters(
                     "Account",
                     acct_opts,
                     index=acct_opts.index(_cur_acct),
-                    key="filters_acct_select",
+                    key="filters_acct_select", on_change=_filters_dirty,
                 )
         c3, c4 = st.columns(2, gap="small")
         with c3:
@@ -202,7 +212,7 @@ def render_filters(
                 "Date range",
                 date_mode_options,
                 index=date_mode_options.index(current_mode),
-                key="filters_date_mode",
+                key="filters_date_mode", on_change=_filters_dirty,
             )
         date_range: Optional[DateRange] = None
         if date_mode == "Last 30 days":
