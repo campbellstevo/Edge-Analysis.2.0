@@ -547,8 +547,7 @@ def _perf_settings(g: pd.DataFrame):
     # Saved plan wins over the auto seed. Applied here because this runs before
     # the ✎ sliders are instantiated — the only moment Streamlit allows it.
     _saved = st.session_state.get("ea_mplan_saved")
-    if _saved and not st.session_state.get("ea_mplan_applied"):
-        st.session_state["ea_mplan_applied"] = True
+    if _saved and not st.session_state.get("ea_plan_user_edited"):
         try:
             st.session_state["ea_m_tgt"] = float(_saved["t"])
             st.session_state["ea_m_stop"] = float(_saved["s"])
@@ -676,6 +675,7 @@ def _month_card(f: pd.DataFrame, styler) -> None:
                     pop = st.expander("✎")
                 def _plan_dirty():
                     st.session_state["ea_mplan_dirty"] = True
+                    st.session_state["ea_plan_user_edited"] = True
 
                 with pop:
                     def _preset(t_, s_, c_):
@@ -683,6 +683,7 @@ def _month_card(f: pd.DataFrame, styler) -> None:
                         st.session_state["ea_m_stop"] = float(s_)
                         st.session_state["ea_m_cap"] = int(c_)
                         st.session_state["ea_mplan_dirty"] = True
+                        st.session_state["ea_plan_user_edited"] = True
                     st.markdown("<div style='font-size:11px;font-weight:700;"
                                 "letter-spacing:0.06em;color:#94a3b8;'>PICK A PACE</div>",
                                 unsafe_allow_html=True)
@@ -706,13 +707,18 @@ def _month_card(f: pd.DataFrame, styler) -> None:
                                 "FINE-TUNE</div>", unsafe_allow_html=True)
                     with st.form("plan_form", border=False):
                         st.slider("Monthly target (R)", min_value=0.5, max_value=20.0,
+                                  value=float(st.session_state.get("ea_m_tgt", 5.0)),
                                   step=0.5, format="%.1f", key="ea_m_tgt")
                         st.slider("Max monthly loss (R)", min_value=-15.0, max_value=-1.0,
+                                  value=float(st.session_state.get("ea_m_stop", -6.0)),
                                   step=0.5, format="%.1f", key="ea_m_stop")
                         st.slider("Trades per month", min_value=1, max_value=40,
+                                  value=int(st.session_state.get("ea_m_cap", 12)),
                                   step=1, key="ea_m_cap")
                         st.slider("Account balance ($)", min_value=500,
-                                  max_value=200000, step=500, key="ea_m_bal",
+                                  max_value=200000, step=500,
+                                  value=int(st.session_state.get("ea_m_bal", 10000)),
+                                  key="ea_m_bal",
                                   help="Used to turn dollar results into % of account, "
                                        "so months line up with your broker statement.")
                         st.form_submit_button("Save", type="primary", on_click=_plan_dirty,
