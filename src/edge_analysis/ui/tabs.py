@@ -493,6 +493,8 @@ def _perf_settings(g: pd.DataFrame):
             st.session_state["ea_m_stop"] = float(_saved["s"])
             if "c" in _saved:
                 st.session_state["ea_m_cap"] = int(_saved["c"])
+            if "b" in _saved:
+                st.session_state["ea_m_bal"] = int(_saved["b"])
         except (KeyError, TypeError, ValueError):
             pass
     if "ea_m_tgt" not in st.session_state:
@@ -501,6 +503,8 @@ def _perf_settings(g: pd.DataFrame):
         st.session_state["ea_m_stop"] = float(auto_stop)
     if "ea_m_cap" not in st.session_state:
         st.session_state["ea_m_cap"] = 12
+    if "ea_m_bal" not in st.session_state:
+        st.session_state["ea_m_bal"] = 10000
     st.session_state["ea_m_tgt"] = float(min(20.0, max(0.5, st.session_state["ea_m_tgt"])))
     st.session_state["ea_m_stop"] = float(min(-1.0, max(-15.0, st.session_state["ea_m_stop"])))
     st.session_state["ea_m_cap"] = int(min(40, max(1, st.session_state["ea_m_cap"])))
@@ -632,6 +636,10 @@ def _month_card(f: pd.DataFrame, styler) -> None:
                                   step=0.5, format="%.1f", key="ea_m_stop")
                         st.slider("Trades per month", min_value=1, max_value=40,
                                   step=1, key="ea_m_cap")
+                        st.slider("Account balance ($)", min_value=500,
+                                  max_value=200000, step=500, key="ea_m_bal",
+                                  help="Used to turn dollar results into % of account, "
+                                       "so months line up with your broker statement.")
                         st.form_submit_button("Save", type="primary", on_click=_plan_dirty,
                                               use_container_width=True)
 
@@ -4516,10 +4524,14 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
                     u = float(row["usd"])
                     usd_note = f" · {'-' if u < 0 else ''}${abs(u):,.0f}"
                     _c = row.get("cost")
+                    _net = u
                     if _c == _c and abs(float(_c)) >= 0.5:
                         _net = u + float(_c)
                         usd_note += (f" gross · {'-' if _net < 0 else ''}${abs(_net):,.0f} "
                                      "after costs")
+                    _bal = float(st.session_state.get("ea_m_bal", 0) or 0)
+                    if _bal > 0:
+                        usd_note += f" · {_net / _bal * 100:+.2f}% of account"
                 cards.append(
                     f"<div style='flex:1;min-width:200px;max-width:290px;background:#fbfcfe;"
                     f"border:1px solid #eef0f4;border-left:5px solid {c};"
