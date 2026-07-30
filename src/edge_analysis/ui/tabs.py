@@ -471,6 +471,50 @@ def _st_rerun_safe():
             pass
 
 
+def _pnl_series(g: pd.DataFrame):
+    """Per-trade dollar result (net of commission/swap when present)."""
+    pnl = None
+    for c in ("PnL", "PnL (USD)"):
+        if c in g.columns:
+            pnl = pd.to_numeric(g[c], errors="coerce")
+            break
+    if pnl is None:
+        return None
+    for c in ("Commission", "Swap"):
+        if c in g.columns:
+            pnl = pnl.add(pd.to_numeric(g[c], errors="coerce").fillna(0.0), fill_value=0.0)
+    return pnl
+
+
+def _balance_from_journal(g: pd.DataFrame):
+    """Latest balance/equity if the sync writes one — the ideal source."""
+    for c in ("Balance", "Account Balance", "Equity", "Balance After", "Running Balance"):
+        if c in g.columns:
+            v = pd.to_numeric(g[c], errors="coerce").dropna()
+            if not v.empty:
+                try:
+                    return float(v.loc[g["__Date"].idxmax()]) if "__Date" in g.columns else float(v.iloc[-1])
+                except Exception:
+                    return float(v.iloc[-1])
+    return None
+
+
+def _balance_track(g: pd.DataFrame, current: float):
+    """Rebuild the balance behind every trade by walking your P&L back from today.
+    Returns (series indexed like g, dict of month-start balances). Deposits and
+    withdrawals aren't visible in trade data — those shift the whole track."""
+    pnl = _pnl_series(g)
+    if pnl is None or "__Date" not in g.columns or current is None or current <= 0:
+        return None, {}
+    d = pd.DataFrame({"dt": g["__Date"], "pnl": pnl.fillna(0.0)}).sort_values("dt")
+    closing = current - (d["pnl"][::-1].cumsum()[::-1]) + d["pnl"]   # balance after each trade
+    opening = closing - d["pnl"]                                     # balance before each trade
+    starts = {}
+    for per, sub in opening.groupby(d["dt"].dt.to_period("M")):
+        starts[per] = float(sub.iloc[0])
+    return opening.reindex(g.index), starts
+
+
 def _median_stop_usd(g: pd.DataFrame):
     """Median dollar loss on a full-stop (~-1R) trade, or None."""
     try:
@@ -564,13 +608,18 @@ def _perf_settings(g: pd.DataFrame):
         st.session_state["ea_m_stop"] = float(auto_stop)
     if "ea_m_cap" not in st.session_state:
         st.session_state["ea_m_cap"] = 12
-    if "ea_m_bal" not in st.session_state:
-        st.session_state["ea_m_bal"] = _derive_balance(g)
+    _from_journal = _balance_from_journal(g)
+    if _from_journal:
+        st.session_state["ea_m_bal"] = float(_from_journal)
+        st.session_state["ea_m_bal_src"] = "from your journal"
+    elif "ea_m_bal" not in st.session_state:
+        st.session_state["ea_m_bal"] = float(_derive_balance(g))
         st.session_state["ea_m_bal_auto"] = True
+        st.session_state["ea_m_bal_src"] = "from your stop sizes"
     st.session_state["ea_m_tgt"] = float(min(20.0, max(0.5, st.session_state["ea_m_tgt"])))
     st.session_state["ea_m_stop"] = float(min(-1.0, max(-15.0, st.session_state["ea_m_stop"])))
     st.session_state["ea_m_cap"] = int(min(40, max(1, st.session_state["ea_m_cap"])))
-    st.session_state["ea_m_bal"] = int(min(200000, max(500, st.session_state["ea_m_bal"])))
+    st.session_state["ea_m_bal"] = float(min(1000000.0, max(1.0, float(st.session_state["ea_m_bal"]))))
     return (float(st.session_state["ea_m_tgt"]),
             float(st.session_state["ea_m_stop"]), auto_tgt)
 
@@ -715,12 +764,13 @@ def _month_card(f: pd.DataFrame, styler) -> None:
                         st.slider("Trades per month", min_value=1, max_value=40,
                                   value=int(st.session_state.get("ea_m_cap", 12)),
                                   step=1, key="ea_m_cap")
-                        st.slider("Account balance ($)", min_value=500,
-                                  max_value=200000, step=500,
-                                  value=int(st.session_state.get("ea_m_bal", 10000)),
-                                  key="ea_m_bal",
-                                  help="Used to turn dollar results into % of account, "
-                                       "so months line up with your broker statement.")
+                        st.number_input("Account balance ($) — today", min_value=1.0,
+                                        max_value=1000000.0, step=50.0, format="%.2f",
+                                        value=float(st.session_state.get("ea_m_bal", 10000.0)),
+                                        key="ea_m_bal",
+                                        help="Today's balance. Past months use the balance "
+                                             "rebuilt from your own trade P&L, so each month "
+                                             "is a true return. Deposits/withdrawals shift it.")
                         st.form_submit_button("Save", type="primary", on_click=_plan_dirty,
                                               use_container_width=True)
 
@@ -4620,16 +4670,20 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
 
         now_m = pd.Timestamp.now().to_period("M")
         _bal = float(st.session_state.get("ea_m_bal", 10000) or 0)
-        _rp_m = _risk_pct(g.rename(columns={"__rr": "PnL_from_RR"}))
+        _gm = g.rename(columns={"__rr": "PnL_from_RR", "__dt": "__Date"})
+        _rp_m = _risk_pct(_gm)
+        _, _starts = _balance_track(_gm, _bal)
 
-        def _mbm_head(r_val, row):
-            """% of account: from real dollars when available, else R x risk."""
+        def _mbm_head(r_val, row, per=None):
+            """True monthly return: month net $ / balance at the start of that month."""
             if _bal > 0:
                 _u = row.get("usd")
                 if _u == _u and _u is not None:
                     _c = row.get("cost")
                     _net = float(_u) + (float(_c) if _c == _c and _c is not None else 0.0)
-                    return f"{_net / _bal * 100:+.2f}%"
+                    _base = _starts.get(per, _bal) if per is not None else _bal
+                    if _base and _base > 0:
+                        return f"{_net / _base * 100:+.2f}%"
                 return f"{_as_pct(r_val, _rp_m):+.2f}%"
             return f"{r_val:+.1f}R"
 
@@ -4662,7 +4716,7 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
                     f"color:{'#4800ff' if live else '#94a3b8'};'>"
                     f"{dt_.strftime('%B').upper()}{badge}</div>"
                     f"<div style='font-size:28px;font-weight:800;color:{c};margin:2px 0;'>"
-                    f"{_mbm_head(r_, row)}</div>"
+                    f"{_mbm_head(r_, row, dt_.to_period('M'))}</div>"
                     f"<div style='font-size:13px;color:#64748b;'>{r_:+.1f}R \u00b7 "
                     f"{int(row['n'])} trades{usd_note}{' · live' if live else ''}</div></div>")
             st.markdown("<div style='display:flex;gap:14px;flex-wrap:wrap;margin:8px 0 4px;'>"
