@@ -471,6 +471,38 @@ def _st_rerun_safe():
             pass
 
 
+def _risk_pct(g: pd.DataFrame) -> float:
+    """Risk per trade as % of account, measured from real full-stop losses
+    (|$| lost on a ~-1R trade / balance). Falls back to 1%."""
+    bal = float(st.session_state.get("ea_m_bal", 10000) or 0)
+    if bal <= 0:
+        return 1.0
+    try:
+        rr = pd.to_numeric(g.get("PnL_from_RR"), errors="coerce")
+        pnl = None
+        for c in ("PnL", "PnL (USD)"):
+            if c in g.columns:
+                pnl = pd.to_numeric(g[c], errors="coerce")
+                break
+        if pnl is None:
+            return 1.0
+        full = (rr <= -0.85) & (rr >= -1.15) & pnl.notna() & (pnl < 0)
+        if int(full.sum()) >= 3:
+            return float(max(0.05, min(10.0, pnl[full].abs().median() / bal * 100.0)))
+    except Exception:
+        pass
+    return 1.0
+
+
+def _as_pct(r_value: float, risk_pct: float) -> float:
+    """R expressed as % of account at the measured risk per trade."""
+    return float(r_value) * float(risk_pct)
+
+
+def _pct_txt(r_value: float, risk_pct: float, dp: int = 2) -> str:
+    return f"{_as_pct(r_value, risk_pct):+.{dp}f}%"
+
+
 def _perf_settings(g: pd.DataFrame):
     """Monthly target / max-loss: auto from the data, editable via the pencil popover."""
     mr = g.set_index("__Date")["PnL_from_RR"].resample("MS").agg(["sum", "count"])
@@ -572,13 +604,16 @@ def _month_card(f: pd.DataFrame, styler) -> None:
             wc = "#16a34a" if wk_r >= 0 else "#ef4444"
             arrow = "▲" if wk_r >= 0 else "▼"
             cc = "#16a34a" if cur >= 0 else "#ef4444"
+            _rp = _risk_pct(g)
             st.markdown(
                 f"<div style='font-size:12px;font-weight:700;letter-spacing:0.08em;"
                 f"color:#94a3b8;'>{pd.Timestamp.now().strftime('%B').upper()}</div>"
                 f"<div style='font-size:38px;font-weight:800;color:{cc};line-height:1.1;'>"
-                f"{cur:+,.1f}R"
+                f"{_pct_txt(cur, _rp)}"
                 f"<span style='font-size:15px;font-weight:700;color:{wc};margin-left:14px;'>"
-                f"{arrow} {wk_r:+.1f}R this week</span></div>",
+                f"{arrow} {_pct_txt(wk_r, _rp)} this week</span></div>"
+                f"<div style='font-size:12.5px;color:#8a93a6;margin-top:2px;'>"
+                f"{cur:+,.1f}R \u00b7 {n_tr} trades \u00b7 risk {_rp:.2f}%/trade</div>",
                 unsafe_allow_html=True)
         with h2:
             p1, p2 = st.columns([2.6, 1])
@@ -587,9 +622,13 @@ def _month_card(f: pd.DataFrame, styler) -> None:
                     "<div style='display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;"
                     "margin-top:6px;'>"
                     f"<span style='background:#e2f5e9;color:#14532d;font-weight:800;font-size:13.5px;"
-                    f"border-radius:999px;padding:7px 14px;'>Target&nbsp; {TGT_R:.1f}R</span>"
+                    f"border-radius:999px;padding:7px 14px;'>Target&nbsp; "
+                    f"{_as_pct(TGT_R, _rp):+.1f}%&nbsp;<span style='font-weight:600;opacity:0.7;'>"
+                    f"({TGT_R:.1f}R)</span></span>"
                     f"<span style='background:#fde8e8;color:#7f1d1d;font-weight:800;font-size:13.5px;"
-                    f"border-radius:999px;padding:7px 14px;'>Max loss&nbsp; {STOP_R:.1f}R</span>"
+                    f"border-radius:999px;padding:7px 14px;'>Max loss&nbsp; "
+                    f"{_as_pct(STOP_R, _rp):+.1f}%&nbsp;<span style='font-weight:600;opacity:0.7;'>"
+                    f"({STOP_R:.1f}R)</span></span>"
                     "</div>"
                     "<div style='text-align:right;font-size:11.5px;color:#94a3b8;margin-top:5px;'>"
                     "auto from your data · edit →</div>",
@@ -675,13 +714,15 @@ def _month_card(f: pd.DataFrame, styler) -> None:
                 bar_title = "PROGRESS TO TARGET"
                 barw = max(0.0, min(1.0, cur / TGT_R)) if TGT_R > 0 else 0.0
                 barc = "#16a34a"
-                sub = f"{cur:+.1f}R now · {max(0.0, TGT_R - cur):.1f}R to go"
+                sub = (f"{_pct_txt(cur, _rp)} now \u00b7 "
+                       f"{_as_pct(max(0.0, TGT_R - cur), _rp):.2f}% to go")
             else:
                 bar_title = "STOP USED"
                 barw = max(0.0, min(1.0, cur / STOP_R)) if STOP_R < 0 else 0.0
                 barc = "#ef4444"
-                sub = (f"{cur:+.1f}R now · {barw * 100:.0f}% of the {STOP_R:+.0f}R stop used "
-                       f"· {cur - STOP_R:.1f}R of room left")
+                sub = (f"{_pct_txt(cur, _rp)} now \u00b7 {barw * 100:.0f}% of the "
+                       f"{_as_pct(STOP_R, _rp):+.1f}% stop used \u00b7 "
+                       f"{_as_pct(cur - STOP_R, _rp):.2f}% of room left")
             st.markdown(
                 f"<div style='font-size:11px;font-weight:700;letter-spacing:0.06em;"
                 f"color:#94a3b8;margin-top:2px;'>{bar_title}</div>"
@@ -694,10 +735,11 @@ def _month_card(f: pd.DataFrame, styler) -> None:
             maxdd = float((md["Cum"].cummax() - md["Cum"]).max())
             cap = int(st.session_state.get("ea_m_cap", 12))
             pace_c = "#ef4444" if n_tr > cap else "#0f172a"
-            chips = [("TO TARGET", f"{max(0.0, TGT_R - cur):.1f}R",
+            chips = [("TO TARGET", f"{_as_pct(max(0.0, TGT_R - cur), _rp):.2f}%",
                       "#16a34a" if cur >= TGT_R else "#0f172a"),
-                     ("MAX DRAWDOWN", f"-{maxdd:.1f}R", "#ef4444" if maxdd > 0 else "#64748b"),
-                     ("STOP ROOM", f"{cur - STOP_R:.1f}R",
+                     ("MAX DRAWDOWN", f"-{_as_pct(maxdd, _rp):.2f}%",
+                      "#ef4444" if maxdd > 0 else "#64748b"),
+                     ("STOP ROOM", f"{_as_pct(cur - STOP_R, _rp):.2f}%",
                       "#ef4444" if cur - STOP_R < 2 else "#0f172a"),
                      ("TRADES · PACE", f"{n_tr} of {cap}" + (" ⚠" if n_tr > cap else ""),
                       pace_c)]
@@ -727,14 +769,20 @@ def _alltime_card(f: pd.DataFrame, styler) -> None:
                         "margin-top:4px;'>All time</div>", unsafe_allow_html=True)
         with h2:
             view = "R"
-            if has_usd:
-                view = st.radio("Units", ["R", "$"], horizontal=True, key="eq_units",
-                                label_visibility="collapsed") or "R"
+            _bal = float(st.session_state.get("ea_m_bal", 10000) or 0)
+            _units = (["%", "$", "R"] if (has_usd and _bal > 0)
+                      else (["$", "R"] if has_usd else ["R"]))
+            if len(_units) > 1:
+                view = st.radio("Units", _units, horizontal=True, key="eq_units",
+                                label_visibility="collapsed") or _units[0]
         with h3:
             bucket = st.selectbox("Time Bucket", ["Day", "Week", "Month"], index=2,
                                   key="growth_bucket", label_visibility="collapsed")
         gi = g.set_index("__Date")
-        if view == "$" and has_usd:
+        if view == "%" and has_usd and _bal > 0:
+            ser = pd.Series((usd.values / _bal) * 100.0, index=g["__Date"]).dropna()
+            unit = "%"
+        elif view == "$" and has_usd:
             ser = pd.Series(usd.values, index=g["__Date"]).dropna()
             unit = "$"
         else:
@@ -747,11 +795,18 @@ def _alltime_card(f: pd.DataFrame, styler) -> None:
             mo = mo[ser.resample("MS").size() > 0]
             rows = [{"Month": ts.strftime("%b"), "Net": round(float(v), 2),
                      "Colour": "good" if v >= 0 else "bad",
-                     "Lab": (f"{v:+.1f}R" if unit == "R" else f"{'-' if v < 0 else ''}${abs(v):,.0f}")}
+                     "Lab": (f"{v:+.1f}R" if unit == "R"
+                             else (f"{v:+.2f}%" if unit == "%"
+                                   else f"{'-' if v < 0 else ''}${abs(v):,.0f}"))}
                     for ts, v in mo.items()]
             order = [r["Month"] for r in rows]
-            lo = min(min((r["Net"] for r in rows), default=0.0), STOP_R if unit == "R" else 0.0)
-            hi = max(max((r["Net"] for r in rows), default=0.0), TGT_R if unit == "R" else 0.0)
+            _rp_dom = _risk_pct(g)
+            _lo_ref = (STOP_R if unit == "R" else
+                       (_as_pct(STOP_R, _rp_dom) if unit == "%" else 0.0))
+            _hi_ref = (TGT_R if unit == "R" else
+                       (_as_pct(TGT_R, _rp_dom) if unit == "%" else 0.0))
+            lo = min(min((r["Net"] for r in rows), default=0.0), _lo_ref)
+            hi = max(max((r["Net"] for r in rows), default=0.0), _hi_ref)
             span = max(hi - lo, 1.0)
             dom = [lo - span * 0.18, hi + span * 0.24]
             base = alt.Chart(alt.Data(values=rows))
@@ -772,11 +827,14 @@ def _alltime_card(f: pd.DataFrame, styler) -> None:
             lays = [bars, txt,
                     alt.Chart(alt.Data(values=[{"y": 0}]))
                     .mark_rule(color="#cbd5e1", strokeWidth=1.5).encode(y=alt.Y("y:Q", title=None))]
-            if unit == "R":
-                lays.append(alt.Chart(alt.Data(values=[{"y": TGT_R}]))
+            _rp_a = _risk_pct(g)
+            _tgt_line = TGT_R if unit == "R" else (_as_pct(TGT_R, _rp_a) if unit == "%" else None)
+            _stop_line = STOP_R if unit == "R" else (_as_pct(STOP_R, _rp_a) if unit == "%" else None)
+            if _tgt_line is not None:
+                lays.append(alt.Chart(alt.Data(values=[{"y": _tgt_line}]))
                             .mark_rule(color="#16a34a", strokeDash=[6, 5], strokeWidth=2)
                             .encode(y=alt.Y("y:Q", title=None)))
-                lays.append(alt.Chart(alt.Data(values=[{"y": STOP_R}]))
+                lays.append(alt.Chart(alt.Data(values=[{"y": _stop_line}]))
                             .mark_rule(color="#ef4444", strokeDash=[6, 5], strokeWidth=2)
                             .encode(y=alt.Y("y:Q", title=None)))
             st.altair_chart(styler(alt.layer(*lays).properties(height=300)),
@@ -784,6 +842,11 @@ def _alltime_card(f: pd.DataFrame, styler) -> None:
             if unit == "R":
                 st.caption(f"Each bar = the month's net result \u00b7 green dash = "
                            f"{TGT_R:+.1f}R target \u00b7 red dash = {STOP_R:+.0f}R max loss.")
+            elif unit == "%":
+                st.caption(f"Each bar = the month's net result as % of account \u00b7 green dash "
+                           f"= {_as_pct(TGT_R, _rp_a):+.1f}% target \u00b7 red dash = "
+                           f"{_as_pct(STOP_R, _rp_a):+.1f}% max loss \u00b7 measured risk "
+                           f"{_rp_a:.2f}%/trade.")
         else:
             freq = {"Day": "D", "Week": "W-MON"}[bucket]
             eq = ser.resample(freq).sum().cumsum().reset_index()
@@ -2658,6 +2721,7 @@ def _breaker_strip(df_raw: pd.DataFrame) -> None:
     if g.empty:
         return
     stop_r = float(st.session_state.get("ea_m_stop", -6.0))
+    _rp_b = _risk_pct(g.rename(columns={"__rr": "PnL_from_RR"}))
     wk_cap = max(1, round(int(st.session_state.get("ea_m_cap", 12)) / 4))
     now = pd.Timestamp.now()
     cur = g[g["__dt"].dt.to_period("M") == now.to_period("M")]
@@ -2668,7 +2732,8 @@ def _breaker_strip(df_raw: pd.DataFrame) -> None:
     if closed:
         bg, bc, ic, icon = "#fde8e8", "#f3b8b8", "#7f1d1d", "\u25a0"
         head = "Month closed \u2014 circuit breaker hit"
-        sub = (f"{mtd:+.1f}R this month is at your {stop_r:+.0f}R max loss. "
+        sub = (f"{_as_pct(mtd, _rp_b):+.2f}% ({mtd:+.1f}R) this month is at your "
+               f"{_as_pct(stop_r, _rp_b):+.1f}% max loss. "
                "Flat until the 1st \u2014 that's the rule that keeps the account.")
     else:
         room = mtd - stop_r
@@ -2677,7 +2742,8 @@ def _breaker_strip(df_raw: pd.DataFrame) -> None:
         ic = "#7c4a03" if warn else "#14532d"
         icon = "\u26a0" if warn else "\u2713"
         head = "Circuit breaker \u2014 month open"
-        bits = [f"{mtd:+.1f}R this month", f"{room:.1f}R above the {stop_r:+.0f}R stop",
+        bits = [f"{_as_pct(mtd, _rp_b):+.2f}% this month ({mtd:+.1f}R)",
+                f"{_as_pct(room, _rp_b):.2f}% above the {_as_pct(stop_r, _rp_b):+.1f}% stop",
                 f"{wk_n} of {wk_cap} trades this week"]
         sub = " \u00b7 ".join(bits)
     st.markdown(
@@ -4511,6 +4577,20 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
                              key="mbm_view", label_visibility="collapsed") or "Months"
 
         now_m = pd.Timestamp.now().to_period("M")
+        _bal = float(st.session_state.get("ea_m_bal", 10000) or 0)
+        _rp_m = _risk_pct(g.rename(columns={"__rr": "PnL_from_RR"}))
+
+        def _mbm_head(r_val, row):
+            """% of account: from real dollars when available, else R x risk."""
+            if _bal > 0:
+                _u = row.get("usd")
+                if _u == _u and _u is not None:
+                    _c = row.get("cost")
+                    _net = float(_u) + (float(_c) if _c == _c and _c is not None else 0.0)
+                    return f"{_net / _bal * 100:+.2f}%"
+                return f"{_as_pct(r_val, _rp_m):+.2f}%"
+            return f"{r_val:+.1f}R"
+
         if mview == "Months":
             cards = []
             for dt_, row in monthly.tail(6).iterrows():
@@ -4540,9 +4620,9 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
                     f"color:{'#4800ff' if live else '#94a3b8'};'>"
                     f"{dt_.strftime('%B').upper()}{badge}</div>"
                     f"<div style='font-size:28px;font-weight:800;color:{c};margin:2px 0;'>"
-                    f"{r_:+.1f}R</div>"
-                    f"<div style='font-size:13px;color:#64748b;'>{int(row['n'])} trades"
-                    f"{usd_note}{' · live' if live else ''}</div></div>")
+                    f"{_mbm_head(r_, row)}</div>"
+                    f"<div style='font-size:13px;color:#64748b;'>{r_:+.1f}R \u00b7 "
+                    f"{int(row['n'])} trades{usd_note}{' · live' if live else ''}</div></div>")
             st.markdown("<div style='display:flex;gap:14px;flex-wrap:wrap;margin:8px 0 4px;'>"
                         + "".join(cards) + "</div>", unsafe_allow_html=True)
         else:
