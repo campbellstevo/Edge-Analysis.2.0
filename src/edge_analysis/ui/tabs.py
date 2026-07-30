@@ -708,7 +708,8 @@ def _alltime_card(f: pd.DataFrame, styler) -> None:
     g = _perf_prep(f)
     if g is None:
         return
-    usd = pd.to_numeric(g.get("PnL (USD)"), errors="coerce") if "PnL (USD)" in g.columns else None
+    _ucol = next((c for c in ("PnL (USD)", "PnL") if c in g.columns), None)
+    usd = pd.to_numeric(g.get(_ucol), errors="coerce") if _ucol else None
     has_usd = usd is not None and usd.notna().any()
     with st.container(border=True):
         st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
@@ -4472,6 +4473,11 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
     has_usd = usd is not None and usd.notna().any()
     if has_usd:
         g["__usd"] = usd
+        _cost = pd.Series(0.0, index=g.index)
+        for _cc in ("Commission", "Swap"):
+            if _cc in g.columns:
+                _cost = _cost + pd.to_numeric(g[_cc], errors="coerce").fillna(0.0)
+        g["__cost"] = _cost
     need_r = float(st.session_state.get("ea_m_tgt", 5.0))
     stop_r = float(st.session_state.get("ea_m_stop", -6.0))
 
@@ -4480,6 +4486,8 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
     monthly["n"] = mg["__rr"].resample("MS").size()
     if has_usd:
         monthly["usd"] = mg["__usd"].resample("MS").sum()
+        if "__cost" in mg.columns:
+            monthly["cost"] = mg["__cost"].resample("MS").sum()
     monthly = monthly[monthly["n"] > 0].tail(12)
     if monthly.empty:
         return
@@ -4507,6 +4515,11 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
                 if has_usd and "usd" in monthly.columns and row.get("usd") == row.get("usd"):
                     u = float(row["usd"])
                     usd_note = f" · {'-' if u < 0 else ''}${abs(u):,.0f}"
+                    _c = row.get("cost")
+                    if _c == _c and abs(float(_c)) >= 0.5:
+                        _net = u + float(_c)
+                        usd_note += (f" gross · {'-' if _net < 0 else ''}${abs(_net):,.0f} "
+                                     "after costs")
                 cards.append(
                     f"<div style='flex:1;min-width:200px;max-width:290px;background:#fbfcfe;"
                     f"border:1px solid #eef0f4;border-left:5px solid {c};"
