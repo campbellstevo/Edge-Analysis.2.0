@@ -686,8 +686,9 @@ def _month_card(f: pd.DataFrame, styler) -> None:
             cc = "#16a34a" if cur >= 0 else "#ef4444"
             _rp = _risk_pct(g)
             _bal_disp = float(st.session_state.get("ea_m_bal", 0) or 0)
-            _bal_note = (" (from your stop sizes \u2014 set it in \u270e)"
-                         if st.session_state.get("ea_m_bal_auto") else "")
+            _src = st.session_state.get("ea_m_bal_src")
+            _bal_note = ((" (" + str(_src) + " \u2014 set it in \u270e)")
+                         if (_src and st.session_state.get("ea_m_bal_auto")) else "")
             st.markdown(
                 f"<div style='font-size:12px;font-weight:700;letter-spacing:0.08em;"
                 f"color:#94a3b8;'>{pd.Timestamp.now().strftime('%B').upper()}</div>"
