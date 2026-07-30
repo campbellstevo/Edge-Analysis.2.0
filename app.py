@@ -1715,20 +1715,20 @@ def main() -> None:
         _js_eval("localStorage.setItem('ea_view', "
                  + json.dumps(st.session_state.get("ea_view_pref", "Chart")) + ")",
                  key="ea_view_save")
-    if "ea_filters_boot" not in st.session_state:
+    _ftries = int(st.session_state.get("ea_filters_tries", 0))
+    if "ea_filters_saved" not in st.session_state and _ftries < 6:
+        st.session_state["ea_filters_tries"] = _ftries + 1
         _raw_f = _js_eval("localStorage.getItem('ea_filters') || ''", key="ea_filters_load")
-        if _raw_f is not None:
-            st.session_state["ea_filters_boot"] = True
-            if _raw_f:
-                try:
-                    _fsaved = json.loads(_raw_f) or {}
-                except ValueError:
-                    _fsaved = {}
-                if isinstance(_fsaved, dict) and _fsaved:
-                    # applied by render_filters BEFORE its widgets exist
-                    st.session_state["ea_filters_saved"] = {
-                        str(k): v for k, v in _fsaved.items()
-                        if str(k).startswith("filters_") and isinstance(v, str)}
+        if _raw_f:
+            try:
+                _fsaved = json.loads(_raw_f) or {}
+            except ValueError:
+                _fsaved = {}
+            if isinstance(_fsaved, dict) and _fsaved:
+                # applied by render_filters BEFORE its widgets exist
+                st.session_state["ea_filters_saved"] = {
+                    str(k): v for k, v in _fsaved.items()
+                    if str(k).startswith("filters_") and isinstance(v, str)}
     if st.session_state.pop("ea_filters_dirty", False):
         _fp = {_k: st.session_state.get(_k)
                for _k in ("filters_inst_select", "filters_em_select", "filters_sess_select",
@@ -1736,19 +1736,19 @@ def main() -> None:
                if isinstance(st.session_state.get(_k), str)}
         _js_eval("localStorage.setItem('ea_filters', " + json.dumps(json.dumps(_fp)) + ")",
                  key="ea_filters_save")
-    if "ea_mplan_boot" not in st.session_state:
+    _ptries = int(st.session_state.get("ea_mplan_tries", 0))
+    if "ea_mplan_saved" not in st.session_state and _ptries < 6:
+        st.session_state["ea_mplan_tries"] = _ptries + 1
         _raw_plan = _js_eval("localStorage.getItem('ea_mplan') || ''", key="ea_mplan_load")
-        if _raw_plan is not None:
-            st.session_state["ea_mplan_boot"] = True
-            if _raw_plan:
-                try:
-                    _pb = json.loads(_raw_plan) or {}
-                except ValueError:
-                    _pb = {}
-                if isinstance(_pb, dict) and "t" in _pb:
-                    # applied by _perf_settings BEFORE the plan sliders exist —
-                    # writing a widget key from here is rejected by Streamlit
-                    st.session_state["ea_mplan_saved"] = _pb
+        if _raw_plan:
+            try:
+                _pb = json.loads(_raw_plan) or {}
+            except ValueError:
+                _pb = {}
+            if isinstance(_pb, dict) and "t" in _pb:
+                # applied by _perf_settings BEFORE the plan sliders exist —
+                # writing a widget key from here is rejected by Streamlit
+                st.session_state["ea_mplan_saved"] = _pb
     if st.session_state.pop("ea_mplan_dirty", False):
         _pb = {"t": float(st.session_state.get("ea_m_tgt", 5.0)),
                "s": float(st.session_state.get("ea_m_stop", -6.0)),
