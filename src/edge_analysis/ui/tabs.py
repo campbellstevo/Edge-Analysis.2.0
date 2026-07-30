@@ -471,6 +471,35 @@ def _st_rerun_safe():
             pass
 
 
+def _median_stop_usd(g: pd.DataFrame):
+    """Median dollar loss on a full-stop (~-1R) trade, or None."""
+    try:
+        rr = pd.to_numeric(g.get("PnL_from_RR"), errors="coerce")
+        pnl = None
+        for c in ("PnL", "PnL (USD)"):
+            if c in g.columns:
+                pnl = pd.to_numeric(g[c], errors="coerce")
+                break
+        if pnl is None or rr is None:
+            return None
+        full = (rr <= -0.85) & (rr >= -1.15) & pnl.notna() & (pnl < 0)
+        if int(full.sum()) >= 3:
+            return float(pnl[full].abs().median())
+    except Exception:
+        pass
+    return None
+
+
+def _derive_balance(g: pd.DataFrame, assumed_risk_pct: float = 1.0) -> int:
+    """Balance implied by your own stops: a full stop should cost 1% of account.
+    Beats inventing a default, and the user can still override it in the editor."""
+    med = _median_stop_usd(g)
+    if med and med > 0 and assumed_risk_pct > 0:
+        bal = med / (assumed_risk_pct / 100.0)
+        return int(min(200000, max(500, round(bal / 100.0) * 100)))
+    return 10000
+
+
 def _risk_pct(g: pd.DataFrame) -> float:
     """Risk per trade as % of account, measured from real full-stop losses
     (|$| lost on a ~-1R trade / balance). Falls back to 1%."""
@@ -536,10 +565,12 @@ def _perf_settings(g: pd.DataFrame):
     if "ea_m_cap" not in st.session_state:
         st.session_state["ea_m_cap"] = 12
     if "ea_m_bal" not in st.session_state:
-        st.session_state["ea_m_bal"] = 10000
+        st.session_state["ea_m_bal"] = _derive_balance(g)
+        st.session_state["ea_m_bal_auto"] = True
     st.session_state["ea_m_tgt"] = float(min(20.0, max(0.5, st.session_state["ea_m_tgt"])))
     st.session_state["ea_m_stop"] = float(min(-1.0, max(-15.0, st.session_state["ea_m_stop"])))
     st.session_state["ea_m_cap"] = int(min(40, max(1, st.session_state["ea_m_cap"])))
+    st.session_state["ea_m_bal"] = int(min(200000, max(500, st.session_state["ea_m_bal"])))
     return (float(st.session_state["ea_m_tgt"]),
             float(st.session_state["ea_m_stop"]), auto_tgt)
 
@@ -605,6 +636,9 @@ def _month_card(f: pd.DataFrame, styler) -> None:
             arrow = "▲" if wk_r >= 0 else "▼"
             cc = "#16a34a" if cur >= 0 else "#ef4444"
             _rp = _risk_pct(g)
+            _bal_disp = float(st.session_state.get("ea_m_bal", 0) or 0)
+            _bal_note = (" (from your stop sizes \u2014 set it in \u270e)"
+                         if st.session_state.get("ea_m_bal_auto") else "")
             st.markdown(
                 f"<div style='font-size:12px;font-weight:700;letter-spacing:0.08em;"
                 f"color:#94a3b8;'>{pd.Timestamp.now().strftime('%B').upper()}</div>"
@@ -613,7 +647,8 @@ def _month_card(f: pd.DataFrame, styler) -> None:
                 f"<span style='font-size:15px;font-weight:700;color:{wc};margin-left:14px;'>"
                 f"{arrow} {_pct_txt(wk_r, _rp)} this week</span></div>"
                 f"<div style='font-size:12.5px;color:#8a93a6;margin-top:2px;'>"
-                f"{cur:+,.1f}R \u00b7 {n_tr} trades \u00b7 risk {_rp:.2f}%/trade</div>",
+                f"{cur:+,.1f}R \u00b7 {n_tr} trades \u00b7 risk {_rp:.2f}%/trade on "
+                f"${_bal_disp:,.0f}{_bal_note}</div>",
                 unsafe_allow_html=True)
         with h2:
             p1, p2 = st.columns([2.6, 1])
