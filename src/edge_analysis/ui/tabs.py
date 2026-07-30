@@ -483,6 +483,18 @@ def _perf_settings(g: pd.DataFrame):
     else:
         auto_tgt = 5.0
     auto_stop = -6.0
+    # Saved plan wins over the auto seed. Applied here because this runs before
+    # the ✎ sliders are instantiated — the only moment Streamlit allows it.
+    _saved = st.session_state.get("ea_mplan_saved")
+    if _saved and not st.session_state.get("ea_mplan_applied"):
+        st.session_state["ea_mplan_applied"] = True
+        try:
+            st.session_state["ea_m_tgt"] = float(_saved["t"])
+            st.session_state["ea_m_stop"] = float(_saved["s"])
+            if "c" in _saved:
+                st.session_state["ea_m_cap"] = int(_saved["c"])
+        except (KeyError, TypeError, ValueError):
+            pass
     if "ea_m_tgt" not in st.session_state:
         st.session_state["ea_m_tgt"] = float(auto_tgt)
     if "ea_m_stop" not in st.session_state:
@@ -3401,6 +3413,20 @@ def render_connect_notion_templates_ui():
 
 
 # ── Projections Tab ───────────────────────────────────────────────────────────
+@st.cache_data(show_spinner=False, max_entries=8)
+def _mc_paths(n_paths: int, total_trades: int, wr: float, be: float,
+              avg_win: float, loss_rr: float, risk_pct: float, start_bal: float):
+    """Monte-Carlo equity paths. Cached so reruns (nav, filters, theme) don't
+    recompute or re-serialise a chart payload the browser already has."""
+    _rng = np.random.default_rng(42)
+    draws = _rng.random((n_paths, total_trades))
+    is_win = draws < wr
+    is_be = (~is_win) & (draws < wr + be)
+    rr_matrix = np.where(is_win, avg_win, np.where(is_be, 0.0, -loss_rr))
+    equity = start_bal * np.cumprod(1 + rr_matrix * (risk_pct / 100.0), axis=1)
+    return rr_matrix, equity
+
+
 def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
     from scipy import stats as scipy_stats
 
@@ -3573,7 +3599,8 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
             lambda: st.slider("Months to project", min_value=1, max_value=120,
                               value=24, step=1, key="proj_months",
                               label_visibility="collapsed"))
-        st.form_submit_button("Run projection", type="primary")
+        if st.form_submit_button("Run projection", type="primary"):
+            st.session_state["proj_ran"] = True
 
     # ── Run simulation ────────────────────────────────────────────────────────
     N_PATHS      = 500
@@ -3582,14 +3609,10 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
     total_trades = int(trades_per_month) * int(total_months)
     loss_rr      = base_avg_loss_rr  # always from real data
 
-    rng         = np.random.default_rng(42)
-    draws       = rng.random((N_PATHS, total_trades))
-    is_win      = draws < wr_frac
-    is_be       = (~is_win) & (draws < wr_frac + be_frac)
-    rr_matrix   = np.where(is_win, avg_win_rr, np.where(is_be, 0.0, -loss_rr))
-    pct_change  = rr_matrix * (risk_pct / 100.0)
-    growth      = np.cumprod(1 + pct_change, axis=1)
-    equity_paths = starting_balance * growth
+    rng = np.random.default_rng(42)
+    rr_matrix, equity_paths = _mc_paths(N_PATHS, total_trades, wr_frac, be_frac,
+                                        float(avg_win_rr), float(loss_rr),
+                                        float(risk_pct), float(starting_balance))
 
     final_balances = equity_paths[:, -1]
     median_idx = int(np.argsort(final_balances)[N_PATHS // 2])
@@ -3667,8 +3690,9 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
 
     # ── Spaghetti chart ───────────────────────────────────────────────────────
     trade_axis  = np.arange(0, total_trades + 1)
-    step        = max(1, total_trades // 200)
-    sample_idxs = rng.choice(N_PATHS, size=min(80, N_PATHS), replace=False)
+    # keep the payload small: ~80 points per path, 30 background paths
+    step        = max(1, total_trades // 80)
+    sample_idxs = rng.choice(N_PATHS, size=min(30, N_PATHS), replace=False)
 
     bg_rows = []
     for i in sample_idxs:
@@ -3720,10 +3744,11 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
         .encode(y="y:Q")
     )
 
-    st.altair_chart(
-        styler((bg_chart + hl_chart + rule).properties(height=360)),
-        use_container_width=True
-    )
+    with st.spinner("Simulating…"):
+        st.altair_chart(
+            styler((bg_chart + hl_chart + rule).properties(height=360)),
+            use_container_width=True
+        )
 
     # ── Stats cards ───────────────────────────────────────────────────────────
     s = active_stats

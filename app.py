@@ -1721,11 +1721,14 @@ def main() -> None:
             st.session_state["ea_filters_boot"] = True
             if _raw_f:
                 try:
-                    for _k, _v in (json.loads(_raw_f) or {}).items():
-                        if str(_k).startswith("filters_") and isinstance(_v, str):
-                            st.session_state.setdefault(_k, _v)
-                except Exception:
-                    pass
+                    _fsaved = json.loads(_raw_f) or {}
+                except ValueError:
+                    _fsaved = {}
+                if isinstance(_fsaved, dict) and _fsaved:
+                    # applied by render_filters BEFORE its widgets exist
+                    st.session_state["ea_filters_saved"] = {
+                        str(k): v for k, v in _fsaved.items()
+                        if str(k).startswith("filters_") and isinstance(v, str)}
     if st.session_state.pop("ea_filters_dirty", False):
         _fp = {_k: st.session_state.get(_k)
                for _k in ("filters_inst_select", "filters_em_select", "filters_sess_select",
@@ -1739,15 +1742,13 @@ def main() -> None:
             st.session_state["ea_mplan_boot"] = True
             if _raw_plan:
                 try:
-                    _pb = json.loads(_raw_plan)
-                    # overwrite, not setdefault: the auto-seed lands before this
-                    # async read resolves, and the SAVED plan must win
-                    st.session_state["ea_m_tgt"] = float(_pb["t"])
-                    st.session_state["ea_m_stop"] = float(_pb["s"])
-                    if "c" in _pb:
-                        st.session_state["ea_m_cap"] = int(_pb["c"])
-                except Exception:
-                    pass
+                    _pb = json.loads(_raw_plan) or {}
+                except ValueError:
+                    _pb = {}
+                if isinstance(_pb, dict) and "t" in _pb:
+                    # applied by _perf_settings BEFORE the plan sliders exist —
+                    # writing a widget key from here is rejected by Streamlit
+                    st.session_state["ea_mplan_saved"] = _pb
     if st.session_state.pop("ea_mplan_dirty", False):
         _pb = {"t": float(st.session_state.get("ea_m_tgt", 5.0)),
                "s": float(st.session_state.get("ea_m_stop", -6.0)),

@@ -105,6 +105,18 @@ def render_filters(
     def _filters_dirty():
         st.session_state["ea_filters_dirty"] = True
 
+    # Apply the saved filter set once per session, before these widgets exist
+    _fsaved = st.session_state.get("ea_filters_saved")
+    if _fsaved and not st.session_state.get("ea_filters_applied"):
+        st.session_state["ea_filters_applied"] = True
+        for _k, _opts in (("filters_inst_select", inst_opts), ("filters_em_select", em_opts),
+                          ("filters_sess_select", sess_opts), ("filters_acct_select", acct_opts),
+                          ("filters_tot_select", tot_opts),
+                          ("filters_date_mode", date_mode_options)):
+            _v = _fsaved.get(_k)
+            if _v is not None and _v in (_opts or []):
+                st.session_state[_k] = _v
+
     # A restored value that no longer exists in this journal must not stick
     for _k, _opts in (("filters_inst_select", inst_opts), ("filters_em_select", em_opts),
                       ("filters_sess_select", sess_opts), ("filters_acct_select", acct_opts),
