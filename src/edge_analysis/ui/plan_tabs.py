@@ -484,7 +484,7 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
     if give == give and (max(net, 0.0) + float(give)) > 0:
         comps.append(max(net, 0.0) / (max(net, 0.0) + float(give)))
     grade = None
-    if comps:
+    if comps and n >= 3:
         _sc = sum(comps) / len(comps) * 100
         grade = "A" if _sc >= 85 else "B" if _sc >= 70 else "C" if _sc >= 55 else "D" if _sc >= 40 else "F"
 
@@ -502,6 +502,9 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
         cards.append(card("GIVEN BACK", f"{give:.1f}R", "MFE not banked", RED if give > 2 else "#0f172a"))
     if grade:
         cards.append(card("WEEK GRADE", grade, "process, not profit", PURPLE))
+    elif comps:
+        cards.append(card("WEEK GRADE", "\u2014", f"{n} trade{'s' if n != 1 else ''} — too few to grade",
+                          "#94a3b8"))
     if not cards:
         cards = [card("TRADES", f"{n}", f"{n_w}W · {n_be}BE · {n_l}L", "#0f172a"),
                  card("NET R", _fmt_r(net), f"ex-best: {_fmt_r(ex_best)}", GREEN if net >= 0 else RED)]
