@@ -1250,6 +1250,27 @@ def inject_theme():
             width: 94vw !important; max-width: 94vw !important;
             max-height: 72vh !important;
         }}
+        /* Menus must be able to shrink: min-content width was pushing the
+           overflow menu (400px) off a 390px screen */
+        [data-testid="stPopoverBody"], div[data-baseweb="popover"] {{
+            min-width: 0 !important;
+        }}
+        div[data-testid="stPopoverBody"]:has(.ea-moremenu) {{
+            width: 90vw !important; max-width: 90vw !important;
+        }}
+        [data-testid="stPopoverBody"] button, [data-testid="stPopoverBody"] button p {{
+            white-space: normal !important; word-break: break-word;
+        }}
+        /* Header stays one row on a phone instead of stacking three deep */
+        div[data-testid="stHorizontalBlock"]:has(.ea-themeseg) {{
+            flex-wrap: nowrap !important; gap: 6px !important;
+        }}
+        div[data-testid="stHorizontalBlock"]:has(.ea-themeseg) > div {{
+            width: auto !important; min-width: 0 !important; flex: 0 0 auto !important;
+        }}
+        div[data-testid="stHorizontalBlock"]:has(.ea-themeseg) > div:first-child {{
+            flex: 1 1 auto !important;
+        }}
         div[data-testid="stPopoverBody"]:has(.ea-chat-body) div[style*="margin:4px 0 4px 48px"],
         div[data-testid="stPopoverBody"]:has(.ea-chat-body) div[style*="margin:4px 48px 4px 0"] {{
             margin-left: 8px !important; margin-right: 8px !important;
