@@ -4729,9 +4729,8 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
                         _net = u + float(_c)
                         usd_note += (f" gross · {'-' if _net < 0 else ''}${abs(_net):,.0f} "
                                      "after costs")
-                    _bal = float(st.session_state.get("ea_m_bal", 0) or 0)
-                    if _bal > 0:
-                        usd_note += f" · {_net / _bal * 100:+.2f}% of account"
+                    # the % headline above already states the return, on the
+                    # month's opening balance — no second, differently-based copy
                 cards.append(
                     f"<div style='flex:1;min-width:200px;max-width:290px;background:#fbfcfe;"
                     f"border:1px solid #eef0f4;border-left:5px solid {c};"
