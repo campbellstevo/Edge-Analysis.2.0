@@ -262,7 +262,9 @@ def render_filters(
         st.session_state[k] = True
 
     _eyebrow = ("<div style='font-size:10.5px;font-weight:700;letter-spacing:0.07em;"
-                "color:#94a3b8;margin:2px 0 4px;'>{}</div>")
+                "color:#94a3b8;margin:2px 0 5px;'>{}</div>")
+    _eyebrow_div = ("<div style='border-top:1px solid rgba(148,163,184,0.22);"
+                    "margin:9px 0 0;'></div>" + _eyebrow)
     with _more:
         st.markdown('<div class="ea-moremenu"></div>', unsafe_allow_html=True)
         _cur = st.session_state.get(SessionKeys.NAV_PAGE, PageNames.DASHBOARD)
@@ -272,7 +274,7 @@ def render_filters(
                   on_click=_go, args=(PageNames.DASHBOARD,))
         st.button(PageNames.CONNECT, key="mm_tmpl", use_container_width=True,
                   on_click=_go, args=(PageNames.CONNECT,))
-        st.markdown(_eyebrow.format("ACTIONS"), unsafe_allow_html=True)
+        st.markdown(_eyebrow_div.format("ACTIONS"), unsafe_allow_html=True)
         st.button("Refresh data", key="mm_refresh", use_container_width=True,
                   on_click=_refresh)
         st.button("Sign in on iPhone", key="mm_qr", use_container_width=True,
@@ -280,7 +282,7 @@ def render_filters(
         if _fb:
             st.button("Send feedback", key="mm_fb", use_container_width=True,
                       on_click=_flag, args=("ea_show_feedback",))
-        st.markdown(_eyebrow.format("HELP"), unsafe_allow_html=True)
+        st.markdown(_eyebrow_div.format("HELP"), unsafe_allow_html=True)
         st.button("Getting started", key="mm_setup", use_container_width=True,
                   on_click=_flag, args=("ea_show_setup",))
         st.button("What the stats mean", key="mm_help", use_container_width=True,

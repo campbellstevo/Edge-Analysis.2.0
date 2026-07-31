@@ -964,6 +964,16 @@ def inject_theme():
     div[data-testid="stPopoverBody"]:has(.ea-moremenu) button:hover {{ background: #f4f2ff !important; }}
     div[data-testid="stPopoverBody"]:has(.ea-moremenu) button:hover p {{ color: #4800ff !important; }}
     div[data-testid="stPopoverBody"]:has(.ea-moremenu) div[data-testid="stElementContainer"] {{
+        margin: 0 !important;
+    }}
+    div[data-testid="stPopoverBody"]:has(.ea-moremenu) div[data-testid="stVerticalBlock"] {{
+        gap: 0 !important;
+    }}
+    div[data-testid="stPopoverBody"]:has(.ea-moremenu) button {{
+        padding: 6px 10px !important; min-height: 32px !important;
+    }}
+    div[data-testid="stPopoverBody"]:has(.ea-moremenu)
+        div[data-testid="stElementContainer"]:has(+ div[data-testid="stElementContainer"] button) {{
         margin-bottom: 0 !important;
     }}
 

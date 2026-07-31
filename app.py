@@ -959,6 +959,33 @@ def _js_eval(expr: str, key: str):
         return None
 
 
+def _prefs_blob() -> dict:
+    """Read every stored preference in ONE browser round-trip. Four separate
+    components meant four component mounts (and reruns) on every cold boot."""
+    if "ea_prefs" in st.session_state:
+        return st.session_state["ea_prefs"]
+    tries = int(st.session_state.get("ea_prefs_tries", 0))
+    if tries >= 6:
+        return {}
+    st.session_state["ea_prefs_tries"] = tries + 1
+    raw = _js_eval(
+        "JSON.stringify({v:localStorage.getItem('ea_view')||'',"
+        "f:localStorage.getItem('ea_filters')||'',"
+        "p:localStorage.getItem('ea_mplan')||'',"
+        "t:localStorage.getItem('ea_theme')||''})",
+        key="ea_prefs_load")
+    if not raw:
+        return {}
+    try:
+        blob = json.loads(raw) or {}
+    except ValueError:
+        return {}
+    if isinstance(blob, dict) and any(blob.values()):
+        st.session_state["ea_prefs"] = blob
+        return blob
+    return {}
+
+
 def _sync_device_auth() -> None:
     """Persist the current login to this device's browser storage, so the next
     visit to the plain URL logs in automatically (critical on phones, where the
@@ -1707,18 +1734,17 @@ def main() -> None:
     _require_notion_login()
 
     # Theme preference: restore from this device, persist changes, apply overlay
+    _prefs = _prefs_blob()
     if "ea_view_pref" not in st.session_state:
-        _saved_view = _js_eval("localStorage.getItem('ea_view') || ''", key="ea_view_load")
+        _saved_view = _prefs.get("v") or ""
         if _saved_view in ("Chart", "Table"):
             st.session_state["ea_view_pref"] = _saved_view
     if st.session_state.pop("ea_view_dirty", False):
         _js_eval("localStorage.setItem('ea_view', "
                  + json.dumps(st.session_state.get("ea_view_pref", "Chart")) + ")",
                  key="ea_view_save")
-    _ftries = int(st.session_state.get("ea_filters_tries", 0))
-    if "ea_filters_saved" not in st.session_state and _ftries < 6:
-        st.session_state["ea_filters_tries"] = _ftries + 1
-        _raw_f = _js_eval("localStorage.getItem('ea_filters') || ''", key="ea_filters_load")
+    if "ea_filters_saved" not in st.session_state:
+        _raw_f = _prefs.get("f") or ""
         if _raw_f:
             try:
                 _fsaved = json.loads(_raw_f) or {}
@@ -1736,10 +1762,8 @@ def main() -> None:
                if isinstance(st.session_state.get(_k), str)}
         _js_eval("localStorage.setItem('ea_filters', " + json.dumps(json.dumps(_fp)) + ")",
                  key="ea_filters_save")
-    _ptries = int(st.session_state.get("ea_mplan_tries", 0))
-    if "ea_mplan_saved" not in st.session_state and _ptries < 6:
-        st.session_state["ea_mplan_tries"] = _ptries + 1
-        _raw_plan = _js_eval("localStorage.getItem('ea_mplan') || ''", key="ea_mplan_load")
+    if "ea_mplan_saved" not in st.session_state:
+        _raw_plan = _prefs.get("p") or ""
         if _raw_plan:
             try:
                 _pb = json.loads(_raw_plan) or {}
@@ -1753,13 +1777,13 @@ def main() -> None:
         _pb = {"t": float(st.session_state.get("ea_m_tgt", 5.0)),
                "s": float(st.session_state.get("ea_m_stop", -6.0)),
                "c": int(st.session_state.get("ea_m_cap", 12)),
-               "b": int(st.session_state.get("ea_m_bal", 10000))}
+               "b": float(st.session_state.get("ea_m_bal", 10000.0))}
         _js_eval("localStorage.setItem('ea_mplan', " + json.dumps(json.dumps(_pb)) + ")",
                  key="ea_mplan_save")
     if st.session_state.pop("ea_mplan_clear", False):
         _js_eval("localStorage.removeItem('ea_mplan')", key="ea_mplan_clear_js")
     if "ea_theme_pref" not in st.session_state:
-        _saved_theme = _js_eval("localStorage.getItem('ea_theme') || ''", key="ea_theme_load")
+        _saved_theme = _prefs.get("t") or ""
         if _saved_theme in ("dark", "light"):
             st.session_state["ea_theme_pref"] = _saved_theme
     if st.session_state.pop("ea_theme_dirty", False):

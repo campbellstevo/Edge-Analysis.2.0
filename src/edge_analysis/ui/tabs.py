@@ -598,7 +598,7 @@ def _perf_settings(g: pd.DataFrame):
             if "c" in _saved:
                 st.session_state["ea_m_cap"] = int(_saved["c"])
             if "b" in _saved:
-                st.session_state["ea_m_bal"] = int(_saved["b"])
+                st.session_state["ea_m_bal"] = float(_saved["b"])
                 st.session_state.pop("ea_m_bal_auto", None)  # it's yours now, not derived
         except (KeyError, TypeError, ValueError):
             pass
