@@ -515,6 +515,24 @@ def _balance_track(g: pd.DataFrame, current: float):
     return opening.reindex(g.index), starts
 
 
+def _period_pct(g: pd.DataFrame, mask, balance: float):
+    """Return % for a slice of trades: net dollars (incl. costs) over the balance
+    at the start of the month those trades sit in. None when it can't be known."""
+    pnl = _pnl_series(g)
+    if pnl is None or balance is None or balance <= 0 or "__Date" not in g.columns:
+        return None
+    rr_ok = pd.to_numeric(g.get("PnL_from_RR"), errors="coerce").notna()
+    sel = mask & rr_ok
+    if not bool(sel.any()):
+        return 0.0
+    _, starts = _balance_track(g, balance)
+    per = g.loc[sel, "__Date"].min().to_period("M")
+    base = starts.get(per, balance)
+    if not base or base <= 0:
+        return None
+    return float(pnl[sel].fillna(0.0).sum()) / float(base) * 100.0
+
+
 def _median_stop_usd(g: pd.DataFrame):
     """Median dollar loss on a full-stop (~-1R) trade, or None."""
     try:
@@ -689,13 +707,18 @@ def _month_card(f: pd.DataFrame, styler) -> None:
             _src = st.session_state.get("ea_m_bal_src")
             _bal_note = ((" (" + str(_src) + " \u2014 set it in \u270e)")
                          if (_src and st.session_state.get("ea_m_bal_auto")) else "")
+            _mtd_pct = _period_pct(g, g["__Date"].dt.to_period("M") == now_p, _bal_disp)
+            _wk_pct = _period_pct(
+                g, g["__Date"] >= (pd.Timestamp.now() - pd.Timedelta(days=7)), _bal_disp)
+            _cur_txt = f"{_mtd_pct:+.2f}%" if _mtd_pct is not None else _pct_txt(cur, _rp)
+            _wk_txt = f"{_wk_pct:+.2f}%" if _wk_pct is not None else _pct_txt(wk_r, _rp)
             st.markdown(
                 f"<div style='font-size:12px;font-weight:700;letter-spacing:0.08em;"
                 f"color:#94a3b8;'>{pd.Timestamp.now().strftime('%B').upper()}</div>"
                 f"<div style='font-size:38px;font-weight:800;color:{cc};line-height:1.1;'>"
-                f"{_pct_txt(cur, _rp)}"
+                f"{_cur_txt}"
                 f"<span style='font-size:15px;font-weight:700;color:{wc};margin-left:14px;'>"
-                f"{arrow} {_pct_txt(wk_r, _rp)} this week</span></div>"
+                f"{arrow} {_wk_txt} this week</span></div>"
                 f"<div style='font-size:12.5px;color:#8a93a6;margin-top:2px;'>"
                 f"{cur:+,.1f}R \u00b7 {n_tr} trades \u00b7 risk {_rp:.2f}%/trade on "
                 f"${_bal_disp:,.0f}{_bal_note}</div>",
