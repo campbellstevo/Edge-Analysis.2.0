@@ -629,6 +629,19 @@ def render_connect_page(mobile: bool):
     with st.container():
         st.markdown('<div class="connect-wrap">', unsafe_allow_html=True)
         st.markdown('<div class="ea-title">Change Template</div>', unsafe_allow_html=True)
+        if not st.session_state.get(SessionKeys.USER_TOKEN):
+            st.markdown(
+                "<div style='text-align:center;font-size:14px;color:#64748b;"
+                "margin:2px 0 10px;'>Just looking? Explore every chart with a "
+                "realistic simulated journal — no account, nothing to connect.</div>",
+                unsafe_allow_html=True)
+            _dc1, _dc2, _dc3 = st.columns([1, 1.2, 1])
+            with _dc2:
+                st.button("▶ View the live demo", key="ea_demo_enter", type="primary",
+                          use_container_width=True, on_click=_enter_demo)
+            st.markdown("<div style='text-align:center;color:#cbd5e1;"
+                        "font-size:12px;margin:2px 0 10px;'>— or connect your own —</div>",
+                        unsafe_allow_html=True)
         st.markdown('<div class="ea-card">', unsafe_allow_html=True)
 
         # Step 1: OAuth
@@ -1225,8 +1238,11 @@ def render_dashboard(mobile: bool):
         if not dbid:
             dbid = _runtime_secret("DATABASE_ID")
 
+    _demo = bool(st.session_state.get("ea_demo"))
     _sync = st.session_state.get("ea_last_sync")
     _status = "Live · Notion connected" if (token and dbid) else "Not connected"
+    if _demo:
+        _status = "Demo · simulated data"
     if token and dbid and _sync:
         try:
             _age = max(0.0, float(pd.Timestamp.now().timestamp()) - float(_sync))
@@ -1241,13 +1257,29 @@ def render_dashboard(mobile: bool):
             _status += f" · synced {_ago}"
         except (TypeError, ValueError):
             pass  # legacy HH:MM stamp from an older session — drop it
-    inject_header_bar(_status, bool(token and dbid))
-    st.session_state["_ea_connected"] = bool(token and dbid)
+    inject_header_bar(_status, bool(token and dbid) or _demo)
+    st.session_state["_ea_connected"] = bool(token and dbid) or _demo
 
-    with st.spinner("Fetching trades from Notion…"):
-        df = load_live_df(token, dbid)
+    if _demo:
+        df = _demo_frame(pd.Timestamp.now().strftime("%Y-%m-%d"))
+        _db1, _db2 = st.columns([4.2, 1])
+        with _db1:
+            st.markdown(
+                "<div style='background:linear-gradient(90deg,#4800ff12,#4800ff08);"
+                "border:1px solid #4800ff33;border-radius:12px;padding:10px 16px;"
+                "font-size:13.5px;color:#3b3f4d;margin:2px 0 8px;'>"
+                "<b style='color:#4800ff;'>You're exploring the demo</b> — a simulated "
+                "gold-trading journal. Every chart, insight and the analyst chat work "
+                "exactly like this on your own Notion journal.</div>",
+                unsafe_allow_html=True)
+        with _db2:
+            st.button("Connect my data", key="ea_demo_exit", type="primary",
+                      use_container_width=True, on_click=_exit_demo)
+    else:
+        with st.spinner("Fetching trades from Notion…"):
+            df = load_live_df(token, dbid)
 
-    if token and dbid:
+    if (token and dbid) or _demo:
         pass
     else:
         with st.container():
@@ -1747,14 +1779,51 @@ def _whoop_bootstrap() -> None:
             st.session_state["whoop_state"] = state
         st.session_state["whoop_auth_url"] = whoop.authorize_url(cid, ruri, state)
 
+_DEMO_RESET_KEYS = ("ea_mplan_saved", "ea_filters_saved", "ea_m_tgt", "ea_m_stop",
+                    "ea_m_cap", "ea_m_bal", "ea_m_bal_auto", "ea_m_bal_src",
+                    "ea_plan_user_edited", "ea_filters_applied", "proj_ran",
+                    "ea_chat", "ea_last_sync")
+
+
+def _enter_demo() -> None:
+    for _k in _DEMO_RESET_KEYS:
+        st.session_state.pop(_k, None)
+    for _k in [k for k in list(st.session_state) if str(k).startswith("filters_")]:
+        st.session_state.pop(_k, None)
+    st.session_state["ea_demo"] = True
+    st.session_state[SessionKeys.NAV_TARGET] = PageNames.DASHBOARD
+
+
+def _exit_demo() -> None:
+    for _k in _DEMO_RESET_KEYS:
+        st.session_state.pop(_k, None)
+    for _k in [k for k in list(st.session_state) if str(k).startswith("filters_")]:
+        st.session_state.pop(_k, None)
+    st.session_state.pop("ea_demo", None)
+    st.session_state[SessionKeys.NAV_TARGET] = PageNames.CONNECT
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def _demo_frame(_day: str):
+    from edge_analysis.demo import demo_df
+    return demo_df()
+
+
 def main() -> None:
     """Main application entry point."""
     # WHOOP OAuth: handle logout + redirect before the Notion login gate
     _handle_whoop_logout()
     _handle_whoop_callback()
 
-    # Require login
-    _require_notion_login()
+    # Demo mode: explore with simulated data, no account needed
+    if str(_get_query_param("demo") or "").lower() in ("1", "true", "yes") \
+            and not st.session_state.get("ea_demo"):
+        _enter_demo()
+    _demo = bool(st.session_state.get("ea_demo"))
+
+    # Require login (the demo skips it by design)
+    if not _demo:
+        _require_notion_login()
 
     # Theme preference: restore from this device, persist changes, apply overlay
     _prefs = _prefs_blob()
@@ -1766,7 +1835,7 @@ def main() -> None:
         _js_eval("localStorage.setItem('ea_view', "
                  + json.dumps(st.session_state.get("ea_view_pref", "Chart")) + ")",
                  key="ea_view_save")
-    if "ea_filters_saved" not in st.session_state:
+    if "ea_filters_saved" not in st.session_state and not _demo:
         _raw_f = _prefs.get("f") or ""
         if _raw_f:
             try:
@@ -1778,14 +1847,14 @@ def main() -> None:
                 st.session_state["ea_filters_saved"] = {
                     str(k): v for k, v in _fsaved.items()
                     if str(k).startswith("filters_") and isinstance(v, str)}
-    if st.session_state.pop("ea_filters_dirty", False):
+    if st.session_state.pop("ea_filters_dirty", False) and not _demo:
         _fp = {_k: st.session_state.get(_k)
                for _k in ("filters_inst_select", "filters_em_select", "filters_sess_select",
                           "filters_acct_select", "filters_tot_select", "filters_date_mode")
                if isinstance(st.session_state.get(_k), str)}
         _js_eval("localStorage.setItem('ea_filters', " + json.dumps(json.dumps(_fp)) + ")",
                  key="ea_filters_save")
-    if "ea_mplan_saved" not in st.session_state:
+    if "ea_mplan_saved" not in st.session_state and not _demo:
         _raw_plan = _prefs.get("p") or ""
         if _raw_plan:
             try:
@@ -1796,7 +1865,7 @@ def main() -> None:
                 # applied by _perf_settings BEFORE the plan sliders exist —
                 # writing a widget key from here is rejected by Streamlit
                 st.session_state["ea_mplan_saved"] = _pb
-    if st.session_state.pop("ea_mplan_dirty", False):
+    if st.session_state.pop("ea_mplan_dirty", False) and not _demo:
         _pb = {"t": float(st.session_state.get("ea_m_tgt", 5.0)),
                "s": float(st.session_state.get("ea_m_stop", -6.0)),
                "c": int(st.session_state.get("ea_m_cap", 12)),
@@ -1816,14 +1885,13 @@ def main() -> None:
     if st.session_state.get("ea_theme_pref") == "dark":
         inject_dark_overlay()
 
-    # Recover the template choice from this device if the server forgot it
-    _recover_db_from_device()
-
-    # Remember this login on the device (phones especially)
-    _sync_device_auth()
-
-    # WHOOP: restore/refresh token and prepare connect URL
-    _whoop_bootstrap()
+    if not _demo:
+        # Recover the template choice from this device if the server forgot it
+        _recover_db_from_device()
+        # Remember this login on the device (phones especially)
+        _sync_device_auth()
+        # WHOOP: restore/refresh token and prepare connect URL
+        _whoop_bootstrap()
 
     # Initialize session state from query params
     if SessionKeys.LAYOUT not in st.session_state:

@@ -4918,6 +4918,8 @@ def _whoop_enabled() -> bool:
     Notion user id). No owner secret => visible to any user (opt-in)."""
     try:
         import streamlit as _st
+        if _st.session_state.get("ea_demo"):
+            return False
         if not (_st.secrets.get("WHOOP_CLIENT_ID") and _st.secrets.get("WHOOP_CLIENT_SECRET")):
             return False
         owner = str(_st.secrets.get("WHOOP_OWNER") or "").strip().lower()
