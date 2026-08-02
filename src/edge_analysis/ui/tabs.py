@@ -579,6 +579,17 @@ def _risk_pct(g: pd.DataFrame) -> float:
             return 1.0
         full = (rr <= -0.85) & (rr >= -1.15) & pnl.notna() & (pnl < 0)
         if int(full.sum()) >= 3:
+            # each stop against the balance BEHIND that trade — on a compounding
+            # account, dividing old stops by today's balance understates risk
+            try:
+                opening, _ = _balance_track(g, bal)
+                if opening is not None:
+                    per = (pnl[full].abs() / opening[full].clip(lower=1.0)) * 100.0
+                    per = per[per.notna()]
+                    if len(per) >= 3:
+                        return float(max(0.05, min(10.0, per.median())))
+            except Exception:
+                pass
             return float(max(0.05, min(10.0, pnl[full].abs().median() / bal * 100.0)))
     except Exception:
         pass
