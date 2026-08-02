@@ -1804,6 +1804,12 @@ def _exit_demo() -> None:
     for _k in [k for k in list(st.session_state) if str(k).startswith("filters_")]:
         st.session_state.pop(_k, None)
     st.session_state.pop("ea_demo", None)
+    st.session_state["ea_demo_exited"] = True   # stops ?demo=1 re-entering forever
+    try:
+        if "demo" in st.query_params:
+            del st.query_params["demo"]
+    except Exception:
+        pass
     st.session_state[SessionKeys.NAV_TARGET] = PageNames.CONNECT
 
 
@@ -1821,7 +1827,8 @@ def main() -> None:
 
     # Demo mode: explore with simulated data, no account needed
     if str(_get_query_param("demo") or "").lower() in ("1", "true", "yes") \
-            and not st.session_state.get("ea_demo"):
+            and not st.session_state.get("ea_demo") \
+            and not st.session_state.get("ea_demo_exited"):
         _enter_demo()
     _demo = bool(st.session_state.get("ea_demo"))
 
