@@ -953,15 +953,16 @@ def _render_login_page():
     except Exception:
         pass
 
+    _top_url = _js_eval(
+        "window.top.location.origin + window.top.location.pathname", key="ea_wall_top")
+    _demo_href = (str(_top_url).rstrip("/") + "/?demo=1") if _top_url else "?demo=1"
     st.markdown(
         f"""
         <div class="ea-signin-wrap">
           <div class="ea-signin-card">
             {logo_html}
             <p>Connect your trading journal to unlock insights.</p>
-            <a href="?demo=1"
-               onclick="try{{var t=window.top;t.location.href=t.location.pathname+'?demo=1';}}catch(e){{}}return false;"
-               class="ea-link-btn" style="background:#ffffff;
+            <a href="{_demo_href}" target="_top" class="ea-link-btn" style="background:#ffffff;
                color:#4800ff;border:2px solid #4800ff;">▶ View the live demo</a>
             <div style="font-size:12.5px;color:#94a3b8;margin:6px 0 14px;">
               Realistic simulated journal — nothing to connect</div>
