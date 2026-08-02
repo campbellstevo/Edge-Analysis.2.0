@@ -104,3 +104,4 @@ fpdf2==2.7.9
 # rebuild 93
 # rebuild 94
 # rebuild 95
+# rebuild 96
