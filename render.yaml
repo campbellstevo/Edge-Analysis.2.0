@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: edge-analysis
+    runtime: docker
+    plan: starter
+    healthCheckPath: /_stcore/health
+    disk:
+      name: ea-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: EA_STORE_PATH
+        value: /var/data/user_store.json
+      - key: NOTION_OAUTH_CLIENT_ID
+        sync: false
+      - key: NOTION_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: NOTION_OAUTH_REDIRECT_URI
+        sync: false
+      - key: WHOOP_CLIENT_ID
+        sync: false
+      - key: WHOOP_CLIENT_SECRET
+        sync: false
+      - key: WHOOP_REDIRECT_URI
+        sync: false
+      - key: FEEDBACK_NOTION_TOKEN
+        sync: false
+      - key: FEEDBACK_PAGE_ID
+        sync: false
+      - key: STORE_PAGE_ID
+        sync: false
+      - key: SENTRY_DSN
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
