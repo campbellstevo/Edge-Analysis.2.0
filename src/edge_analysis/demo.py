@@ -88,7 +88,7 @@ def demo_df(today: pd.Timestamp | None = None, seed: int = 9) -> pd.DataFrame:
                 "Instrument": "Gold", "Pair": "XAUUSD",
                 "Session": sess, "Session Norm": sess,
                 "Direction": str(rng.choice(["Long", "Short"], p=[.56, .44])),
-                "Entry Model": model, "Entry Models List": [[model]],
+                "Entry Model": model, "Entry Models List": [model],
                 "Multi Entry Model Setup": "Yes" if rng.random() < 0.2 else "No",
                 "DIV?": "Yes" if rng.random() < 0.42 else "No",
                 "Sweep?": "Yes" if rng.random() < 0.5 else "No",

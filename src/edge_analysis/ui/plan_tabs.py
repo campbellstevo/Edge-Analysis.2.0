@@ -286,6 +286,8 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
             sub = g.loc[m, "__rr"]
             wr = float((sub > 0).mean() * 100)
             ex = _avg(sub)
+            if abs(ex) < 0.005:
+                ex = 0.0  # never render a red "-0.00R"
             lab = f"{lo}–{hi}RR" if hi < 99 else f"{lo}RR+"
             rws += (f"<tr><td class='text'>{lab}</td><td class='num'>{n}</td>"
                     f"<td class='num'>{wr:.0f}%</td>"
