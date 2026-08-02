@@ -953,28 +953,40 @@ def _render_login_page():
     except Exception:
         pass
 
-    _top_url = _js_eval(
-        "window.top.location.origin + window.top.location.pathname", key="ea_wall_top")
-    _demo_href = (str(_top_url).rstrip("/") + "/?demo=1") if _top_url else "?demo=1"
-    st.markdown(
-        f"""
-        <div class="ea-signin-wrap">
-          <div class="ea-signin-card">
-            {logo_html}
-            <p>Connect your trading journal to unlock insights.</p>
-            <a href="{_demo_href}" target="_top" class="ea-link-btn" style="background:#ffffff;
-               color:#4800ff;border:2px solid #4800ff;">▶ View the live demo</a>
-            <div style="font-size:12.5px;color:#94a3b8;margin:6px 0 14px;">
+    st.markdown("""
+        <style>
+        div[data-testid="stVerticalBlock"]:has(> div.stElementContainer .ea-wallcard) {
+            background: #ffffff; border-radius: 24px; max-width: 480px;
+            padding: 3rem; border: 1px solid #e6e8f3;
+            box-shadow: 0 16px 36px rgba(72, 0, 255, 0.1);
+            margin: 8vh auto 0; text-align: center; gap: 0 !important;
+        }
+        div[data-testid="stVerticalBlock"]:has(> div.stElementContainer .ea-wallcard)
+            .stButton > button {
+            width: 100%; background: #ffffff; color: #4800ff;
+            border: 2px solid #4800ff; border-radius: 999px;
+            font-weight: 700; padding: 0.72rem 1rem;
+        }
+        div[data-testid="stVerticalBlock"]:has(> div.stElementContainer .ea-wallcard)
+            .stButton > button:hover {
+            background: #f4f0ff; color: #4800ff; border-color: #4800ff;
+        }
+        </style>""", unsafe_allow_html=True)
+    with st.container():
+        st.markdown(
+            f"""<div class="ea-wallcard"></div>{logo_html}
+            <p style="margin:0 0 18px;">Connect your trading journal to unlock insights.</p>""",
+            unsafe_allow_html=True)
+        st.button("▶ View the live demo", key="ea_demo_enter_wall",
+                  use_container_width=True, on_click=_enter_demo)
+        st.markdown(
+            f"""<div style="font-size:12.5px;color:#94a3b8;margin:6px 0 16px;">
               Realistic simulated journal — nothing to connect</div>
             <a href="{auth_url}" class="ea-link-btn">Sign in with Notion</a>
             <div class="ea-login-note">
               🔒 Your Notion credentials are never stored. Authentication is handled securely via Notion's OAuth system.
-            </div>
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+            </div>""",
+            unsafe_allow_html=True)
     with st.expander("On your phone and it opens the Notion app instead?"):
         st.markdown(
             "That happens when your phone's **browser** isn't signed in to Notion — "
