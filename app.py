@@ -1791,6 +1791,10 @@ def _enter_demo() -> None:
     for _k in [k for k in list(st.session_state) if str(k).startswith("filters_")]:
         st.session_state.pop(_k, None)
     st.session_state["ea_demo"] = True
+    # a deliberate-looking plan, so the pills never show a degenerate auto seed
+    st.session_state["ea_m_tgt"] = 5.0
+    st.session_state["ea_m_stop"] = -6.0
+    st.session_state["ea_m_cap"] = 20
     st.session_state[SessionKeys.NAV_TARGET] = PageNames.DASHBOARD
 
 
