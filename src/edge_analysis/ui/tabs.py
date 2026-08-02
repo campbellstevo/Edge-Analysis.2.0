@@ -587,7 +587,13 @@ def _risk_pct(g: pd.DataFrame) -> float:
                     per = (pnl[full].abs() / opening[full].clip(lower=1.0)) * 100.0
                     per = per[per.notna()]
                     if len(per) >= 3:
-                        return float(max(0.05, min(10.0, per.median())))
+                        _rp = float(max(0.05, min(10.0, per.median())))
+                        # stops carry slippage/spread noise; a trader's risk POLICY
+                        # is almost always a round number — snap when within a hair
+                        for _q in (0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0):
+                            if abs(_rp - _q) <= 0.035:
+                                return _q
+                        return _rp
             except Exception:
                 pass
             return float(max(0.05, min(10.0, pnl[full].abs().median() / bal * 100.0)))
