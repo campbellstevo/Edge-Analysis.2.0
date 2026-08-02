@@ -287,6 +287,8 @@ def render_filters(
                   on_click=_flag, args=("ea_show_setup",))
         st.button("What the stats mean", key="mm_help", use_container_width=True,
                   on_click=_flag, args=("ea_show_help",))
+        st.button("Privacy & terms", key="mm_legal", use_container_width=True,
+                  on_click=_flag, args=("ea_show_legal",))
     if st.session_state.pop("ea_show_qr", False):
         if _qr_dialog is not None:
             _qr_dialog()
@@ -305,6 +307,12 @@ def render_filters(
         else:
             with st.expander("Getting started", expanded=True):
                 _setup_body()
+    if st.session_state.pop("ea_show_legal", False):
+        if _legal_dialog is not None:
+            _legal_dialog()
+        else:
+            with st.expander("Privacy & terms", expanded=True):
+                _legal_body()
     if st.session_state.pop("ea_show_feedback", False):
         if _feedback_dialog is not None:
             _feedback_dialog()
@@ -379,6 +387,44 @@ try:
         _help_body()
 except Exception:
     _help_dialog = None
+
+
+LEGAL_MD = """
+**Your data.** Your trading journal stays in **your** Notion workspace — the app reads
+it to draw your dashboard. This server keeps only your account link (Notion name,
+email, chosen template) and a short-lived cache of your journal for speed. Sign-in
+and preferences live in your own browser. If you connect WHOOP, its token is stored
+in a private page inside your own Notion, not here.
+
+**What we never do.** No selling or sharing of data, no ads, no training on your
+journal, no ability to place trades. The optional AI chat sends only your question
+plus a compact statistical summary — never your raw journal — to Anthropic's API.
+
+**Deleting.** Disconnect in the app or email campbellstevo@gmail.com and we delete
+your account link and cache. Your journal in Notion is untouched either way.
+
+---
+
+**Not financial advice.** Statistics, projections and chat answers describe your own
+past data. They are not recommendations or predictions; trading involves substantial
+risk of loss. The service is provided as-is, may change or pause, and we are not
+liable for trading decisions made with it. Governed by the laws of Victoria,
+Australia. Continued use after an update to these terms is acceptance.
+
+_Contact: campbellstevo@gmail.com \u00b7 Full text: PRIVACY.md and TERMS.md in the repository._
+"""
+
+
+def _legal_body() -> None:
+    st.markdown(LEGAL_MD)
+
+
+try:
+    @st.dialog("Privacy & terms")
+    def _legal_dialog():
+        _legal_body()
+except Exception:
+    _legal_dialog = None
 
 
 def _setup_body() -> None:

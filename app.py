@@ -29,6 +29,28 @@ from edge_analysis.ui.theme import inject_theme, inject_header, inject_header_ba
 BRAND_PURPLE = "#4800ff"
 
 
+def _init_sentry() -> None:
+    """Crash reporting, active only when a SENTRY_DSN secret exists."""
+    try:
+        import os as _os
+        _dsn = None
+        try:
+            _dsn = st.secrets.get("SENTRY_DSN")
+        except Exception:
+            _dsn = None
+        _dsn = _dsn or _os.environ.get("SENTRY_DSN")
+        if _dsn and not _os.environ.get("_EA_SENTRY_ON"):
+            import sentry_sdk
+            sentry_sdk.init(dsn=str(_dsn), traces_sample_rate=0.0,
+                            send_default_pii=False)
+            _os.environ["_EA_SENTRY_ON"] = "1"
+    except Exception:
+        pass
+
+
+_init_sentry()
+
+
 class SessionKeys:
     """Session state key constants."""
     OAUTH_TOKEN = "override_NOTION_TOKEN"
@@ -1344,8 +1366,9 @@ def render_dashboard(mobile: bool):
             st.code(_tb.format_exc())
     st.markdown(
         "<div style='text-align:center;font-size:12px;color:#b3bac6;margin:34px 0 10px;'>"
-        "Your data stays in your Notion — nothing is stored on this server · "
-        "Edge Analysis is a journal, not financial advice.</div>",
+        "Your trades live in your Notion — this server keeps only your account "
+        "link (name, email, chosen template) and a short-lived cache for speed · "
+        "Edge Analysis is a journal, not financial advice · Privacy &amp; terms in the ⋯ menu.</div>",
         unsafe_allow_html=True)
     try:
         from edge_analysis.ui.chat import render_chat_bubble

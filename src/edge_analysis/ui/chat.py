@@ -795,6 +795,19 @@ def _ask_llm(stats: str, history: list) -> str:
         return "The analyst is unavailable right now — try again in a minute."
 
 
+def _llm_allowed() -> bool:
+    """Server-side daily cap keyed to the signed-in account, so a refresh
+    doesn't reset it. Anonymous/demo sessions get a small session-only cap."""
+    try:
+        uid = st.session_state.get("user_id")
+        if uid:
+            from edge_analysis.user_store import bump_llm_use
+            return bump_llm_use(str(uid), _DAILY_CAP)
+        return int(st.session_state.get("ea_chat_used", 0)) < 5
+    except Exception:
+        return True
+
+
 # ─────────────────────────── UI ──────────────────────────────────────────────
 def render_chat_bubble(df: pd.DataFrame) -> None:
     """Floating 'Ask your data' popover, pinned bottom-right by theme CSS.
@@ -832,7 +845,7 @@ def render_chat_bubble(df: pd.DataFrame) -> None:
             if sent and q and q.strip():
                 hist.append(("user", q.strip()))
                 ans = _builtin_answer(q, df)
-                if ans is None and llm_on and left > 0:
+                if ans is None and llm_on and left > 0 and _llm_allowed():
                     with st.spinner("Reading your stats…"):
                         ans = _ask_llm(_stats_context(df), hist)
                     st.session_state["ea_chat_used"] = used + 1
