@@ -968,6 +968,15 @@ def _render_login_page():
         """,
         unsafe_allow_html=True,
     )
+    _lg1, _lg2, _lg3 = st.columns([1, 1.1, 1])
+    with _lg2:
+        st.markdown(
+            "<div style='text-align:center;font-size:13.5px;color:#64748b;"
+            "margin:16px 0 6px;'>Just looking? See every chart working on a "
+            "realistic simulated journal — nothing to connect.</div>",
+            unsafe_allow_html=True)
+        st.button("▶ View the live demo", key="ea_demo_enter_login",
+                  use_container_width=True, on_click=_enter_demo)
     with st.expander("On your phone and it opens the Notion app instead?"):
         st.markdown(
             "That happens when your phone's **browser** isn't signed in to Notion — "
