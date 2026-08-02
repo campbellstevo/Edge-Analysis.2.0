@@ -74,6 +74,8 @@ def _avg(s) -> float:
 def _fmt_r(v, plus=True) -> str:
     if v != v:
         return "—"
+    if abs(v) < 0.005:
+        v = 0.0  # kill negative zero at the formatter, for every caller
     return f"{v:+.2f}R" if plus else f"{v:.2f}R"
 
 
