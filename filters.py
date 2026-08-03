@@ -279,6 +279,8 @@ def render_filters(
                   on_click=_refresh)
         st.button("Sign in on iPhone", key="mm_qr", use_container_width=True,
                   on_click=_flag, args=("ea_show_qr",))
+        st.button("MT5 auto-sync", key="mm_mt5sync", use_container_width=True,
+                  on_click=_flag, args=("ea_show_mt5sync",))
         if _fb:
             st.button("Send feedback", key="mm_fb", use_container_width=True,
                       on_click=_flag, args=("ea_show_feedback",))
@@ -307,6 +309,12 @@ def render_filters(
         else:
             with st.expander("Getting started", expanded=True):
                 _setup_body()
+    if st.session_state.pop("ea_show_mt5sync", False):
+        if _mt5sync_dialog is not None:
+            _mt5sync_dialog()
+        else:
+            with st.expander("MT5 auto-sync", expanded=True):
+                _mt5sync_body()
     if st.session_state.pop("ea_show_legal", False):
         if _legal_dialog is not None:
             _legal_dialog()
@@ -413,6 +421,34 @@ Australia. Continued use after an update to these terms is acceptance.
 
 _Contact: campbellstevo@gmail.com \u00b7 Full text: PRIVACY.md and TERMS.md in the repository._
 """
+
+
+def _mt5sync_body() -> None:
+    st.markdown(
+        "Every trade you close in **MetaTrader 5** lands in your Notion journal "
+        "by itself — prices, P&L, session, R multiple, MAE/MFE. You only fill in "
+        "the thinking.\n\n"
+        "Download the little sync program, follow the README inside "
+        "(about 5 minutes, one Notion token to paste), and keep it running on "
+        "the Windows PC where MT5 lives. Your journal's ID comes pre-filled.")
+    try:
+        from edge_analysis.mt5_sync_pack import build_zip
+        _dbid = str(st.session_state.get("override_DATABASE_ID") or "")
+        st.download_button("⬇ Download the sync (zip)", data=build_zip(_dbid),
+                           file_name="edge-analysis-mt5-sync.zip",
+                           mime="application/zip", use_container_width=True)
+    except Exception:
+        st.info("The download isn't available right now — refresh and reopen this.")
+    st.caption("Windows + Python required. Already-journaled trades are never "
+               "duplicated, so it's safe to stop and start any time.")
+
+
+try:
+    @st.dialog("MT5 auto-sync")
+    def _mt5sync_dialog():
+        _mt5sync_body()
+except Exception:
+    _mt5sync_dialog = None
 
 
 def _legal_body() -> None:
