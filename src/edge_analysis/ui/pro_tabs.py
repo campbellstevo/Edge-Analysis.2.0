@@ -284,8 +284,13 @@ def _a_game(df, styler) -> None:
     with c1: _kpi("A-Game win rate", f"{a['wr']:.0f}%", f"{a['n']} trades · {a['exp']:+.2f}R", "#16a34a")
     with c2: _kpi("All trades", f"{alls['wr']:.0f}%", f"{alls['n']} trades · {alls['exp']:+.2f}R")
     with c3:
-        if off:
-            _kpi("Off-plan cost", f"{off['net']:+.0f}R", f"total across {off['n']} off-plan trades", "#ef4444" if off['net'] < 0 else PURPLE)
+        if off and off['net'] < 0:
+            _kpi("Off-plan cost", f"{off['net']:+.0f}R",
+                 f"total across {off['n']} off-plan trades", "#ef4444")
+        elif off:
+            _kpi("Off-plan net", f"{off['net']:+.0f}R",
+                 f"{off['n']} off-plan trades still made money — the A-game "
+                 "edge is quality, not survival", PURPLE)
         else:
             _kpi("Off-plan cost", "—", "no off-plan trades")
     st.caption("A-Game = " + " + ".join(used) + ".")
