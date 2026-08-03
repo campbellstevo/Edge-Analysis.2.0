@@ -468,6 +468,8 @@ def _handle_oauth_callback() -> bool:
         st.success("Connected to Notion via OAuth")
         if ws:
             st.caption(f"Workspace: {ws}")
+        if _auto_connect_journal():
+            st.success("Found your journal — opening your dashboard…")
     except Exception as e:
         st.error(f"OAuth token exchange failed: {e}")
     finally:
@@ -476,6 +478,33 @@ def _handle_oauth_callback() -> bool:
         _st_rerun()
 
     return True
+
+
+def _auto_connect_journal() -> bool:
+    """After sign-in: find the journal among shared databases and connect it
+    without asking anything, when the answer is unambiguous."""
+    token = st.session_state.get(SessionKeys.OAUTH_TOKEN) \
+        or st.session_state.get(SessionKeys.USER_TOKEN)
+    if not token or st.session_state.get(SessionKeys.DB_ID):
+        return False
+    try:
+        from edge_analysis.data.db_finder import find_journals
+        cands = find_journals(token)
+    except Exception:
+        cands = None
+    if cands is None:
+        return False
+    st.session_state["ea_db_cands"] = cands
+    strong = [c for c in cands if c["hits"] >= 5]
+    if len(strong) == 1:
+        dbid = strong[0]["id"]
+        st.session_state[SessionKeys.DB_ID] = dbid
+        uid = st.session_state.get(SessionKeys.USER_ID)
+        if uid:
+            set_user_db(uid, dbid, template=strong[0]["schema"])
+        st.session_state[SessionKeys.NAV_TARGET] = PageNames.DASHBOARD
+        return True
+    return False
 
 
 # -------------------- Database helpers ----------------------------------------
@@ -644,9 +673,26 @@ def render_connect_page(mobile: bool):
                         unsafe_allow_html=True)
         st.markdown('<div class="ea-card">', unsafe_allow_html=True)
 
-        # Step 1: OAuth
-        st.markdown('<div class="ea-step">Step 1 — Connect with Notion (OAuth)</div>', unsafe_allow_html=True)
-        st.markdown('<div class="ea-help">Use OAuth to authorize securely. This token is stored for your session only.</div>', unsafe_allow_html=True)
+        _tpl_url = _runtime_secret("TEMPLATE_URL")
+        if _tpl_url:
+            st.markdown('<div class="ea-step">Step 1 — Get the journal template</div>',
+                        unsafe_allow_html=True)
+            st.markdown('<div class="ea-help">Open it in Notion and press '
+                        '<b>Duplicate</b> (top-right). Skip this if you already '
+                        'use an Edge Analysis journal.</div>', unsafe_allow_html=True)
+            st.markdown(f'<a href="{_tpl_url}" target="_blank" class="ea-link-btn" '
+                        'style="background:#fff;color:#4800ff;border:2px solid #4800ff;">'
+                        '📒 Get the free template</a>', unsafe_allow_html=True)
+            st.markdown('<div class="ea-divider"></div>', unsafe_allow_html=True)
+            st.markdown('<div class="ea-step">Step 2 — Sign in with Notion</div>',
+                        unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="ea-step">Step 1 — Sign in with Notion</div>',
+                        unsafe_allow_html=True)
+        st.markdown('<div class="ea-help">No keys, no setup — one click. Notion will '
+                    'show a checklist of your pages: <b>tick your Trade Journal</b> '
+                    '(or the template you just duplicated) so the app can read it.</div>',
+                    unsafe_allow_html=True)
 
         _cid, _csec, _ruri = _oauth_client()
         missing = []
@@ -714,51 +760,89 @@ def render_connect_page(mobile: bool):
 
         st.markdown('<div class="ea-divider"></div>', unsafe_allow_html=True)
 
-        # Step 2: Database
-        st.markdown('<div class="ea-step">Step 2 — Paste your Notion database link</div>', unsafe_allow_html=True)
-
+        # Final step: we find the journal — nobody pastes anything
+        _step_n = "3" if _tpl_url else "2"
+        st.markdown(f'<div class="ea-step">Step {_step_n} — We find your journal '
+                    'automatically</div>', unsafe_allow_html=True)
         oauth_token = st.session_state.get(SessionKeys.OAUTH_TOKEN)
-        db_link = st.text_input(
-            "Database link or ID",
-            value=st.session_state.get("db_link_input", ""),
-            key="db_link_input",
-            placeholder="https://www.notion.so/My-DB-Name-1234567abcd1234ef567890abcd1234",
-        )
+        _cur_db = st.session_state.get(SessionKeys.DB_ID)
+        if oauth_token:
+            if st.session_state.get("ea_db_cands") is None:
+                with st.spinner("Looking through your shared pages…"):
+                    from edge_analysis.data.db_finder import find_journals
+                    st.session_state["ea_db_cands"] = find_journals(oauth_token)
+            _cands = st.session_state.get("ea_db_cands")
+            if _cands:
+                from edge_analysis.data.db_finder import schema_label
+                st.markdown('<div class="ea-help">Found in your Notion — tap yours:</div>',
+                            unsafe_allow_html=True)
+                for _c in _cands[:6]:
+                    _is_cur = _cur_db and _c["id"] == str(_cur_db).replace("-", "")
+                    _lab = (("✓ " if _is_cur else "📒 ") + _c["title"]
+                            + "  ·  " + schema_label(_c["schema"])
+                            + ("  ·  connected" if _is_cur else ""))
+                    if st.button(_lab, key=f"ea_pick_{_c['id'][:10]}",
+                                 use_container_width=True, disabled=bool(_is_cur)):
+                        st.session_state[SessionKeys.DB_ID] = _c["id"]
+                        _uid = st.session_state.get(SessionKeys.USER_ID)
+                        if _uid:
+                            set_user_db(_uid, _c["id"], template=_c["schema"])
+                        st.session_state[SessionKeys.NAV_TARGET] = PageNames.DASHBOARD
+                        _st_rerun()
+            elif _cands is not None:
+                st.warning("You're signed in, but your journal page isn't shared with "
+                           "the app yet. Tap **Connect Notion** above again — on "
+                           "Notion's checklist, tick your Trade Journal page — then "
+                           "press the button below.")
+            if st.button("↻ Look again", key="ea_db_refind"):
+                st.session_state.pop("ea_db_cands", None)
+                _st_rerun()
+        else:
+            st.markdown('<div class="ea-help">Sign in first — then your journal '
+                        'appears here by itself.</div>', unsafe_allow_html=True)
 
-        if db_link:
-            dbid = _extract_db_id_from_url_or_id(db_link)
-            if not dbid:
-                st.error("That doesn't look like a valid Notion database link or ID.")
-            else:
-                st.caption(f"Detected database ID: `{dbid}`")
-                ok, status, info = _verify_database_access(
-                    oauth_token=oauth_token,
-                    internal_token=None,
-                    dbid=dbid,
-                )
-                if ok:
-                    st.success("Database verified")
-                    st.session_state[SessionKeys.DB_ID] = dbid
-                    uid = st.session_state.get(SessionKeys.USER_ID)
-                    if uid:
-                        set_user_db(uid, dbid)
-                    st.session_state[SessionKeys.NAV_TARGET] = PageNames.DASHBOARD
-                    _st_rerun()
+        with st.expander("Advanced: paste a database link instead"):
+            db_link = st.text_input(
+                "Database link or ID",
+                value=st.session_state.get("db_link_input", ""),
+                key="db_link_input",
+                placeholder="https://www.notion.so/My-DB-Name-1234567abcd1234ef567890abcd1234",
+            )
+
+            if db_link:
+                dbid = _extract_db_id_from_url_or_id(db_link)
+                if not dbid:
+                    st.error("That doesn't look like a valid Notion database link or ID.")
                 else:
-                    if status == 403:
-                        st.warning(
-                            "Access denied (403). In Notion, open the database → ⋯ → "
-                            "Add connections → choose your app/integration, then try again."
-                        )
-                        if st.button("Verify again"):
-                            _st_rerun()
-                    elif status == 404:
-                        st.error(
-                            "Notion can't find that database (404). Ensure it's a database "
-                            "(not a page) and the ID/link is correct."
-                        )
+                    st.caption(f"Detected database ID: `{dbid}`")
+                    ok, status, info = _verify_database_access(
+                        oauth_token=oauth_token,
+                        internal_token=None,
+                        dbid=dbid,
+                    )
+                    if ok:
+                        st.success("Database verified")
+                        st.session_state[SessionKeys.DB_ID] = dbid
+                        uid = st.session_state.get(SessionKeys.USER_ID)
+                        if uid:
+                            set_user_db(uid, dbid)
+                        st.session_state[SessionKeys.NAV_TARGET] = PageNames.DASHBOARD
+                        _st_rerun()
                     else:
-                        st.error(f"Couldn't verify the database. {info}")
+                        if status == 403:
+                            st.warning(
+                                "Access denied (403). In Notion, open the database → ⋯ → "
+                                "Add connections → choose your app/integration, then try again."
+                            )
+                            if st.button("Verify again"):
+                                _st_rerun()
+                        elif status == 404:
+                            st.error(
+                                "Notion can't find that database (404). Ensure it's a database "
+                                "(not a page) and the ID/link is correct."
+                            )
+                        else:
+                            st.error(f"Couldn't verify the database. {info}")
 
         st.markdown('<div class="ea-divider"></div>', unsafe_allow_html=True)
         if st.button("Return to Dashboard", key="btn_return_dashboard_connect", use_container_width=True):
@@ -979,10 +1063,16 @@ def _render_login_page():
             unsafe_allow_html=True)
         st.button("▶ View the live demo", key="ea_demo_enter_wall",
                   use_container_width=True, on_click=_enter_demo)
+        _tpl = _runtime_secret("TEMPLATE_URL")
+        _tpl_html = (f'<a href="{_tpl}" target="_blank" style="color:#4800ff;'
+                     f'font-weight:700;">Get the free template</a> · ' if _tpl else "")
         st.markdown(
             f"""<div style="font-size:12.5px;color:#94a3b8;margin:6px 0 16px;">
               Realistic simulated journal — nothing to connect</div>
             <a href="{auth_url}" class="ea-link-btn">Sign in with Notion</a>
+            <div style="font-size:12.5px;color:#64748b;margin:10px 0 0;">
+              {_tpl_html}Notion will show a checklist of your pages —
+              <b>tick your Trade Journal</b> and we find it automatically.</div>
             <div class="ea-login-note">
               🔒 Your Notion credentials are never stored. Authentication is handled securely via Notion's OAuth system.
             </div>""",
