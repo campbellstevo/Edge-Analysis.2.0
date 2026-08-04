@@ -471,8 +471,14 @@ def _st_rerun_safe():
             pass
 
 
+def _pnl_is_net(g: pd.DataFrame) -> bool:
+    """MT5-synced journals already store P&L net of commission and swap —
+    adding the cost columns again double-charges every trade."""
+    return "Position ID" in g.columns or "MFE Efficiency %" in g.columns
+
+
 def _pnl_series(g: pd.DataFrame):
-    """Per-trade dollar result (net of commission/swap when present)."""
+    """Per-trade dollar result, net of costs (counted once)."""
     pnl = None
     for c in ("PnL", "PnL (USD)"):
         if c in g.columns:
@@ -480,9 +486,11 @@ def _pnl_series(g: pd.DataFrame):
             break
     if pnl is None:
         return None
-    for c in ("Commission", "Swap"):
-        if c in g.columns:
-            pnl = pnl.add(pd.to_numeric(g[c], errors="coerce").fillna(0.0), fill_value=0.0)
+    if not _pnl_is_net(g):
+        for c in ("Commission", "Swap"):
+            if c in g.columns:
+                pnl = pnl.add(pd.to_numeric(g[c], errors="coerce").fillna(0.0),
+                              fill_value=0.0)
     return pnl
 
 
@@ -4742,7 +4750,11 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
                     usd_note = f" · {'-' if u < 0 else ''}${abs(u):,.0f}"
                     _c = row.get("cost")
                     _net = u
-                    if _c == _c and abs(float(_c)) >= 0.5:
+                    if _pnl_is_net(g):
+                        # P&L already net; show what the costs were, don't re-subtract
+                        if _c == _c and abs(float(_c)) >= 0.5:
+                            usd_note += f" net · ${abs(float(_c)):,.0f} of it costs"
+                    elif _c == _c and abs(float(_c)) >= 0.5:
                         _net = u + float(_c)
                         usd_note += (f" gross · {'-' if _net < 0 else ''}${abs(_net):,.0f} "
                                      "after costs")
