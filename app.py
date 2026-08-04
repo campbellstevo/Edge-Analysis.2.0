@@ -1476,10 +1476,12 @@ def render_dashboard(mobile: bool):
                 _reverse = {v: k for k, v in _ACCT_MAP.items()}
                 mask &= (df["Account"] == _reverse.get(sel_acct, sel_acct))
 
+    _paper_mask = None
     if sel_tot == "Real money only" and "Type of Trade" in df.columns:
         _tt = df["Type of Trade"].astype(str).str.lower()
-        mask &= ~(_tt.str.contains("forward") | _tt.str.contains("back test")
-                  | _tt.str.contains("backtest"))
+        _paper_mask = ~(_tt.str.contains("forward") | _tt.str.contains("back test")
+                        | _tt.str.contains("backtest"))
+        mask &= _paper_mask
     elif sel_tot not in ("All", "Real money only") and "Type of Trade" in df.columns:
         mask &= df["Type of Trade"].astype(str).str.contains(re.escape(sel_tot), case=False, na=False)
 
@@ -1507,7 +1509,10 @@ def render_dashboard(mobile: bool):
 
     # Render tabs with data
     try:
-        render_all_tabs(f, df, styler, show_light_table, hero_fn=None)
+        # full-history views (month cards, records) must honour the money/paper
+        # split too — otherwise the hero and the card below it disagree
+        _df_hist = df[_paper_mask].copy() if _paper_mask is not None else df
+        render_all_tabs(f, _df_hist, styler, show_light_table, hero_fn=None)
     except Exception:
         import traceback as _tb
         st.error("Something broke rendering this view — usually a template/column mismatch. "
