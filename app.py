@@ -1440,6 +1440,11 @@ def render_dashboard(mobile: bool):
         })
         if _tot:
             tot_opts = ["All"] + _tot
+            _paper = {t for t in _tot if "forward" in t.lower() or "back" in t.lower()}
+            if _paper and (set(_tot) - _paper):
+                # keep practice trades out of headline performance by default;
+                # still one tap away in Filters
+                tot_opts = ["Real money only", "All"] + _tot
 
     if "Date" in df.columns:
         min_date = df["Date"].min().date()
@@ -1471,7 +1476,11 @@ def render_dashboard(mobile: bool):
                 _reverse = {v: k for k, v in _ACCT_MAP.items()}
                 mask &= (df["Account"] == _reverse.get(sel_acct, sel_acct))
 
-    if sel_tot != "All" and "Type of Trade" in df.columns:
+    if sel_tot == "Real money only" and "Type of Trade" in df.columns:
+        _tt = df["Type of Trade"].astype(str).str.lower()
+        mask &= ~(_tt.str.contains("forward") | _tt.str.contains("back test")
+                  | _tt.str.contains("backtest"))
+    elif sel_tot not in ("All", "Real money only") and "Type of Trade" in df.columns:
         mask &= df["Type of Trade"].astype(str).str.contains(re.escape(sel_tot), case=False, na=False)
 
     mask &= _apply_date_filter(df, date_range)

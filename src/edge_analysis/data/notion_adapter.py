@@ -283,9 +283,11 @@ def load_trades_from_notion(token: str, database_id: str, page_size: int = 100) 
         date_source = ["Date"]
     elif schema == "mt5":
         df = normalise_mt5_df(df)
-        # MT5 gives an EXACT numeric R via "R Multiple"; date from Open Time.
+        # MT5 gives an EXACT numeric R via "R Multiple". Date from CLOSE time:
+        # a result belongs to the month it was realised in, not the month the
+        # trade was opened (a July entry closed in August is August's result).
         rr_source = ["R Multiple"]
-        date_source = ["Open Time", "Close Time"]
+        date_source = ["Close Time", "Open Time"]
     else:
         # SR schema
         rr_source = RR_FIELDS
