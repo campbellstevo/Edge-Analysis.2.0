@@ -70,10 +70,28 @@ def main() -> int:
         mt5.shutdown()
 
     hdr = {"Authorization": f"Bearer {token}", "Content-Type": "application/json", **_NV}
-    r = requests.post(f"https://api.notion.com/v1/databases/{dbid}/query", headers=hdr,
-                      json={"page_size": 1,
-                            "sorts": [{"property": "Close Time", "direction": "descending"}]},
-                      timeout=20)
+
+    def _query(db):
+        return requests.post(f"https://api.notion.com/v1/databases/{db}/query", headers=hdr,
+                             json={"page_size": 1,
+                                   "sorts": [{"property": "Close Time",
+                                              "direction": "descending"}]},
+                             timeout=20)
+
+    r = _query(dbid)
+    if r.status_code == 404:
+        # .env points at the parent PAGE (as your sync expects) — find the
+        # journal database sitting inside it and use that instead.
+        kids = requests.get(f"https://api.notion.com/v1/blocks/{dbid}/children",
+                            headers=hdr, params={"page_size": 100}, timeout=20)
+        found = None
+        for blk in (kids.json() or {}).get("results", []):
+            if blk.get("type") == "child_database":
+                found = blk["id"].replace("-", "")
+                break
+        if found:
+            dbid = found
+            r = _query(dbid)
     if r.status_code != 200:
         print(f"Notion refused the query ({r.status_code}): {r.text[:160]}")
         return 1
