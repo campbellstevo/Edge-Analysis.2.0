@@ -4781,15 +4781,13 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
         _, _starts = _balance_track(_gm, _bal)
 
         def _mbm_head(r_val, row, per=None):
-            """True monthly return: month net $ / balance at the start of that month."""
+            """Monthly return, computed by the SAME helper the hero uses, so a
+            card can never disagree with the headline above it."""
+            if _bal > 0 and per is not None and "__Date" in _gm.columns:
+                _p = _period_pct(_gm, _gm["__Date"].dt.to_period("M") == per, _bal)
+                if _p is not None:
+                    return f"{_p:+.2f}%"
             if _bal > 0:
-                _u = row.get("usd")
-                if _u == _u and _u is not None:
-                    _c = row.get("cost")
-                    _net = float(_u) + (float(_c) if _c == _c and _c is not None else 0.0)
-                    _base = _starts.get(per, _bal) if per is not None else _bal
-                    if _base and _base > 0:
-                        return f"{_net / _base * 100:+.2f}%"
                 return f"{_as_pct(r_val, _rp_m):+.2f}%"
             return f"{r_val:+.1f}R"
 
