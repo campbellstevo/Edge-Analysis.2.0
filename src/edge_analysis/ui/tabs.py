@@ -495,15 +495,21 @@ def _pnl_series(g: pd.DataFrame):
 
 
 def _balance_from_journal(g: pd.DataFrame):
-    """Latest balance/equity if the sync writes one — the ideal source."""
+    """Balance straight from the broker, if the sync writes one — the ideal
+    source. Takes the most RECENT row that carries a figure, so a column that
+    only newer trades populate still gives today's number."""
     for c in ("Balance", "Account Balance", "Equity", "Balance After", "Running Balance"):
-        if c in g.columns:
-            v = pd.to_numeric(g[c], errors="coerce").dropna()
-            if not v.empty:
-                try:
-                    return float(v.loc[g["__Date"].idxmax()]) if "__Date" in g.columns else float(v.iloc[-1])
-                except Exception:
-                    return float(v.iloc[-1])
+        if c not in g.columns:
+            continue
+        v = pd.to_numeric(g[c], errors="coerce")
+        v = v[v.notna() & (v > 0)]
+        if v.empty:
+            continue
+        if "__Date" in g.columns:
+            d = g.loc[v.index, "__Date"]
+            if d.notna().any():
+                return float(v.loc[d.idxmax()])
+        return float(v.iloc[-1])
     return None
 
 
