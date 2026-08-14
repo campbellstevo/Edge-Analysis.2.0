@@ -78,22 +78,57 @@ def main() -> int:
                                               "direction": "descending"}]},
                              timeout=20)
 
+    override = (env.get("NOTION_DB_ID") or "").replace("-", "")
+    if override:
+        dbid = override
+
     r = _query(dbid)
     if r.status_code == 404:
-        # .env points at the parent PAGE (as your sync expects) — find the
-        # journal database sitting inside it and use that instead.
-        kids = requests.get(f"https://api.notion.com/v1/blocks/{dbid}/children",
-                            headers=hdr, params={"page_size": 100}, timeout=20)
         found = None
-        for blk in (kids.json() or {}).get("results", []):
-            if blk.get("type") == "child_database":
-                found = blk["id"].replace("-", "")
-                break
+        # (a) the id in .env may be the parent PAGE — look inside it
+        try:
+            kids = requests.get(f"https://api.notion.com/v1/blocks/{dbid}/children",
+                                headers=hdr, params={"page_size": 100}, timeout=20)
+            for blk in (kids.json() or {}).get("results", []):
+                if blk.get("type") == "child_database":
+                    found = blk["id"].replace("-", "")
+                    break
+        except Exception:
+            pass
+        # (b) otherwise ask Notion for the journal databases we CAN see
+        if not found:
+            try:
+                sr = requests.post("https://api.notion.com/v1/search", headers=hdr,
+                                   json={"filter": {"value": "database",
+                                                    "property": "object"},
+                                         "page_size": 50}, timeout=20)
+                cands = []
+                for res in (sr.json() or {}).get("results", []):
+                    title = "".join(t.get("plain_text", "")
+                                    for t in (res.get("title") or []))
+                    props = (res.get("properties") or {})
+                    if "Position ID" in props or "R Multiple" in props:
+                        cands.append((title, res["id"].replace("-", "")))
+                if len(cands) == 1:
+                    found = cands[0][1]
+                elif cands:
+                    for title, cid in cands:
+                        if "mt5" in title.lower() or "trade log" in title.lower():
+                            found = cid
+                            break
+                    if not found:
+                        print("Several journals visible — add this line to .env:")
+                        for title, cid in cands:
+                            print(f"    NOTION_DB_ID={cid}   # {title}")
+                        return 1
+            except Exception:
+                pass
         if found:
             dbid = found
             r = _query(dbid)
     if r.status_code != 200:
-        print(f"Notion refused the query ({r.status_code}): {r.text[:160]}")
+        print(f"Notion refused the query ({r.status_code}): {r.text[:200]}")
+        print("Fix: add  NOTION_DB_ID=<your journal database id>  to .env")
         return 1
     results = (r.json() or {}).get("results", [])
     if not results:
