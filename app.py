@@ -2030,6 +2030,7 @@ def main() -> None:
                "s": float(st.session_state.get("ea_m_stop", -6.0)),
                "c": int(st.session_state.get("ea_m_cap", 12)),
                "b": float(st.session_state.get("ea_m_bal", 10000.0)),
+               "r": float(st.session_state.get("ea_m_risk", 1.0)),
                "d": str(st.session_state.get("ea_bal_asof") or "")}
         _js_eval("localStorage.setItem('ea_mplan', " + json.dumps(json.dumps(_pb)) + ")",
                  key="ea_mplan_save")

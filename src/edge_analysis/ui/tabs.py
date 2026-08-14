@@ -577,6 +577,22 @@ def _derive_balance(g: pd.DataFrame, assumed_risk_pct: float = 1.0) -> int:
 
 
 def _risk_pct(g: pd.DataFrame) -> float:
+    """Risk per trade as % of account. Your PLAN setting wins when you've set
+    one — it is the ground truth for what an R is worth. Only when it's unset
+    do we infer it from stop sizes (which deposits can distort, since a funding
+    transfer is invisible in trade data)."""
+    _set = st.session_state.get("ea_m_risk")
+    if _set:
+        try:
+            _v = float(_set)
+            if 0.01 <= _v <= 20:
+                return _v
+        except (TypeError, ValueError):
+            pass
+    return _risk_pct_measured(g)
+
+
+def _risk_pct_measured(g: pd.DataFrame) -> float:
     """Risk per trade as % of account, measured from real full-stop losses
     (|$| lost on a ~-1R trade / balance). Falls back to 1%."""
     bal = float(st.session_state.get("ea_m_bal", 10000) or 0)
@@ -646,6 +662,8 @@ def _perf_settings(g: pd.DataFrame):
             st.session_state["ea_m_stop"] = float(_saved["s"])
             if "c" in _saved:
                 st.session_state["ea_m_cap"] = int(_saved["c"])
+            if "r" in _saved:
+                st.session_state["ea_m_risk"] = float(_saved["r"])
             if "b" in _saved:
                 _rolled = st.session_state.get("ea_m_bal_rolled")
                 if _rolled is not None:
@@ -666,6 +684,8 @@ def _perf_settings(g: pd.DataFrame):
         st.session_state["ea_m_stop"] = float(auto_stop)
     if "ea_m_cap" not in st.session_state:
         st.session_state["ea_m_cap"] = 12
+    if "ea_m_risk" not in st.session_state:
+        st.session_state["ea_m_risk"] = 1.0  # the standard, and what most plans say
     _from_journal = _balance_from_journal(g)
     if _from_journal:
         st.session_state["ea_m_bal"] = float(_from_journal)
@@ -744,6 +764,11 @@ def _month_card(f: pd.DataFrame, styler) -> None:
             cc = "#16a34a" if cur >= 0 else "#ef4444"
             _rp = _risk_pct(g)
             _bal_disp = float(st.session_state.get("ea_m_bal", 0) or 0)
+            _rp_meas = _risk_pct_measured(g)
+            _risk_note = ""
+            if abs(_rp_meas - _rp) >= 0.15:
+                _risk_note = (f" \u00b7 your recent stops average {_rp_meas:.2f}% "
+                              "\u2014 worth checking your position sizing")
             _roll = st.session_state.get("ea_m_bal_rolled_from")
             _src = st.session_state.get("ea_m_bal_src")
             if _roll:
@@ -767,7 +792,7 @@ def _month_card(f: pd.DataFrame, styler) -> None:
                 f"{arrow} {_wk_txt} this week</span></div>"
                 f"<div style='font-size:12.5px;color:#8a93a6;margin-top:2px;'>"
                 f"{cur:+,.1f}R \u00b7 {n_tr} trades \u00b7 risk {_rp:.2f}%/trade on "
-                f"${_bal_disp:,.0f}{_bal_note}</div>",
+                f"${_bal_disp:,.0f}{_bal_note}{_risk_note}</div>",
                 unsafe_allow_html=True)
         with h2:
             p1, p2 = st.columns([2.6, 1])
@@ -834,6 +859,11 @@ def _month_card(f: pd.DataFrame, styler) -> None:
                         st.slider("Trades per month", min_value=1, max_value=40,
                                   value=int(st.session_state.get("ea_m_cap", 12)),
                                   step=1, key="ea_m_cap")
+                        st.slider("Risk per trade (%)", min_value=0.1, max_value=5.0,
+                                  value=float(st.session_state.get("ea_m_risk", 1.0)),
+                                  step=0.05, format="%.2f", key="ea_m_risk",
+                                  help="What one R is worth. Your plan's number, "
+                                       "not a guess from past stop sizes.")
                         st.number_input("Account balance ($) — today", min_value=1.0,
                                         max_value=1000000.0, step=50.0, format="%.2f",
                                         value=float(st.session_state.get("ea_m_bal", 10000.0)),
