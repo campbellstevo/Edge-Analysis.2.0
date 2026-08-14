@@ -641,7 +641,9 @@ def _perf_settings(g: pd.DataFrame):
             if "c" in _saved:
                 st.session_state["ea_m_cap"] = int(_saved["c"])
             if "b" in _saved:
-                st.session_state["ea_m_bal"] = float(_saved["b"])
+                _rolled = st.session_state.get("ea_m_bal_rolled")
+                st.session_state["ea_m_bal"] = float(
+                    _rolled if _rolled is not None else _saved["b"])
                 st.session_state.pop("ea_m_bal_auto", None)  # it's yours now, not derived
         except (KeyError, TypeError, ValueError):
             pass
@@ -729,9 +731,15 @@ def _month_card(f: pd.DataFrame, styler) -> None:
             cc = "#16a34a" if cur >= 0 else "#ef4444"
             _rp = _risk_pct(g)
             _bal_disp = float(st.session_state.get("ea_m_bal", 0) or 0)
+            _roll = st.session_state.get("ea_m_bal_rolled_from")
             _src = st.session_state.get("ea_m_bal_src")
-            _bal_note = ((" (" + str(_src) + " \u2014 set it in \u270e)")
-                         if (_src and st.session_state.get("ea_m_bal_auto")) else "")
+            if _roll:
+                _bal_note = (f" (your ${_roll[0]:,.0f} from {_roll[1]} plus "
+                             f"{_roll[2]} trade{'s' if _roll[2] != 1 else ''} since)")
+            elif _src and st.session_state.get("ea_m_bal_auto"):
+                _bal_note = " (" + str(_src) + " \u2014 set it in \u270e)"
+            else:
+                _bal_note = ""
             _mtd_pct = _period_pct(g, g["__Date"].dt.to_period("M") == now_p, _bal_disp)
             _wk_pct = _period_pct(
                 g, g["__Date"] >= (pd.Timestamp.now() - pd.Timedelta(days=7)), _bal_disp)

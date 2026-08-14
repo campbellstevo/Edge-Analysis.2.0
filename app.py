@@ -1388,6 +1388,32 @@ def render_dashboard(mobile: bool):
         with st.spinner("Fetching trades from Notion…"):
             df = load_live_df(token, dbid)
 
+    # Keep the account balance honest: a figure typed days ago is stale the
+    # moment the next trade closes, and every % on the site inherits the error.
+    # Roll it forward by the P&L banked since it was entered.
+    try:
+        if df is not None and not df.empty and "Date" in df.columns:
+            _lastd = pd.to_datetime(df["Date"], errors="coerce").max()
+            if pd.notna(_lastd):
+                st.session_state["ea_bal_asof"] = _lastd.isoformat()
+            _sav = st.session_state.get("ea_mplan_saved") or {}
+            _anchor, _asof = _sav.get("b"), _sav.get("d")
+            if _anchor and _asof:
+                from edge_analysis.ui.tabs import _pnl_series
+                _p = _pnl_series(df)
+                if _p is not None:
+                    _newer = pd.to_datetime(df["Date"], errors="coerce") > pd.Timestamp(_asof)
+                    _since = float(_p[_newer].fillna(0).sum())
+                    if abs(_since) >= 0.01:
+                        st.session_state["ea_m_bal_rolled"] = float(_anchor) + _since
+                        st.session_state["ea_m_bal_rolled_from"] = (
+                            float(_anchor), pd.Timestamp(_asof).strftime("%d %b"),
+                            int(_newer.sum()))
+                    else:
+                        st.session_state.pop("ea_m_bal_rolled", None)
+    except Exception:
+        pass
+
     if (token and dbid) or _demo:
         pass
     else:
@@ -2003,7 +2029,8 @@ def main() -> None:
         _pb = {"t": float(st.session_state.get("ea_m_tgt", 5.0)),
                "s": float(st.session_state.get("ea_m_stop", -6.0)),
                "c": int(st.session_state.get("ea_m_cap", 12)),
-               "b": float(st.session_state.get("ea_m_bal", 10000.0))}
+               "b": float(st.session_state.get("ea_m_bal", 10000.0)),
+               "d": str(st.session_state.get("ea_bal_asof") or "")}
         _js_eval("localStorage.setItem('ea_mplan', " + json.dumps(json.dumps(_pb)) + ")",
                  key="ea_mplan_save")
     if st.session_state.pop("ea_mplan_clear", False):
