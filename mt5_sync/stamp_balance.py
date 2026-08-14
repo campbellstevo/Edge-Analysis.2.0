@@ -26,8 +26,16 @@ _NV = {"Notion-Version": "2022-06-28"}
 
 
 def _load_env() -> dict:
-    """Read .env from this folder (no dependency on python-dotenv)."""
+    """Read .env from this folder (no dependency on python-dotenv).
+
+    The LOCAL .env always wins over a machine-wide environment variable — a
+    global NOTION_TOKEN from another project would silently point this at the
+    wrong workspace.
+    """
     env = {}
+    for k in ("NOTION_TOKEN", "NOTION_PAGE_ID", "NOTION_DB_ID"):
+        if os.environ.get(k):
+            env[k] = os.environ[k]
     for name in (".env", "../TradingSync/.env"):
         p = (_HERE / name).resolve()
         if p.exists():
@@ -35,11 +43,8 @@ def _load_env() -> dict:
                 line = line.strip()
                 if line and not line.startswith("#") and "=" in line:
                     k, v = line.split("=", 1)
-                    env[k.strip()] = v.strip().strip('"').strip("'")
+                    env[k.strip()] = v.strip().strip('"').strip("'")  # local wins
             break
-    for k in ("NOTION_TOKEN", "NOTION_PAGE_ID"):
-        if os.environ.get(k):
-            env[k] = os.environ[k]
     return env
 
 
