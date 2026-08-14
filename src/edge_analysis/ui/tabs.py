@@ -642,9 +642,16 @@ def _perf_settings(g: pd.DataFrame):
                 st.session_state["ea_m_cap"] = int(_saved["c"])
             if "b" in _saved:
                 _rolled = st.session_state.get("ea_m_bal_rolled")
-                st.session_state["ea_m_bal"] = float(
-                    _rolled if _rolled is not None else _saved["b"])
-                st.session_state.pop("ea_m_bal_auto", None)  # it's yours now, not derived
+                if _rolled is not None:
+                    st.session_state["ea_m_bal"] = float(_rolled)
+                    st.session_state.pop("ea_m_bal_auto", None)
+                elif _saved.get("d"):
+                    # anchored and nothing banked since — the figure still holds
+                    st.session_state["ea_m_bal"] = float(_saved["b"])
+                    st.session_state.pop("ea_m_bal_auto", None)
+                # else: a balance saved before anchoring existed. Trusting it
+                # would freeze the account at whatever it was that day, so we
+                # fall through to the figure derived from live position sizes.
         except (KeyError, TypeError, ValueError):
             pass
     if "ea_m_tgt" not in st.session_state:
