@@ -902,19 +902,25 @@ def _month_card(f: pd.DataFrame, styler) -> None:
             st.altair_chart(styler(alt.layer(*lays, ln, pt).properties(height=290)),
                             use_container_width=True)
 
+            # One basis for the month: the real money figure in the hero. The
+            # plan's target/stop are converted at the planned risk, so the bar
+            # can't disagree with the number directly above it.
+            _now_pct = _mtd_pct if _mtd_pct is not None else _as_pct(cur, _rp)
+            _tgt_pct = _as_pct(TGT_R, _rp)
+            _stop_pct = _as_pct(STOP_R, _rp)
             if cur >= 0:
                 bar_title = "PROGRESS TO TARGET"
-                barw = max(0.0, min(1.0, cur / TGT_R)) if TGT_R > 0 else 0.0
+                barw = max(0.0, min(1.0, _now_pct / _tgt_pct)) if _tgt_pct > 0 else 0.0
                 barc = "#16a34a"
-                sub = (f"{_pct_txt(cur, _rp)} now \u00b7 "
-                       f"{_as_pct(max(0.0, TGT_R - cur), _rp):.2f}% to go")
+                sub = (f"{_now_pct:+.2f}% now \u00b7 "
+                       f"{max(0.0, _tgt_pct - _now_pct):.2f}% to go")
             else:
                 bar_title = "STOP USED"
-                barw = max(0.0, min(1.0, cur / STOP_R)) if STOP_R < 0 else 0.0
+                barw = max(0.0, min(1.0, _now_pct / _stop_pct)) if _stop_pct < 0 else 0.0
                 barc = "#ef4444"
-                sub = (f"{_pct_txt(cur, _rp)} now \u00b7 {barw * 100:.0f}% of the "
-                       f"{_as_pct(STOP_R, _rp):+.1f}% stop used \u00b7 "
-                       f"{_as_pct(cur - STOP_R, _rp):.2f}% of room left")
+                sub = (f"{_now_pct:+.2f}% now \u00b7 {barw * 100:.0f}% of the "
+                       f"{_stop_pct:+.1f}% stop used \u00b7 "
+                       f"{abs(_now_pct - _stop_pct):.2f}% of room left")
             st.markdown(
                 f"<div style='font-size:11px;font-weight:700;letter-spacing:0.06em;"
                 f"color:#94a3b8;margin-top:2px;'>{bar_title}</div>"
@@ -927,11 +933,11 @@ def _month_card(f: pd.DataFrame, styler) -> None:
             maxdd = float((md["Cum"].cummax() - md["Cum"]).max())
             cap = int(st.session_state.get("ea_m_cap", 12))
             pace_c = "#ef4444" if n_tr > cap else "#0f172a"
-            chips = [("TO TARGET", f"{_as_pct(max(0.0, TGT_R - cur), _rp):.2f}%",
-                      "#16a34a" if cur >= TGT_R else "#0f172a"),
+            chips = [("TO TARGET", f"{max(0.0, _tgt_pct - _now_pct):.2f}%",
+                      "#16a34a" if _now_pct >= _tgt_pct else "#0f172a"),
                      ("MAX DRAWDOWN", f"-{_as_pct(maxdd, _rp):.2f}%",
                       "#ef4444" if maxdd > 0 else "#64748b"),
-                     ("STOP ROOM", f"{_as_pct(cur - STOP_R, _rp):.2f}%",
+                     ("STOP ROOM", f"{abs(_now_pct - _stop_pct):.2f}%",
                       "#ef4444" if cur - STOP_R < 2 else "#0f172a"),
                      ("TRADES · PACE", f"{n_tr} of {cap}" + (" ⚠" if n_tr > cap else ""),
                       pace_c)]
