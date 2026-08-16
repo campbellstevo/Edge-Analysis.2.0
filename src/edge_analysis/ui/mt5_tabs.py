@@ -563,7 +563,6 @@ def _mistake_section(df: pd.DataFrame, styler) -> None:
                f"Clean-trade baseline: {baseline:+.2f}R avg.")
     worst = rdf.iloc[0]
     total_cost = float(rdf["Cost vs clean (R)"].clip(upper=0).sum())
-    st.caption(f"Clean-trade baseline: {baseline:+.2f}R avg.")
     t._insight_box(
         f"Your costliest leak is <b>{worst['Category']}</b> — {int(worst['Trades'])} trades at "
         f"<b>{worst['Avg R']:+.2f}R</b> avg (vs {baseline:+.2f}R clean), ~<b>{worst['Cost vs clean (R)']:.0f}R</b> lost. "

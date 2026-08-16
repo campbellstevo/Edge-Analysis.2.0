@@ -579,7 +579,10 @@ def _period_pct(g: pd.DataFrame, mask, balance: float):
     pnl = _pnl_series(g)
     if pnl is None or balance is None or balance <= 0 or "__Date" not in g.columns:
         return None
-    rr_ok = pd.to_numeric(g.get("PnL_from_RR"), errors="coerce").notna()
+    _rr_raw = g.get("PnL_from_RR")
+    if isinstance(_rr_raw, pd.DataFrame):          # duplicated column name
+        _rr_raw = _rr_raw.iloc[:, 0]
+    rr_ok = pd.to_numeric(_rr_raw, errors="coerce").notna()
     sel = mask & rr_ok
     if not bool(sel.any()):
         return 0.0
@@ -1516,21 +1519,10 @@ def _psych_session_alert(df: pd.DataFrame, styler) -> None:
     else:
         _insight_box(f"Session balance healthy — Asia at {asia_pct}%, within {ASIA_WARN_THRESHOLD}% threshold.", "good")
 
-    sess_data = [{"Session":n,"Trades":c,"Pct":p}
-                 for n,c,p in [("Asia",asia_n,asia_pct),("London",london_n,lon_pct),("New York",ny_n,ny_pct)] if c>0]
-    if sess_data:
-        cv = _to_alt_values(pd.DataFrame(sess_data))
-        bar = (alt.Chart(alt.Data(values=cv))
-               .mark_bar(color="#4800ff",opacity=0.8,cornerRadiusTopLeft=3,cornerRadiusTopRight=3)
-               .encode(x=alt.X("Session:N",sort=["Asia","London","New York"],axis=alt.Axis(title=None)),
-                       y=alt.Y("Pct:Q",axis=alt.Axis(title="% of trades")),
-                       tooltip=[alt.Tooltip("Session:N"),alt.Tooltip("Trades:Q"),
-                                alt.Tooltip("Pct:Q",format=".1f")]))
-        rule = (alt.Chart(alt.Data(values=[{"y":ASIA_WARN_THRESHOLD}]))
-                .mark_rule(color="#ef4444",strokeDash=[4,4],strokeWidth=1.5).encode(y="y:Q"))
-        st.altair_chart(styler(alt.layer(bar,rule).properties(height=180)),use_container_width=True)
-        st.markdown(f"<div class='muted'>Dashed line = {ASIA_WARN_THRESHOLD}% Asia threshold</div>",
-                    unsafe_allow_html=True)
+    # The three chips above already carry these percentages; a bar chart of the
+    # same numbers is the same stat twice. The threshold lives in the caption.
+    st.markdown(f"<div class='muted'>Asia stays under {ASIA_WARN_THRESHOLD}% of trades \u2014 "
+                "red means over.</div>", unsafe_allow_html=True)
 
 
 def _psych_mental_state_gate(df: pd.DataFrame, styler) -> None:
@@ -4836,7 +4828,12 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
 
         now_m = pd.Timestamp.now().to_period("M")
         _bal = float(st.session_state.get("ea_m_bal", 10000) or 0)
-        _gm = g.rename(columns={"__rr": "PnL_from_RR", "__dt": "__Date"})
+        # Renaming onto a name the frame already carries would leave TWO columns
+        # of that name, and every lookup would then hand back a DataFrame.
+        _gm = g.drop(columns=[c for c in ("PnL_from_RR", "__Date")
+                              if c in g.columns and c not in ("__rr", "__dt")],
+                     errors="ignore").rename(columns={"__rr": "PnL_from_RR",
+                                                      "__dt": "__Date"})
         _rp_m = _risk_pct(_gm)
         _, _starts = _balance_track(_gm, _bal)
 
