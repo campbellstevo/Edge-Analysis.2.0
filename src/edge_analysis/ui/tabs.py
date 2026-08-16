@@ -550,6 +550,26 @@ def _balance_track(g: pd.DataFrame, current: float):
     starts = {}
     for per, sub in opening.groupby(d["dt"].dt.to_period("M")):
         starts[per] = float(sub.iloc[0])
+
+    # Walking backwards is blind to deposits and withdrawals: fund the account
+    # and every earlier month looks bigger than it was, which shrinks its
+    # percentage. Where a month has enough full-stop losses, size tells us the
+    # truth instead — a percentage-risk trader's stop IS a slice of that
+    # month's balance, and no funding transfer can distort it.
+    try:
+        risk = float(st.session_state.get("ea_m_risk") or 0)
+        if risk > 0:
+            rr = pd.to_numeric(g.get("PnL_from_RR"), errors="coerce")
+            full = (rr <= -0.85) & (rr >= -1.15) & pnl.notna() & (pnl < 0)
+            if bool(full.any()):
+                by_month = pnl[full].abs().groupby(g.loc[full, "__Date"].dt.to_period("M"))
+                for per, vals in by_month:
+                    if len(vals) >= 3:
+                        implied = float(vals.median()) / (risk / 100.0)
+                        if implied > 0:
+                            starts[per] = implied
+    except Exception:
+        pass
     return opening.reindex(g.index), starts
 
 
