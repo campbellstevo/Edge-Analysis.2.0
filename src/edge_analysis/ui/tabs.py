@@ -613,7 +613,14 @@ def _risk_pct(g: pd.DataFrame) -> float:
                 return _v
         except (TypeError, ValueError):
             pass
-    return _risk_pct_measured(g)
+    # Unset: infer, but snap hard to the nearest standard policy. Traders risk
+    # round numbers; the estimate is noisy enough that a raw 0.87% is more
+    # likely a 1% plan measured through slippage than a real 0.87% policy.
+    _m = _risk_pct_measured(g)
+    for _q in (0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0):
+        if abs(_m - _q) <= 0.2:
+            return _q
+    return _m
 
 
 def _risk_pct_measured(g: pd.DataFrame) -> float:
@@ -788,11 +795,11 @@ def _month_card(f: pd.DataFrame, styler) -> None:
             cc = "#16a34a" if cur >= 0 else "#ef4444"
             _rp = _risk_pct(g)
             _bal_disp = float(st.session_state.get("ea_m_bal", 0) or 0)
-            _rp_meas = _risk_pct_measured(g)
+            # No "measured risk" claim on the hero: it divides each stop's
+            # realised loss (slippage and partial fills included) by a balance
+            # reconstructed from P&L alone — which a deposit silently breaks.
+            # A number we can't stand behind is worse than no number.
             _risk_note = ""
-            if abs(_rp_meas - _rp) >= 0.15:
-                _risk_note = (f" \u00b7 your recent stops average {_rp_meas:.2f}% "
-                              "\u2014 worth checking your position sizing")
             _roll = st.session_state.get("ea_m_bal_rolled_from")
             _src = st.session_state.get("ea_m_bal_src")
             _naccts = st.session_state.get("ea_bal_accounts")
