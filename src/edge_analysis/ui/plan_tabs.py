@@ -85,6 +85,45 @@ def _col_contains(g, col, pat):
     return g[col].astype(str).str.contains(pat, case=False, na=False)
 
 
+def min_rr_recommendation(g, rr_col="__rr", planned_col="Planned R:R",
+                          fallback=3.0, min_n=8):
+    """The lowest planned reward-to-risk at which THIS trader actually makes
+    money. Buckets trades by the target they aimed for and walks up until a
+    bucket earns its keep — so the checklist gate reflects their evidence
+    instead of somebody else's rule of thumb.
+
+    Returns (threshold, evidence_string, derived_bool).
+    """
+    try:
+        if planned_col not in g.columns or rr_col not in g.columns:
+            return fallback, "", False
+        planned = pd.to_numeric(g[planned_col], errors="coerce")
+        rr = pd.to_numeric(g[rr_col], errors="coerce")
+        ok = planned.notna() & rr.notna()
+        if int(ok.sum()) < min_n * 2:
+            return fallback, "", False
+        best = None
+        for thr in (1.5, 2.0, 2.5, 3.0, 3.5, 4.0):
+            at_or_above = ok & (planned >= thr)
+            below = ok & (planned < thr)
+            n_a, n_b = int(at_or_above.sum()), int(below.sum())
+            if n_a < min_n or n_b < 3:
+                continue
+            exp_a = float(rr[at_or_above].mean())
+            exp_b = float(rr[below].mean())
+            if exp_a > 0 and exp_a - exp_b >= 0.15:
+                best = (thr, exp_a, exp_b, n_a, n_b)
+                break
+        if not best:
+            return fallback, "", False
+        thr, exp_a, exp_b, n_a, n_b = best
+        ev = (f"aiming {thr:g}R+ has earned {exp_a:+.2f}R a trade over {n_a} trades, "
+              f"versus {exp_b:+.2f}R when you aimed lower ({n_b} trades)")
+        return thr, ev, True
+    except Exception:
+        return fallback, "", False
+
+
 def _yes(g, col):
     if col not in g.columns:
         return pd.Series(False, index=g.index)
@@ -135,7 +174,8 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
     ok_break = _yes(g, "True Break?")
     planned = (pd.to_numeric(g["Planned R:R"], errors="coerce")
                if "Planned R:R" in g.columns else pd.Series(float("nan"), index=g.index))
-    ok_room = planned >= 3
+    _min_rr, _min_rr_ev, _min_rr_derived = min_rr_recommendation(g)
+    ok_room = planned >= _min_rr
     ok_obos = _yes(g, "Oversold or Overbought?")
 
     def seg(mask):
@@ -153,11 +193,19 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
         ("5M entries only", ok_5m, "5M", "other TF"),
         ("Protected Structure or FBoS", ok_model, "PS/FBoS", "other"),
         ("True break confirmed", ok_break, "confirmed", "No/NA"),
-        ("Minimum 3R of room to target", ok_room, "≥3R", "<3R"),
+        (f"Minimum {_min_rr:g}R of room to target"
+         + (" (from your data)" if _min_rr_derived else ""),
+         ok_room, f"\u2265{_min_rr:g}R", f"<{_min_rr:g}R"),
         ("Stick to your proven instruments", on_proven, "proven", "other"),
     ]
 
     st.markdown("#### Pre-trade checklist — every box yes, or pass")
+    if _min_rr_derived and _min_rr_ev:
+        st.markdown(
+            f"<div style='background:#f0ebff;border-left:4px solid #4800ff;"
+            f"border-radius:6px;padding:9px 13px;margin:0 0 10px;font-size:13px;"
+            f"color:#3b3f4d;'><b>Your minimum target: {_min_rr:g}R</b> \u2014 "
+            f"{_min_rr_ev}.</div>", unsafe_allow_html=True)
     all_pass = pd.Series(True, index=g.index)
     entries = []
     for rule, mask, lab_y, lab_n in gates:

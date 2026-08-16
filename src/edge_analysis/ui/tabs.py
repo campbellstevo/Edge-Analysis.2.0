@@ -495,22 +495,46 @@ def _pnl_series(g: pd.DataFrame):
 
 
 def _balance_from_journal(g: pd.DataFrame):
-    """Balance straight from the broker, if the sync writes one — the ideal
-    source. Takes the most RECENT row that carries a figure, so a column that
-    only newer trades populate still gives today's number."""
-    for c in ("Balance", "Account Balance", "Equity", "Balance After", "Running Balance"):
-        if c not in g.columns:
-            continue
-        v = pd.to_numeric(g[c], errors="coerce")
-        v = v[v.notna() & (v > 0)]
-        if v.empty:
-            continue
-        if "__Date" in g.columns:
-            d = g.loc[v.index, "__Date"]
-            if d.notna().any():
-                return float(v.loc[d.idxmax()])
-        return float(v.iloc[-1])
-    return None
+    """Balance straight from the broker, when the journal carries one.
+
+    Works for any trader, including people running several accounts through one
+    journal: take the LATEST balance for each account and add them, so the
+    figure is their real capital rather than whichever account synced last.
+    Filtering to a single account naturally narrows it to that account.
+    """
+    col = next((c for c in ("Balance", "Account Balance", "Equity",
+                            "Balance After", "Running Balance") if c in g.columns), None)
+    if col is None:
+        return None
+    v = pd.to_numeric(g[col], errors="coerce")
+    ok = v.notna() & (v > 0)
+    if not bool(ok.any()):
+        return None
+
+    acct = next((c for c in ("Account", "Account Name", "Account ID")
+                 if c in g.columns), None)
+    dates = g["__Date"] if "__Date" in g.columns else None
+
+    def _latest(idx):
+        if dates is not None and dates.loc[idx].notna().any():
+            return float(v.loc[dates.loc[idx].idxmax()])
+        return float(v.loc[idx].iloc[-1])
+
+    if acct is not None:
+        labels = g.loc[ok, acct].astype(str).str.strip().replace({"": "—", "nan": "—"})
+        groups = {a: idx for a, idx in labels.groupby(labels).groups.items()}
+        if len(groups) > 1:
+            total = 0.0
+            for a, idx in groups.items():
+                try:
+                    total += _latest(pd.Index(idx))
+                except Exception:
+                    continue
+            if total > 0:
+                st.session_state["ea_bal_accounts"] = len(groups)
+                return total
+    st.session_state.pop("ea_bal_accounts", None)
+    return _latest(v[ok].index)
 
 
 def _balance_track(g: pd.DataFrame, current: float):
@@ -771,7 +795,10 @@ def _month_card(f: pd.DataFrame, styler) -> None:
                               "\u2014 worth checking your position sizing")
             _roll = st.session_state.get("ea_m_bal_rolled_from")
             _src = st.session_state.get("ea_m_bal_src")
-            if _roll:
+            _naccts = st.session_state.get("ea_bal_accounts")
+            if _naccts and _naccts > 1:
+                _bal_note = f" (across {_naccts} accounts)"
+            elif _roll:
                 _bal_note = (f" (your ${_roll[0]:,.0f} from {_roll[1]} plus "
                              f"{_roll[2]} trade{'s' if _roll[2] != 1 else ''} since)")
             elif _src and st.session_state.get("ea_m_bal_auto"):
@@ -940,7 +967,7 @@ def _month_card(f: pd.DataFrame, styler) -> None:
                      ("STOP ROOM", f"{abs(_now_pct - _stop_pct):.2f}%",
                       "#ef4444" if cur - STOP_R < 2 else "#0f172a"),
                      ("TRADES · PACE", f"{n_tr} of {cap}" + (" ⚠" if n_tr > cap else ""),
-                      pace_c)]
+                      "#ef4444" if n_tr > cap else pace_c)]
             st.markdown(
                 "<div style='display:flex;gap:12px;flex-wrap:wrap;margin-top:12px;'>" + "".join(
                     f"<div style='flex:1;min-width:140px;background:#f8f9fc;border-radius:12px;"
@@ -3840,12 +3867,18 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
         starting_balance = _slider_row(
             "Starting balance", lambda v: f"${v:,.0f}",
             lambda: st.slider("Starting balance", min_value=1_000, max_value=200_000,
-                              value=10_000, step=1_000, key="proj_balance",
+                              value=int(min(200_000, max(1_000, round(
+                                  float(st.session_state.get("ea_m_bal", 10_000)) / 100.0
+                              ) * 100))),
+                              step=1_000, key="proj_balance",
                               label_visibility="collapsed"))
         risk_pct = _slider_row(
             "Risk per trade", lambda v: f"{v:.2f}%",
             lambda: st.slider("Risk per trade", min_value=0.25, max_value=10.0,
-                              value=1.0, step=0.25, key="proj_risk",
+                              value=float(min(10.0, max(0.25, round(
+                                  float(st.session_state.get("ea_m_risk", 1.0)) * 4
+                              ) / 4))),
+                              step=0.25, key="proj_risk",
                               label_visibility="collapsed"))
         win_rate_input = _slider_row(
             "Winning trades", lambda v: f"{v}%",
