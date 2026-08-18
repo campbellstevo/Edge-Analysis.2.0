@@ -521,19 +521,22 @@ def _balance_from_journal(g: pd.DataFrame):
         return float(v.loc[idx].iloc[-1])
 
     if acct is not None:
-        labels = g.loc[ok, acct].astype(str).str.strip().replace({"": "—", "nan": "—"})
-        groups = {a: idx for a, idx in labels.groupby(labels).groups.items()}
+        labels = g.loc[ok, acct].astype(str).str.strip().replace({"": "\u2014", "nan": "\u2014"})
+        groups = {a: pd.Index(idx) for a, idx in labels.groupby(labels).groups.items()}
         if len(groups) > 1:
-            total = 0.0
-            for a, idx in groups.items():
-                try:
-                    total += _latest(pd.Index(idx))
-                except Exception:
-                    continue
-            if total > 0:
-                st.session_state["ea_bal_accounts"] = len(groups)
-                return total
+            # NEVER sum balances: a prop combine beside a live account is not
+            # extra capital. Prefer the nominated track-record account; failing
+            # that, the account with the most trades in view.
+            track = str(st.session_state.get("ea_track_account") or "")
+            pick = track if track in groups else max(groups, key=lambda a: len(groups[a]))
+            st.session_state["ea_bal_accounts"] = len(groups)
+            st.session_state["ea_bal_account"] = pick
+            try:
+                return _latest(groups[pick])
+            except Exception:
+                pass
     st.session_state.pop("ea_bal_accounts", None)
+    st.session_state.pop("ea_bal_account", None)
     return _latest(v[ok].index)
 
 
@@ -695,6 +698,22 @@ def _pct_txt(r_value: float, risk_pct: float, dp: int = 2) -> str:
     return f"{_as_pct(r_value, risk_pct):+.{dp}f}%"
 
 
+def _track_only(f: pd.DataFrame):
+    """The month card is a TRACK RECORD: one account, one set of plan rules.
+    A profit target, a max monthly loss and a trade cap belong to the account
+    they were written for — carrying them onto a prop combine is meaningless.
+    Returns (frame, account_label, other_accounts_in_view)."""
+    acct = st.session_state.get("ea_track_account")
+    if not acct or f is None or f.empty or "Account" not in f.columns:
+        return f, None, 0
+    col = f["Account"].astype(str).str.strip()
+    others = int(col[col.notna() & ~col.isin(["", "nan", "None"])].nunique() - 1)
+    sub = f[col == str(acct)]
+    if sub.empty:
+        return f, None, 0
+    return sub, str(acct), max(0, others)
+
+
 def _perf_settings(g: pd.DataFrame):
     """Monthly target / max-loss: auto from the data, editable via the pencil popover."""
     mr = g.set_index("__Date")["PnL_from_RR"].resample("MS").agg(["sum", "count"])
@@ -827,7 +846,8 @@ def _month_card(f: pd.DataFrame, styler) -> None:
             _src = st.session_state.get("ea_m_bal_src")
             _naccts = st.session_state.get("ea_bal_accounts")
             if _naccts and _naccts > 1:
-                _bal_note = f" (across {_naccts} accounts)"
+                _who = str(st.session_state.get("ea_bal_account") or "").split("@")[0][:20]
+                _bal_note = f" \u2014 {_who}"
             elif _roll:
                 _bal_note = (f" (your ${_roll[0]:,.0f} from {_roll[1]} plus "
                              f"{_roll[2]} trade{'s' if _roll[2] != 1 else ''} since)")
@@ -5119,9 +5139,17 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
 
     # ── Performance ────────────────────────────────────────────────────────
     if _active == "Performance":
-        _month_card(f_perf, styler)
+        # Money surfaces are a TRACK RECORD: one account, its plan, its balance.
+        # Behaviour tabs keep the full executed view (challenge fills included).
+        _f_track, _track_label, _track_others = _track_only(f_perf)
+        if _track_label and _track_others:
+            _short = _track_label.split("@")[0][:24]
+            st.caption(f"Track record: {_short} \u00b7 {_track_others} other "
+                       f"account{'s' if _track_others > 1 else ''} excluded here "
+                       "\u2014 pick an account in Filters to switch")
+        _month_card(_f_track, styler)
         _targets_tab(df_all_safe, styler)
-        _alltime_card(f_perf, styler)
+        _alltime_card(_f_track, styler)
         if _more_detail_has_content(f_perf, df_all_safe):
             with st.container(border=True):
                 st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
@@ -5135,7 +5163,7 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
             st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
             _card_header("Projections", "What this edge does over the months ahead if you keep showing up.")
             with _budget(1):
-                _projections_tab(df_all_safe, styler)
+                _projections_tab(_track_only(df_all_safe)[0], styler)
 
     # ── Entry: three cards — setups, timing, managing ─────────────────────
     if _active == "Entry":
@@ -5256,7 +5284,7 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
             st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
             _card_header("Trading plan", "The rules, ranked by what they're worth \u2014 and the breaker that guards the month.")
             with _budget(1):
-                _breaker_strip(df_all_safe)
+                _breaker_strip(_track_only(df_all_safe)[0])
                 render_plan_tab(df_all_safe, styler)
 
         with st.container(border=True):

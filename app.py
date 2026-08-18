@@ -1455,6 +1455,31 @@ def render_dashboard(mobile: bool):
     }
     _ACCT_FILTER_OPTS = ["All", "Live", "Demo", "FT", "Live and Demo"]
     acct_opts = _ACCT_FILTER_OPTS
+    # Real account names, when the journal carries them (MT5 writes the login).
+    # These drive the track-record card, which belongs to ONE account.
+    _real_accts = []
+    if "Account" in df.columns:
+        _av = df["Account"].astype(str).str.strip()
+        _av = _av[_av.notna() & ~_av.isin(["", "nan", "None"])]
+        if not _av.empty and _av.nunique() <= 24 and _av.str.len().max() > 6:
+            _counts = _av.value_counts()
+            _real_accts = list(_counts.index)
+            acct_opts = ["All executed"] + _real_accts
+            # Nominate a track-record account once: the one you actually trade
+            # most. Everything with a plan rule attached follows it.
+            if st.session_state.get("ea_track_account") not in _real_accts:
+                _exec_mask = pd.Series(True, index=df.index)
+                if "Type of Trade" in df.columns:
+                    _tt2 = df["Type of Trade"].astype(str).str.lower()
+                    _exec_mask = ~(_tt2.str.contains("forward")
+                                   | _tt2.str.contains("back test")
+                                   | _tt2.str.contains("backtest"))
+                _live = df.loc[_exec_mask & df["Account"].astype(str).str.contains(
+                    "live", case=False, na=False), "Account"].astype(str)
+                _pick = (_live.value_counts().index[0] if not _live.empty
+                         else _counts.index[0])
+                st.session_state["ea_track_account"] = _pick
+            st.session_state["ea_track_accounts_all"] = _real_accts
 
     # Trade Type options (MT5 schema only)
     tot_opts = ["All"]
@@ -1466,11 +1491,22 @@ def render_dashboard(mobile: bool):
         })
         if _tot:
             tot_opts = ["All"] + _tot
-            _paper = {t for t in _tot if "forward" in t.lower() or "back" in t.lower()}
-            if _paper and (set(_tot) - _paper):
-                # keep practice trades out of headline performance by default;
-                # still one tap away in Filters
-                tot_opts = ["Real money only", "All"] + _tot
+            _low = [t.lower() for t in _tot]
+            _sim = any(("forward" in v or "back" in v or "demo" in v
+                        or "paper" in v or "sim" in v) for v in _low)
+            _exe = any(not ("forward" in v or "back" in v or "demo" in v
+                            or "paper" in v or "sim" in v) for v in _low)
+            _extra = []
+            if _sim and _exe:
+                # The line is execution, not money: a challenge fill is a real
+                # fill under real pressure; a forward test never touched a broker.
+                _extra.append("Executed")
+            if any("live" in v or "funded" in v for v in _low) and \
+                    any("challenge" in v or "combine" in v or "evaluation" in v
+                        for v in _low):
+                _extra.append("Live money")
+            if _extra:
+                tot_opts = _extra + ["All"] + _tot
 
     if "Date" in df.columns:
         min_date = df["Date"].min().date()
@@ -1494,21 +1530,28 @@ def render_dashboard(mobile: bool):
         )
     if sel_sess != "All":
         mask &= (df["Session Norm"] == sel_sess)
-    if sel_acct != "All":
-        if "Account" in df.columns:
-            if sel_acct == "Live and Demo":
-                mask &= df["Account"].isin(["Live/Funded Capital", "Demo/Challenge"])
-            else:
-                _reverse = {v: k for k, v in _ACCT_MAP.items()}
-                mask &= (df["Account"] == _reverse.get(sel_acct, sel_acct))
+    if sel_acct not in ("All", "All executed") and "Account" in df.columns:
+        if sel_acct in _real_accts:
+            mask &= (df["Account"].astype(str).str.strip() == sel_acct)
+        elif sel_acct == "Live and Demo":
+            mask &= df["Account"].isin(["Live/Funded Capital", "Demo/Challenge"])
+        else:
+            _reverse = {v: k for k, v in _ACCT_MAP.items()}
+            mask &= (df["Account"] == _reverse.get(sel_acct, sel_acct))
 
     _paper_mask = None
-    if sel_tot == "Real money only" and "Type of Trade" in df.columns:
+    if sel_tot in ("Executed", "Live money", "Real money only") \
+            and "Type of Trade" in df.columns:
         _tt = df["Type of Trade"].astype(str).str.lower()
-        _paper_mask = ~(_tt.str.contains("forward") | _tt.str.contains("back test")
-                        | _tt.str.contains("backtest"))
+        _drop = (_tt.str.contains("forward") | _tt.str.contains("back test")
+                 | _tt.str.contains("backtest") | _tt.str.contains("paper"))
+        if sel_tot == "Live money":
+            _drop = _drop | _tt.str.contains("challenge") | _tt.str.contains("combine") \
+                | _tt.str.contains("evaluation")
+        _paper_mask = ~_drop
         mask &= _paper_mask
-    elif sel_tot not in ("All", "Real money only") and "Type of Trade" in df.columns:
+    elif sel_tot not in ("All", "Executed", "Live money",
+                         "Real money only") and "Type of Trade" in df.columns:
         mask &= df["Type of Trade"].astype(str).str.contains(re.escape(sel_tot), case=False, na=False)
 
     mask &= _apply_date_filter(df, date_range)

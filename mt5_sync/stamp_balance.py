@@ -71,6 +71,7 @@ def main() -> int:
             print("MT5 gave no account info — is the terminal logged in?")
             return 1
         balance, equity = round(float(acc.balance), 2), round(float(acc.equity), 2)
+        login = str(getattr(acc, "login", "") or "")
     finally:
         mt5.shutdown()
 
@@ -140,7 +141,29 @@ def main() -> int:
         print("No trades in the journal yet — nothing to stamp.")
         return 0
 
-    page_id = results[0]["id"]
+    # Stamp the newest trade belonging to THIS account. Writing a live balance
+    # onto a prop-challenge or forward-test row would make the dashboard read a
+    # percentage against the wrong capital.
+    page_id = None
+    if login:
+        r2 = requests.post(f"https://api.notion.com/v1/databases/{dbid}/query", headers=hdr,
+                           json={"page_size": 20,
+                                 "sorts": [{"property": "Close Time",
+                                            "direction": "descending"}]},
+                           timeout=20)
+        for page in (r2.json() or {}).get("results", []):
+            props = page.get("properties") or {}
+            acct_txt = "".join(t.get("plain_text", "")
+                               for t in (props.get("Account", {}).get("rich_text") or []))
+            if login and login in acct_txt:
+                page_id = page["id"]
+                break
+        if page_id is None:
+            print(f"No journal row yet for account {login} — stamping the newest trade "
+                  "instead. If that row belongs to another account, run the trade "
+                  "sync first so this account has a row.")
+    if page_id is None:
+        page_id = results[0]["id"]
     props = {"Balance": {"number": balance}, "Equity": {"number": equity}}
     r2 = requests.patch(f"https://api.notion.com/v1/pages/{page_id}", headers=hdr,
                         json={"properties": props}, timeout=20)

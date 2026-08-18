@@ -196,8 +196,8 @@ def render_filters(
             _has_tot = bool(tot_opts) and len(tot_opts) > 1
             _has_acct = (not _has_tot) and bool(acct_opts) and len(acct_opts) > 1
             if _has_tot:
-                _tot_default = ("Real money only" if "Real money only" in tot_opts
-                                else "All")
+                _tot_default = next((o for o in ("Executed", "Real money only")
+                                     if o in tot_opts), "All")
                 _cur_tot = st.session_state.get("filters_tot_select", _tot_default)
                 if _cur_tot not in tot_opts:
                     _cur_tot = _tot_default
