@@ -5148,7 +5148,7 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                        f"account{'s' if _track_others > 1 else ''} excluded here "
                        "\u2014 pick an account in Filters to switch")
         _month_card(_f_track, styler)
-        _targets_tab(df_all_safe, styler)
+        _targets_tab(_track_only(df_all_safe)[0], styler)
         _alltime_card(_f_track, styler)
         if _more_detail_has_content(f_perf, df_all_safe):
             with st.container(border=True):
