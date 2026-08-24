@@ -698,6 +698,41 @@ def _pct_txt(r_value: float, risk_pct: float, dp: int = 2) -> str:
     return f"{_as_pct(r_value, risk_pct):+.{dp}f}%"
 
 
+def _digest_card(f: pd.DataFrame) -> None:
+    """The reason to open the app: your weaknesses priced in R, worst first."""
+    try:
+        from edge_analysis.digest import findings
+        fs = findings(f)
+    except Exception:
+        return
+    if not fs:
+        return
+    import html as _h2
+    with st.container(border=True):
+        st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
+        _card_header("What needs work",
+                     "Your leaks, priced in R at stake across the trades in view "
+                     "\u2014 fix the top one first.")
+        rows = []
+        for i, f_ in enumerate(fs[:3], 1):
+            _stake = f_["stake"]
+            _col = "#ef4444" if i == 1 else ("#f59e0b" if i == 2 else "#64748b")
+            rows.append(
+                f"<div style='display:flex;align-items:baseline;gap:12px;"
+                f"padding:8px 2px;'>"
+                f"<span style='background:{_col};color:#fff;font-weight:800;"
+                f"font-size:12.5px;border-radius:999px;padding:3px 11px;"
+                f"white-space:nowrap;'>{_stake:g}R</span>"
+                f"<span style='font-weight:700;color:#0f172a;white-space:nowrap;'>"
+                f"{_h2.escape(str(f_['label']))}</span>"
+                f"<span style='color:#64748b;font-size:13px;'>"
+                f"{_h2.escape(str(f_['evidence']))}</span></div>")
+        st.markdown("".join(rows), unsafe_allow_html=True)
+        if len(fs) > 3:
+            st.caption(f"{len(fs) - 3} smaller leak{'s' if len(fs) > 4 else ''} "
+                       "below the top three \u2014 the tabs hold the detail.")
+
+
 def _track_only(f: pd.DataFrame):
     """The month card is a TRACK RECORD: one account, one set of plan rules.
     A profit target, a max monthly loss and a trade cap belong to the account
@@ -5148,6 +5183,9 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                        f"account{'s' if _track_others > 1 else ''} excluded here "
                        "\u2014 pick an account in Filters to switch")
         _month_card(_f_track, styler)
+        # What to fix comes right after where you stand. Behaviour is judged on
+        # every executed fill in view — challenge trades included.
+        _digest_card(f_perf)
         _targets_tab(_track_only(df_all_safe)[0], styler)
         _alltime_card(_f_track, styler)
         if _more_detail_has_content(f_perf, df_all_safe):
