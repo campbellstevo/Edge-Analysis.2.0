@@ -703,9 +703,11 @@ def _digest_card(f: pd.DataFrame) -> None:
     try:
         from edge_analysis.digest import findings
         fs = findings(f)
-    except Exception:
+    except Exception as _e:
+        st.caption(f"needs-work digest unavailable: {type(_e).__name__}: {str(_e)[:140]}")
         return
     if not fs:
+        st.caption(f"needs-work digest: no findings on {0 if f is None else len(f)} trades in view")
         return
     import html as _h2
     with st.container(border=True):
