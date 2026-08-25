@@ -711,26 +711,30 @@ def _digest_card(f: pd.DataFrame) -> None:
     with st.container(border=True):
         st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
         _card_header("What needs work",
-                     "Your leaks, priced in R at stake across the trades in view "
-                     "\u2014 fix the top one first.")
+                     "Your three biggest leaks across the trades in view \u2014 "
+                     "fix the top one first.")
         rows = []
         for i, f_ in enumerate(fs[:3], 1):
-            _stake = f_["stake"]
-            _col = "#ef4444" if i == 1 else ("#f59e0b" if i == 2 else "#64748b")
+            _sev = "#ef4444" if i == 1 else ("#f59e0b" if i == 2 else "#94a3b8")
+            _lab = _h2.escape(str(f_["label"]))
+            _ev = _h2.escape(str(f_["evidence"]).split(" \u2014 ")[0])
+            _bord = "" if i == 1 else "border-top:1px solid #eef0f6;"
+            _stk = f_["stake"]
             rows.append(
-                f"<div style='display:flex;align-items:baseline;gap:12px;"
-                f"padding:8px 2px;'>"
-                f"<span style='background:{_col};color:#fff;font-weight:800;"
-                f"font-size:12.5px;border-radius:999px;padding:3px 11px;"
-                f"white-space:nowrap;'>{_stake:g}R</span>"
-                f"<span style='font-weight:700;color:#0f172a;white-space:nowrap;'>"
-                f"{_h2.escape(str(f_['label']))}</span>"
-                f"<span style='color:#64748b;font-size:13px;'>"
-                f"{_h2.escape(str(f_['evidence']))}</span></div>")
+                "<div style='display:flex;justify-content:space-between;"
+                "align-items:flex-start;gap:16px;padding:13px 2px;" + _bord + "'>"
+                "<div style='min-width:0;'>"
+                "<div style='font-size:11px;font-weight:700;letter-spacing:0.07em;"
+                f"color:{_sev};'>NO. {i}</div>"
+                "<div style='font-size:16.5px;font-weight:800;color:#0f172a;"
+                f"margin:1px 0 2px;'>{_lab}</div>"
+                f"<div style='font-size:13px;color:#64748b;'>{_ev}</div></div>"
+                "<div style='text-align:right;flex:0 0 auto;'>"
+                "<div style='font-size:21px;font-weight:800;"
+                f"color:{_sev};white-space:nowrap;'>&minus;{_stk:g}R</div>"
+                "<div style='font-size:11px;font-weight:600;letter-spacing:0.06em;"
+                "color:#94a3b8;'>AT STAKE</div></div></div>")
         st.markdown("".join(rows), unsafe_allow_html=True)
-        if len(fs) > 3:
-            st.caption(f"{len(fs) - 3} smaller leak{'s' if len(fs) > 4 else ''} "
-                       "below the top three \u2014 the tabs hold the detail.")
 
 
 def _track_only(f: pd.DataFrame):
@@ -5183,9 +5187,6 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                        f"account{'s' if _track_others > 1 else ''} excluded here "
                        "\u2014 pick an account in Filters to switch")
         _month_card(_f_track, styler)
-        # What to fix comes right after where you stand. Behaviour is judged on
-        # every executed fill in view — challenge trades included.
-        _digest_card(f_perf)
         _targets_tab(_track_only(df_all_safe)[0], styler)
         _alltime_card(_f_track, styler)
         if _more_detail_has_content(f_perf, df_all_safe):
@@ -5341,6 +5342,8 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
 
     # ── Review: one weekly card ────────────────────────────────────────────
     if _active == "Review":
+        # The review question is "what do I work on?" — so the answer leads.
+        _digest_card(f_perf)
         with st.container(border=True):
             st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
             _card_header("Weekly debrief", "Process over P&L \u2014 did you trade your system this week? Money lives on Performance.")
