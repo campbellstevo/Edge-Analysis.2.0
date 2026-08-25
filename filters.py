@@ -194,7 +194,9 @@ def render_filters(
             # one box, two journals: MT5 templates filter by Trade Type,
             # the SR template filters by Account
             _has_tot = bool(tot_opts) and len(tot_opts) > 1
-            _has_acct = (not _has_tot) and bool(acct_opts) and len(acct_opts) > 1
+            # Both render: Trade Type answers "what kind of trading", Account
+            # answers "whose money" — a multi-account journal needs both.
+            _has_acct = bool(acct_opts) and len(acct_opts) > 1
             if _has_tot:
                 _tot_default = next((o for o in ("Executed", "Real money only")
                                      if o in tot_opts), "All")
@@ -207,10 +209,11 @@ def render_filters(
                     index=tot_opts.index(_cur_tot),
                     key="filters_tot_select", on_change=_filters_dirty,
                 )
-            elif _has_acct:
-                _cur_acct = st.session_state.get("filters_acct_select", "All")
+            if _has_acct:
+                _acct_default = acct_opts[0]  # "All executed" when real accounts exist
+                _cur_acct = st.session_state.get("filters_acct_select", _acct_default)
                 if _cur_acct not in acct_opts:
-                    _cur_acct = "All"
+                    _cur_acct = _acct_default
                 sel_acct = st.selectbox(
                     "Account",
                     acct_opts,

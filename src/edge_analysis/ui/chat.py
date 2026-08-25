@@ -683,7 +683,8 @@ def _builtin_answer(q: str, df: pd.DataFrame):
                     f"{len(early)} closed before it (avg {_fmt(float(early['rr'].mean())) if len(early) else '—'}), "
                     f"{len(stopped)} stopped out. Full breakdown: Entry tab → Manual close vs set TP.")
 
-        if has("give back", "giveback", "gave back", "mfe", "left on the table"):
+        if has("give back", "giveback", "give-back", "gave back", "given back",
+               "mfe", "left on the table"):
             if "MFE (R)" in df.columns:
                 mfe = pd.to_numeric(df["MFE (R)"], errors="coerce")
                 if "Planned R:R" in df.columns:

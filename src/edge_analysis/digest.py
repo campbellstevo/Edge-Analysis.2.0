@@ -78,6 +78,16 @@ def findings(df: pd.DataFrame, min_n: int = _MIN_N) -> list:
     out = []
     if df is None or df.empty:
         return out
+    # Doctrine guard, independent of whatever filter fed this frame: leaks are
+    # about execution, and forward/back tests never touched a broker. A saved
+    # pre-redesign filter of "All" must not smuggle them in.
+    if "Type of Trade" in df.columns:
+        _tt = df["Type of Trade"].astype(str).str.lower()
+        _sim = (_tt.str.contains("forward") | _tt.str.contains("back test")
+                | _tt.str.contains("backtest") | _tt.str.contains("paper"))
+        df = df[~_sim]
+        if df.empty:
+            return out
     rr = _rr(df)
     if rr is None or rr.notna().sum() < min_n * 2:
         return out
