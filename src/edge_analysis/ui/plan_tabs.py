@@ -186,7 +186,10 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
     gates = [
         ("Headspace is Good", ok_head, "Good", "Okay/Bad"),
         ("It's a genuine A+ setup", ok_aplus, "A+", "non-A+"),
-        ("Bias is clear, entry is textbook", ok_exec, "Right", "off-plan"),
+        # decision-time field only: "was the bias RIGHT" is knowable after the
+        # fact and would make this gate circular
+        ("Bias written down, prepared before entry",
+         _yes(g, "Clear Bias/Prepared"), "prepared", "unprepared"),
         ("London or New York — never Asia", (is_ldn | is_ny), "LDN/NY", "other"),
         ("Inside your profitable hours (from your data)", in_window, "in window", "outside"),
         ("Single entry, structure stop set", ok_single, "single", "multi"),

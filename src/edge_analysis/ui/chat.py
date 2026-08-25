@@ -160,7 +160,8 @@ def _stats_context(df: pd.DataFrame) -> str:
             mfe = pd.to_numeric(df["MFE (R)"], errors="coerce")
             give = float((mfe - rr).clip(lower=0).sum())
             if give == give and give > 0:
-                lines.append(f"GIVE-BACK: {give:.1f}R of favourable movement not banked (MFE vs close)")
+                lines.append(f"GIVE-BACK (upper bound, not fully collectable): "
+                             f"{give:.1f}R peak-vs-close gap")
     except Exception:
         pass
     return "\n".join(lines) if lines else "No computable stats in the current view."
@@ -685,11 +686,22 @@ def _builtin_answer(q: str, df: pd.DataFrame):
         if has("give back", "giveback", "gave back", "mfe", "left on the table"):
             if "MFE (R)" in df.columns:
                 mfe = pd.to_numeric(df["MFE (R)"], errors="coerce")
+                if "Planned R:R" in df.columns:
+                    plan = pd.to_numeric(df["Planned R:R"], errors="coerce")
+                    paid = mfe.notna() & plan.notna() & (plan > 0) \
+                        & (mfe >= plan - 0.1) & (rr < plan - 0.1)
+                    left = float((plan[paid] - rr[paid]).clip(lower=0).sum())
+                    if int(paid.sum()) >= 1:
+                        return (f"{int(paid.sum())} trades reached your planned target but "
+                                f"banked less — {left:.1f}R the market paid that wasn't "
+                                "collected. That's the collectable number; peak-vs-close "
+                                "gaps beyond the plan aren't claimable. "
+                                "Detail: Entry tab, Manual close vs set TP.")
                 give = float((mfe - rr).clip(lower=0).sum())
                 if give == give:
-                    return (f"You've shown {give:.1f}R of favourable movement that wasn't banked "
-                            "(MFE vs close). A pre-defined +1R action — partial or trail — is the fix. "
-                            "Detail: Entry tab, Trade efficiency.")
+                    return (f"Peak-vs-close gap totals {give:.1f}R — an upper bound, not a "
+                            "collectable amount, since nobody exits every top. "
+                            "Log Planned R:R and I can tell you the collectable part.")
             return "No MFE (R) column — give-back needs it (the MT5 sync fills it)."
 
         if has("dollar", "money", "$", "usd", "cash"):

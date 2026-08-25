@@ -533,14 +533,14 @@ def _cat_stats(df: pd.DataFrame, col: str, multi: bool = False, min_n: int = 1):
 def _mistake_section(df: pd.DataFrame, styler) -> None:
     t = _t()
     st.markdown("### Mistake Leak Report")
-    st.caption("How often each mistake shows up and the average R it costs you versus clean trades.")
+    st.caption("Each behaviour you've tagged, how often it recurs, and its total bill. "
+               "No comparison to clean trades — a mistake tag exists because the trade "
+               "went wrong, so that comparison would prove nothing.")
     if "Mistake" not in df.columns:
         t._unavailable("Mistake Leak Report"); return
     g = df.copy()
     g["__rr"] = _num(g, "Closed RR") if _num(g, "Closed RR") is not None else pd.to_numeric(g.get("Closed RR"), errors="coerce")
     g["__mk"] = g["Mistake"].astype(str)
-    clean = g[g["__mk"].str.strip().str.lower().isin(["", "nan", "none", "na"])]
-    baseline = float(clean["__rr"].mean()) if not clean.empty and clean["__rr"].notna().any() else float(g["__rr"].mean() or 0.0)
 
     ex = _explode_multi(g, "Mistake")
     ex = ex[~ex["__tok"].str.lower().eq("na")]
@@ -549,24 +549,21 @@ def _mistake_section(df: pd.DataFrame, styler) -> None:
         return
     rows = []
     for mk, sub in ex.groupby("__tok"):
-        avg = float(sub["__rr"].mean()) if sub["__rr"].notna().any() else 0.0
-        cost = (avg - baseline) * len(sub)  # R vs a clean trade, summed
-        rows.append({"Category": mk, "Trades": len(sub), "Win %": 0.0,
-                     "Avg R": round(avg, 2), "Net R": round(float(sub["__rr"].sum()), 1),
-                     "Cost vs clean (R)": round(cost, 1)})
-    rdf = pd.DataFrame(rows).sort_values("Cost vs clean (R)")
-    rdf["Cost"] = pd.to_numeric(rdf["Cost vs clean (R)"], errors="coerce").fillna(0.0)
-    bars = rdf.rename(columns={"Cost vs clean (R)": "R cost vs clean"})[
-        ["Category", "R cost vs clean", "Trades"]]
-    t._rank_dots(bars, "Category", "R cost vs clean", fmt="+.1f")
-    st.caption("Bar = total R lost (or saved) versus a clean trade \u00b7 count = how often it happened. "
-               f"Clean-trade baseline: {baseline:+.2f}R avg.")
+        bill = float(sub["__rr"].sum()) if sub["__rr"].notna().any() else 0.0
+        rows.append({"Category": mk, "Trades": len(sub),
+                     "Total R while doing it": round(bill, 1)})
+    rdf = pd.DataFrame(rows).sort_values("Total R while doing it")
+    bars = rdf[["Category", "Total R while doing it", "Trades"]]
+    t._rank_dots(bars, "Category", "Total R while doing it", fmt="+.1f")
+    st.caption("Bar = total R banked on trades carrying that tag \u00b7 count = how often "
+               "it recurred. Repetition is the leak: you named it yourself and it keeps happening.")
     worst = rdf.iloc[0]
-    total_cost = float(rdf["Cost vs clean (R)"].clip(upper=0).sum())
-    t._insight_box(
-        f"Your costliest leak is <b>{worst['Category']}</b> — {int(worst['Trades'])} trades at "
-        f"<b>{worst['Avg R']:+.2f}R</b> avg (vs {baseline:+.2f}R clean), ~<b>{worst['Cost vs clean (R)']:.0f}R</b> lost. "
-        f"All mistakes combined cost roughly <b>{total_cost:.0f}R</b>.", "bad")
+    if float(worst["Total R while doing it"]) < 0 and int(worst["Trades"]) >= 3:
+        t._insight_box(
+            f"<b>{worst['Category']}</b> keeps recurring \u2014 tagged "
+            f"<b>{int(worst['Trades'])} times</b> for "
+            f"<b>{worst['Total R while doing it']:+.1f}R</b> in total. "
+            "One rehearsed rule for this exact moment beats ten resolutions.", "bad")
 
 
 def _conviction_section(df: pd.DataFrame, styler) -> None:
@@ -669,7 +666,8 @@ def _holdtime_section(df: pd.DataFrame, styler) -> None:
         rows = rows.assign(__o=rows["Category"].map(lambda v: labels.index(v) if v in labels else 9)).sort_values("__o").drop(columns="__o")
     _line_metric(rows, "Hold-Time Window", styler, value="Avg R", x_order=labels,
                  x_title="Hold time",
-                 caption="Average R by how long trades were held — find your optimal hold window.")
+                 caption="Average R by how long trades were held. Read as description, not advice: "
+                         "hold time is decided by the exit, so winners naturally sit in longer windows.")
 
 
 def _spread_section(df: pd.DataFrame, styler) -> None:

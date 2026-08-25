@@ -29,7 +29,9 @@ def _exit_optimizer(df, styler) -> None:
     t = _t()
     st.markdown("### Exit Optimization Simulator")
     st.caption("Replays every trade under different fixed R-targets using how far it actually ran (MFE) "
-               "and how far it dipped (MAE), to find the target that maximises expectancy. A model, not a guarantee.")
+               "and how far it dipped (MAE), to find the target that maximises expectancy. A model, not a "
+               "guarantee \u2014 and MFE stops counting at your exit, so on early-closed trades the "
+               "high-target results are understated, not flattered.")
     mfe = _num(df, "MFE (R)"); rr = _num(df, "Closed RR"); mae = _num(df, "MAE (R)")
     if mfe is None or rr is None:
         t._unavailable("Exit Optimization Simulator"); return
