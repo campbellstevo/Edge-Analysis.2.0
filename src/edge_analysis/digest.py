@@ -11,7 +11,17 @@ Honesty rules:
 - R at stake is measured against the trader's OWN baseline (their average trade
   everywhere else), never against zero, so a bad patch in a good system isn't
   overstated;
-- every finding carries its evidence in one sentence.
+- every finding carries its evidence in one sentence;
+- NO OUTCOME CIRCULARITY: a comparative finding may only condition on what the
+  trader knew at decision time (session, model, state, rules). Tags applied
+  BECAUSE a trade went wrong (Mistake, Reason of loss) prove nothing by
+  comparison — "tagged trades underperform" is true by definition. Those are
+  reported as a recurring specific behaviour and its total bill, never as a
+  gap vs clean trades;
+- NO ONE-SIDED EXIT MATHS: praising early exits inflates win rate by
+  construction, and damning them ignores the reversals they dodged. Exit
+  findings only count trades where price PROVABLY reached the planned target
+  (MFE >= plan) and less was banked — R the market paid that wasn't collected.
 """
 from __future__ import annotations
 
@@ -110,28 +120,54 @@ def findings(df: pd.DataFrame, min_n: int = _MIN_N) -> list:
         if f:
             out.append(f)
 
-    # 4. Repeated mistakes (already-tagged cost)
+    # 4. The one mistake that keeps recurring — frequency and its bill.
+    # (Never "tagged vs clean": tags are applied because trades went wrong,
+    # so that comparison is circular. Repetition of a named behaviour isn't.)
     if "Mistake" in df.columns:
-        mk = df["Mistake"].astype(str).str.strip()
-        tagged = ~mk.str.lower().isin(["", "nan", "none", "na"])
-        f = _gap_finding(df, rr, tagged, "mistake", "Kill the tagged mistakes",
-                        "trades with a tagged mistake", min_n)
-        if f:
-            out.append(f)
+        ex = df.copy()
+        ex["__rr"] = rr
+        ex["__mk"] = ex["Mistake"].astype(str)
+        toks = (ex.assign(__tok=ex["__mk"].str.split(r"[;,]"))
+                  .explode("__tok"))
+        toks["__tok"] = toks["__tok"].astype(str).str.strip().str.strip('[]"\'')
+        toks = toks[~toks["__tok"].str.lower().isin(["", "nan", "none", "na"])]
+        best_tok = None
+        for tok, sub in toks.groupby("__tok"):
+            if len(sub) < 3:
+                continue
+            bill = float(pd.to_numeric(sub["__rr"], errors="coerce").sum())
+            if bill >= -0.5:
+                continue
+            cand = {"kind": "mistake", "label": f"Stop \u201c{tok}\u201d",
+                    "stake": round(-bill, 1), "n": int(len(sub)),
+                    "evidence": (f"you've tagged it {len(sub)} times \u2014 "
+                                 f"{bill:+.1f}R while doing it. You already "
+                                 "know this one; it keeps happening")}
+            if best_tok is None or cand["stake"] > best_tok["stake"]:
+                best_tok = cand
+        if best_tok:
+            out.append(best_tok)
 
-    # 5. Give-back: winners that came home early
-    if "MFE (R)" in df.columns:
+    # 5. Exits: only trades where price PROVABLY reached the planned target
+    # and less was banked. No credit or blame for early exits beyond that —
+    # cutting a trade that never reached plan may have saved you.
+    if "MFE (R)" in df.columns and "Planned R:R" in df.columns:
         mfe = pd.to_numeric(df["MFE (R)"], errors="coerce")
-        gb = (mfe - rr).clip(lower=0)
-        big = gb[(mfe >= 1.5) & (rr < mfe * 0.5)]
-        if len(big) >= min_n and float(big.sum()) >= 2.0:
-            out.append({
-                "kind": "giveback", "label": "Hold winners to the plan",
-                "stake": round(float(big.sum()), 1), "n": int(len(big)),
-                "evidence": (f"{len(big)} trades ran {float(mfe[big.index].mean()):.1f}R "
-                             f"in your favour but closed under half of it — "
-                             f"{float(big.sum()):.1f}R at stake"),
-            })
+        plan = pd.to_numeric(df["Planned R:R"], errors="coerce")
+        tol = 0.1
+        paid = mfe.notna() & plan.notna() & (plan > 0) & (mfe >= plan - tol) \
+            & (rr < plan - tol)
+        n_p = int(paid.sum())
+        if n_p >= 3:
+            left = float((plan[paid] - rr[paid]).clip(lower=0).sum())
+            if left >= 2.0:
+                out.append({
+                    "kind": "exits", "label": "Bank the target when it's paid",
+                    "stake": round(left, 1), "n": n_p,
+                    "evidence": (f"{n_p} trades reached your planned target but "
+                                 f"banked less \u2014 the market paid it and "
+                                 f"{left:.1f}R wasn't collected"),
+                })
 
     # 6. Mental state (executed trades carry real pressure)
     if "Mental State" in df.columns:
