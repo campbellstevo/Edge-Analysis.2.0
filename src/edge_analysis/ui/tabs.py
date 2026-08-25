@@ -703,17 +703,15 @@ def _digest_card(f: pd.DataFrame) -> None:
     try:
         from edge_analysis.digest import findings
         fs = findings(f)
-    except Exception as _e:
-        st.caption(f"needs-work digest unavailable: {type(_e).__name__}: {str(_e)[:140]}")
+    except Exception:
         return
     if not fs:
-        st.caption(f"needs-work digest: no findings on {0 if f is None else len(f)} trades in view")
         return
     import html as _h2
     with st.container(border=True):
         st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
         _card_header("What needs work",
-                     "Your three biggest leaks across the trades in view \u2014 "
+                     "Your three biggest leaks across your executed history \u2014 "
                      "fix the top one first.")
         rows = []
         for i, f_ in enumerate(fs[:3], 1):
@@ -5345,7 +5343,9 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
     # ── Review: one weekly card ────────────────────────────────────────────
     if _active == "Review":
         # The review question is "what do I work on?" — so the answer leads.
-        _digest_card(f_perf)
+        # Leaks are habits: judged on the full executed history, not the date
+        # slice currently in view (a one-week window would blind it).
+        _digest_card(df_all_safe)
         with st.container(border=True):
             st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
             _card_header("Weekly debrief", "Process over P&L \u2014 did you trade your system this week? Money lives on Performance.")
