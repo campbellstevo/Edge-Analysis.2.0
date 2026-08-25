@@ -1515,20 +1515,20 @@ def render_dashboard(mobile: bool):
         from datetime import date as _date
         min_date = max_date = _date.today()
 
-    # Saved before the Executed default existed? Their stored "All" would
-    # silently keep practice trades in every stat. Nudge once, keep their choice.
-    if (st.session_state.get("filters_tot_select") == "All"
-            and "Executed" in tot_opts
-            and not st.session_state.get("ea_tot_nudged")):
-        st.session_state["ea_tot_nudged"] = True
-        st.info("Heads up: your saved Trade Type filter is **All**, so forward and "
-                "back tests are included in what you see. Most people want "
-                "**Executed** — one tap in Filters.", icon="\U0001F4CC")
-
     # Render filters (imported from filters module)
     sel_inst, sel_em, sel_sess, date_range, sel_acct, sel_tot = render_filters(
         mobile, inst_opts, em_opts, sess_opts, date_mode_options, min_date, max_date, acct_opts, tot_opts
     )
+
+    # A Trade Type of "All" is usually a filter saved before the Executed
+    # default existed — practice trades are silently in everything. Say so
+    # once; keep their choice.
+    if (sel_tot == "All" and "Executed" in tot_opts
+            and not st.session_state.get("ea_tot_nudged")):
+        st.session_state["ea_tot_nudged"] = True
+        st.info("Your Trade Type filter is set to **All**, so forward and back "
+                "tests are included in what you see. Most people want "
+                "**Executed** \u2014 one tap in Filters.")
 
     # Apply filters
     mask = pd.Series(True, index=df.index)
