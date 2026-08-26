@@ -1520,12 +1520,8 @@ def render_dashboard(mobile: bool):
         mobile, inst_opts, em_opts, sess_opts, date_mode_options, min_date, max_date, acct_opts, tot_opts
     )
 
-    # While Trade Type is "All", practice trades are in every stat — usually a
-    # filter saved before the Executed default existed. A quiet standing note
-    # beats a one-run banner that boot reruns erase before anyone sees it.
-    if sel_tot == "All" and "Executed" in tot_opts:
-        st.caption("Trade Type is **All** \u2014 forward and back tests are included "
-                   "in what you see. Most people want **Executed** (Filters).")
+    # The Trade-Type coaching lives on the select itself (its help tooltip) —
+    # a standing sentence above the nav was clutter in prime space.
 
     # Apply filters
     mask = pd.Series(True, index=df.index)

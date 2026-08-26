@@ -5181,11 +5181,8 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
         # Money surfaces are a TRACK RECORD: one account, its plan, its balance.
         # Behaviour tabs keep the full executed view (challenge fills included).
         _f_track, _track_label, _track_others = _track_only(f_perf)
-        if _track_label and _track_others:
-            _short = _track_label.split("@")[0][:24]
-            st.caption(f"Track record: {_short} \u00b7 {_track_others} other "
-                       f"account{'s' if _track_others > 1 else ''} excluded here "
-                       "\u2014 pick an account in Filters to switch")
+        # No caption: the hero's sub-line names the account, and the Account
+        # select's tooltip explains switching. Grey prose above cards is clutter.
         _month_card(_f_track, styler)
         _targets_tab(_track_only(df_all_safe)[0], styler)
         _alltime_card(_f_track, styler)

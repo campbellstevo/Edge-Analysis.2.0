@@ -208,6 +208,8 @@ def render_filters(
                     tot_opts,
                     index=tot_opts.index(_cur_tot),
                     key="filters_tot_select", on_change=_filters_dirty,
+                    help="Executed = every real fill (challenges included). "
+                         "All also counts forward and back tests.",
                 )
         c3, c4 = st.columns(2, gap="small")
         with c4:
@@ -221,6 +223,8 @@ def render_filters(
                     acct_opts,
                     index=acct_opts.index(_cur_acct),
                     key="filters_acct_select", on_change=_filters_dirty,
+                    help="Money cards follow your main account; pick one here "
+                         "to switch everything to it.",
                 )
         with c3:
             current_mode = st.session_state.get("filters_date_mode", "All")
