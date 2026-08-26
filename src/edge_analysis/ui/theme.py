@@ -955,6 +955,41 @@ def inject_theme():
         color: #4800ff !important;
     }}
 
+    /* Density + setup segments: same segmented pill as the theme toggle,
+       sized for words instead of glyphs */
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"],
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-setupseg) [role="radiogroup"] {{
+        display: inline-flex; gap: 0; background: #ffffff;
+        border: 1px solid rgba(0,0,0,0.08); border-radius: 999px;
+        padding: 3px; box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"] > label,
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-setupseg) [role="radiogroup"] > label {{
+        margin: 0 !important; padding: 7px 0 !important; min-width: 62px;
+        display: flex; align-items: center; justify-content: center;
+        border-radius: 999px; cursor: pointer;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-setupseg) [role="radiogroup"] > label {{
+        min-width: 118px;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"] > label > div:first-child,
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-setupseg) [role="radiogroup"] > label > div:first-child {{
+        display: none;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"] > label p,
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-setupseg) [role="radiogroup"] > label p {{
+        font-size: 13px !important; font-weight: 600 !important; color: #64748b;
+        margin: 0 !important; line-height: 1 !important;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"] > label:has(input:checked),
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-setupseg) [role="radiogroup"] > label:has(input:checked) {{
+        background: #4800ff;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"] > label:has(input:checked) p,
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-setupseg) [role="radiogroup"] > label:has(input:checked) p {{
+        color: #ffffff !important;
+    }}
+
     /* Loading feel: house-styled spinner + skeleton shimmer */
     [data-testid="stSpinner"] > div {{
         border-top-color: #4800ff !important;

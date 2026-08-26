@@ -5178,6 +5178,15 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
     _salty = _is_salty()
     _data = f_perf if (f_perf is not None and not f_perf.empty) else df_all_safe
 
+    # Focus mode: the track record and what needs work — nothing else. The
+    # header Focus/All segment is the way back; adding any prose here would
+    # defeat the point of the mode.
+    if st.session_state.get("ea_density_pref") == "Focus":
+        _f_track, _track_label, _track_others = _track_only(f_perf)
+        _month_card(_f_track, styler)
+        _digest_card(df_all_safe)
+        return
+
     # Speed: render ONLY the active tab. st.tabs runs all six server-side on
     # every rerun; this radio-nav (styled as the same pills) does one.
     _TABS = ["Performance", "Entry", "Externals", "Psychology", "Plan", "Review"]

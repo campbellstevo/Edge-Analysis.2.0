@@ -1116,7 +1116,9 @@ def _prefs_blob() -> dict:
         "JSON.stringify({v:localStorage.getItem('ea_view')||'',"
         "f:localStorage.getItem('ea_filters')||'',"
         "p:localStorage.getItem('ea_mplan')||'',"
-        "t:localStorage.getItem('ea_theme')||''})",
+        "t:localStorage.getItem('ea_theme')||'',"
+        "d:localStorage.getItem('ea_density')||'',"
+        "su:localStorage.getItem('ea_setup')||''})",
         key="ea_prefs_load")
     if not raw:
         return {}
@@ -1124,7 +1126,7 @@ def _prefs_blob() -> dict:
         blob = json.loads(raw) or {}
     except ValueError:
         return {}
-    if isinstance(blob, dict) and any(blob.values()):
+    if isinstance(blob, dict):
         st.session_state["ea_prefs"] = blob
         return blob
     return {}
@@ -1532,6 +1534,73 @@ def render_dashboard(mobile: bool):
         min_date = max_date = _date.today()
 
     # Render filters (imported from filters module)
+    # ── Three-tap setup (first sign-in only) ─────────────────────────────
+    # One screen, three choices, saved to this device. Never shown again once
+    # answered (localStorage ea_setup=1), never shown while the prefs blob is
+    # still in flight, never shown in demo.
+    if (not _demo and "ea_prefs" in st.session_state
+            and not (st.session_state.get("ea_prefs") or {}).get("su")
+            and not st.session_state.get("ea_setup_done")):
+        _s_accts = st.session_state.get("ea_track_accounts_all") or []
+        if "ea_setup_view" not in st.session_state:
+            st.session_state["ea_setup_view"] = (
+                "Charts" if st.session_state.get("ea_view_pref") == "Chart" else "Tables")
+        if "ea_setup_density" not in st.session_state:
+            st.session_state["ea_setup_density"] = (
+                "Focus" if st.session_state.get("ea_density_pref") == "Focus"
+                else "Everything")
+        st.markdown("<div class='spacer-12'></div>", unsafe_allow_html=True)
+        with st.container(border=True):
+            st.markdown(
+                "<div style='font-size:22px;font-weight:800;letter-spacing:-0.01em;"
+                "margin:2px 0 2px;'>Make it yours</div>"
+                "<div style='font-size:14px;color:#5b6270;margin-bottom:14px;'>"
+                "Three taps — change any of them later from the header.</div>",
+                unsafe_allow_html=True)
+            if len(_s_accts) > 1:
+                _cur = st.session_state.get("ea_track_account")
+                st.markdown(
+                    "<div style='font-size:11px;font-weight:700;letter-spacing:0.06em;"
+                    "color:#94a3b8;margin:6px 0 4px;'>MAIN ACCOUNT &mdash; MONEY CARDS FOLLOW IT</div>",
+                    unsafe_allow_html=True)
+                st.selectbox("Main account", _s_accts,
+                             index=_s_accts.index(_cur) if _cur in _s_accts else 0,
+                             key="ea_setup_acct", label_visibility="collapsed")
+            st.markdown(
+                "<div style='font-size:11px;font-weight:700;letter-spacing:0.06em;"
+                "color:#94a3b8;margin:12px 0 4px;'>YOUR NUMBERS AS</div>",
+                unsafe_allow_html=True)
+            st.markdown('<div class="ea-setupseg"></div>', unsafe_allow_html=True)
+            st.radio("Numbers", ["Tables", "Charts"], key="ea_setup_view",
+                     horizontal=True, label_visibility="collapsed")
+            st.markdown(
+                "<div style='font-size:11px;font-weight:700;letter-spacing:0.06em;"
+                "color:#94a3b8;margin:12px 0 4px;'>HOW MUCH AT ONCE</div>",
+                unsafe_allow_html=True)
+            st.markdown('<div class="ea-setupseg"></div>', unsafe_allow_html=True)
+            st.radio("Density", ["Everything", "Focus"], key="ea_setup_density",
+                     horizontal=True, label_visibility="collapsed",
+                     help="Focus opens with your track record and what needs work. "
+                          "Everything keeps all six tabs.")
+            st.markdown("<div class='spacer-12'></div>", unsafe_allow_html=True)
+            if st.button("Start", key="ea_setup_go", type="primary"):
+                _pick_acct = st.session_state.get("ea_setup_acct")
+                if _pick_acct and _pick_acct in _s_accts:
+                    st.session_state["ea_track_account"] = _pick_acct
+                    st.session_state["ea_mplan_dirty"] = True
+                _v = "Table" if st.session_state.get("ea_setup_view") == "Tables" else "Chart"
+                if st.session_state.get("ea_view_pref") != _v:
+                    st.session_state["ea_view_pref"] = _v
+                    st.session_state["ea_view_dirty"] = True
+                _dwant = ("Focus" if st.session_state.get("ea_setup_density") == "Focus"
+                          else "All")
+                st.session_state["ea_density_pref"] = _dwant
+                st.session_state["ea_density_dirty"] = True
+                st.session_state["ea_setup_done"] = True
+                st.session_state["ea_setup_dirty"] = True
+                _st_rerun()
+        return
+
     sel_inst, sel_em, sel_sess, date_range, sel_acct, sel_tot = render_filters(
         mobile, inst_opts, em_opts, sess_opts, date_mode_options, min_date, max_date, acct_opts, tot_opts
     )
@@ -2087,17 +2156,30 @@ def main() -> None:
                 # applied by _perf_settings BEFORE the plan sliders exist —
                 # writing a widget key from here is rejected by Streamlit
                 st.session_state["ea_mplan_saved"] = _pb
+                if _pb.get("a") and "ea_track_account" not in st.session_state:
+                    st.session_state["ea_track_account"] = str(_pb["a"])
     if st.session_state.pop("ea_mplan_dirty", False) and not _demo:
         _pb = {"t": float(st.session_state.get("ea_m_tgt", 5.0)),
                "s": float(st.session_state.get("ea_m_stop", -6.0)),
                "c": int(st.session_state.get("ea_m_cap", 12)),
                "b": float(st.session_state.get("ea_m_bal", 10000.0)),
                "r": float(st.session_state.get("ea_m_risk", 1.0)),
-               "d": str(st.session_state.get("ea_bal_asof") or "")}
+               "d": str(st.session_state.get("ea_bal_asof") or ""),
+               "a": str(st.session_state.get("ea_track_account") or "")}
         _js_eval("localStorage.setItem('ea_mplan', " + json.dumps(json.dumps(_pb)) + ")",
                  key="ea_mplan_save")
     if st.session_state.pop("ea_mplan_clear", False):
         _js_eval("localStorage.removeItem('ea_mplan')", key="ea_mplan_clear_js")
+    if "ea_density_pref" not in st.session_state:
+        _saved_density = _prefs.get("d") or ""
+        if _saved_density in ("Focus", "All"):
+            st.session_state["ea_density_pref"] = _saved_density
+    if st.session_state.pop("ea_density_dirty", False):
+        _js_eval("localStorage.setItem('ea_density', "
+                 + json.dumps(st.session_state.get("ea_density_pref", "All")) + ")",
+                 key="ea_density_save")
+    if st.session_state.pop("ea_setup_dirty", False):
+        _js_eval("localStorage.setItem('ea_setup', \"1\")", key="ea_setup_save")
     if "ea_theme_pref" not in st.session_state:
         _saved_theme = _prefs.get("t") or ""
         if _saved_theme in ("dark", "light"):

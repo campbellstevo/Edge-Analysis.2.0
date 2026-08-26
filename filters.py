@@ -131,7 +131,23 @@ def render_filters(
         _active += 1
     _flabel = f"Filters · {_active} on" if _active else "Filters"
     st.markdown('<div class="ea-hdrbar"></div>', unsafe_allow_html=True)
-    _hc1, _hc2, _hc3 = st.columns([7, 1.5, 0.9])
+    _hc1, _hcd, _hc2, _hc3 = st.columns([5.3, 2.1, 1.5, 0.9])
+    with _hcd:
+        # Density: Focus = track record + what needs work; All = the six tabs.
+        if st.session_state.get("ea_density_seg") not in ("Focus", "All"):
+            st.session_state["ea_density_seg"] = (
+                "Focus" if st.session_state.get("ea_density_pref") == "Focus" else "All")
+
+        def _density_cb():
+            want = st.session_state.get("ea_density_seg") or "All"
+            if st.session_state.get("ea_density_pref", "All") != want:
+                st.session_state["ea_density_pref"] = want
+                st.session_state["ea_density_dirty"] = True
+
+        st.markdown('<div class="ea-densityseg"></div>', unsafe_allow_html=True)
+        st.radio("Density", ["Focus", "All"], key="ea_density_seg",
+                 horizontal=True, on_change=_density_cb, label_visibility="collapsed",
+                 help="Focus shows your track record and what needs work. All shows every tab.")
     with _hc1:
         try:
             flt = st.popover(_flabel, use_container_width=False)
