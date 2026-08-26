@@ -912,7 +912,7 @@ def inject_theme():
         width: max-content; margin-left: auto;
     }}
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-themeseg) [role="radiogroup"] > label {{
-        margin: 0 !important; padding: 5px 15px !important; border-radius: 999px !important;
+        margin: 0 !important; padding: 7px 16px !important; border-radius: 999px !important;
         border: none !important; background: transparent !important; cursor: pointer;
         transition: background 160ms ease, color 160ms ease;
     }}
@@ -931,8 +931,12 @@ def inject_theme():
     }}
 
     /* Round ⋯ overflow button */
+    /* icon-only: st.popover's dropdown caret has no business on a ⋯ button */
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-dots) button svg {{
+        display: none !important;
+    }}
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-dots) button {{
-        width: 42px !important; min-width: 42px !important; height: 38px !important;
+        width: 40px !important; min-width: 40px !important; height: 40px !important;
         border-radius: 999px !important; padding: 0 !important;
         background: #ffffff !important; border: 1px solid rgba(0,0,0,0.08) !important;
         box-shadow: 0 2px 8px rgba(0,0,0,0.04) !important;
@@ -970,11 +974,19 @@ def inject_theme():
         gap: 0 !important;
     }}
     div[data-testid="stPopoverBody"]:has(.ea-moremenu) button {{
-        padding: 6px 10px !important; min-height: 32px !important;
+        padding: 7px 12px !important; min-height: 34px !important;
     }}
+    /* Group headers own their band: fixed height, nothing can paint over it */
     div[data-testid="stPopoverBody"]:has(.ea-moremenu)
-        div[data-testid="stElementContainer"]:has(+ div[data-testid="stElementContainer"] button) {{
-        margin-bottom: 0 !important;
+        div[data-testid="stElementContainer"]:has(.ea-menu-eyebrow) {{
+        margin: 0 !important; padding: 10px 12px 4px !important;
+        position: relative; z-index: 2;
+    }}
+    div[data-testid="stPopoverBody"]:has(.ea-moremenu) .ea-menu-eyebrow {{
+        line-height: 1.2 !important;
+    }}
+    div[data-testid="stPopoverBody"]:has(.ea-moremenu) .ea-menu-sep {{
+        margin: 8px -6px 0 !important;
     }}
 
     /* Tab-nav radio styled as the tab pills (st.tabs replaced for speed) */

@@ -209,6 +209,8 @@ def render_filters(
                     index=tot_opts.index(_cur_tot),
                     key="filters_tot_select", on_change=_filters_dirty,
                 )
+        c3, c4 = st.columns(2, gap="small")
+        with c4:
             if _has_acct:
                 _acct_default = acct_opts[0]  # "All executed" when real accounts exist
                 _cur_acct = st.session_state.get("filters_acct_select", _acct_default)
@@ -220,7 +222,6 @@ def render_filters(
                     index=acct_opts.index(_cur_acct),
                     key="filters_acct_select", on_change=_filters_dirty,
                 )
-        c3, c4 = st.columns(2, gap="small")
         with c3:
             current_mode = st.session_state.get("filters_date_mode", "All")
             if current_mode not in date_mode_options:
@@ -266,10 +267,10 @@ def render_filters(
     def _flag(k):
         st.session_state[k] = True
 
-    _eyebrow = ("<div style='font-size:10.5px;font-weight:700;letter-spacing:0.07em;"
-                "color:#94a3b8;margin:2px 0 5px;'>{}</div>")
-    _eyebrow_div = ("<div style='border-top:1px solid rgba(148,163,184,0.22);"
-                    "margin:9px 0 0;'></div>" + _eyebrow)
+    _eyebrow = ("<div class='ea-menu-eyebrow' style='font-size:10.5px;font-weight:700;"
+                "letter-spacing:0.07em;color:#94a3b8;'>{}</div>")
+    _eyebrow_div = ("<div class='ea-menu-sep' style='border-top:1px solid "
+                    "rgba(148,163,184,0.22);'></div>" + _eyebrow)
     with _more:
         st.markdown('<div class="ea-moremenu"></div>', unsafe_allow_html=True)
         _cur = st.session_state.get(SessionKeys.NAV_PAGE, PageNames.DASHBOARD)
