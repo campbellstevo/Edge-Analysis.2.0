@@ -1601,6 +1601,25 @@ def render_dashboard(mobile: bool):
                 _st_rerun()
         return
 
+    # First-run walkthrough: right after the three-tap setup, once, dismissible.
+    # Session-scoped on purpose — if they leave before dismissing, it's gone;
+    # a nudge that nags is worse than no nudge.
+    if st.session_state.get("ea_setup_done") and not st.session_state.get("ea_tour_done"):
+        with st.container(border=True):
+            st.markdown(
+                "<div style='font-size:11px;font-weight:700;letter-spacing:0.06em;"
+                "color:#94a3b8;margin-bottom:8px;'>WHERE TO LOOK FIRST</div>"
+                "<div style='font-size:14px;line-height:2.0;color:#3b3f4d;'>"
+                "<b>Your month vs your plan</b> — the first card, target and "
+                "max-loss included.<br>"
+                "<b>What needs work</b> — the Review tab prices your leaks in R; "
+                "Focus mode (header) shows just these two.<br>"
+                "<b>Auto-sync and template</b> — the &hellip; menu, top right."
+                "</div>", unsafe_allow_html=True)
+            if st.button("Got it", key="ea_tour_dismiss"):
+                st.session_state["ea_tour_done"] = True
+                _st_rerun()
+
     sel_inst, sel_em, sel_sess, date_range, sel_acct, sel_tot = render_filters(
         mobile, inst_opts, em_opts, sess_opts, date_mode_options, min_date, max_date, acct_opts, tot_opts
     )

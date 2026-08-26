@@ -313,6 +313,8 @@ def render_filters(
         st.markdown(_eyebrow_div.format("HELP"), unsafe_allow_html=True)
         st.button("Getting started", key="mm_setup", use_container_width=True,
                   on_click=_flag, args=("ea_show_setup",))
+        st.button("Connect your broker", key="mm_broker", use_container_width=True,
+                  on_click=_flag, args=("ea_show_broker",))
         st.button("What the stats mean", key="mm_help", use_container_width=True,
                   on_click=_flag, args=("ea_show_help",))
         st.button("Privacy & terms", key="mm_legal", use_container_width=True,
@@ -329,6 +331,12 @@ def render_filters(
         else:
             with st.expander("What the stats mean", expanded=True):
                 _help_body()
+    if st.session_state.pop("ea_show_broker", False):
+        if _broker_dialog is not None:
+            _broker_dialog()
+        else:
+            with st.expander("Connect your broker", expanded=True):
+                _broker_body()
     if st.session_state.pop("ea_show_setup", False):
         if _setup_dialog is not None:
             _setup_dialog()
@@ -478,6 +486,32 @@ try:
         _mt5sync_body()
 except Exception:
     _mt5sync_dialog = None
+
+
+def _broker_body() -> None:
+    """Per-platform truth: what syncs itself today, what doesn't, no pretending."""
+    st.markdown("**MetaTrader 5** — automatic. Your personal sync is ready below; "
+                "every closed trade writes itself into your journal.")
+    _mt5sync_body()
+    st.markdown("---")
+    st.markdown(
+        "**cTrader, TradingView, DXtrade, others** — manual for now, honestly. "
+        "Log trades straight into the Notion journal and the dashboard works "
+        "identically — every chart, stat and verdict. Auto-sync for more "
+        "platforms is on the roadmap; MT5 came first because it's what most "
+        "prop firms and brokers run.\n\n"
+        "**Prop-firm challenge accounts** count as executed trades here — "
+        "they're real fills under real pressure. Money cards stay pinned to "
+        "the one account you nominate, so a combine never inflates your "
+        "track record.")
+
+
+try:
+    @st.dialog("Connect your broker")
+    def _broker_dialog():
+        _broker_body()
+except Exception:
+    _broker_dialog = None
 
 
 def _legal_body() -> None:
