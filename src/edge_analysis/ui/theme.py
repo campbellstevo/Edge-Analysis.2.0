@@ -912,16 +912,18 @@ def inject_theme():
         width: max-content; margin-left: auto;
     }}
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-themeseg) [role="radiogroup"] > label {{
-        margin: 0 !important; padding: 7px 16px !important; border-radius: 999px !important;
+        margin: 0 !important; padding: 7px 0 !important; border-radius: 999px !important;
         border: none !important; background: transparent !important; cursor: pointer;
+        min-width: 46px !important; display: flex !important;
+        align-items: center !important; justify-content: center !important;
         transition: background 160ms ease, color 160ms ease;
     }}
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-themeseg) [role="radiogroup"] > label > div:first-child {{
         display: none !important;
     }}
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-themeseg) [role="radiogroup"] > label p {{
-        font-size: 14px !important; line-height: 1.1 !important; color: #94a3b8 !important;
-        margin: 0 !important;
+        font-size: 14px !important; line-height: 1.1 !important; color: #64748b !important;
+        margin: 0 !important; text-align: center !important;
     }}
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-themeseg) [role="radiogroup"] > label:has(input:checked) {{
         background: #4800ff !important;
