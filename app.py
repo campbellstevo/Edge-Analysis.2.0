@@ -1385,7 +1385,7 @@ def render_dashboard(mobile: bool):
             st.button("Connect my data", key="ea_demo_exit", type="primary",
                       use_container_width=True, on_click=_exit_demo)
     else:
-        with st.spinner("Fetching trades from Notion…"):
+        with st.spinner("Reading your journal…"):
             df = load_live_df(token, dbid)
 
     # Keep the account balance honest: a figure typed days ago is stale the
@@ -1436,7 +1436,23 @@ def render_dashboard(mobile: bool):
         return
 
     if df.empty:
-        st.info("No data yet. Add trades, adjust filters, or check credentials.")
+        # Connected but no rows yet — the next five minutes decide whether this
+        # person stays. Tell them exactly what happens next, warmly.
+        st.markdown(
+            """
+            <div class="ea-empty-wrap">
+              <div class="ea-empty-title">You're connected — now log your first trade</div>
+              <div style="font-size:14.5px;color:#5b6270;line-height:1.8;max-width:560px;
+                          margin:10px auto 0;text-align:center;">
+                Add a trade to your Notion journal and it appears here on the next
+                refresh &mdash; charts, sessions, psychology, all of it.
+                On MetaTrader&nbsp;5? Grab the sync from the <b>&hellip;</b> menu
+                (top right) and your trades log themselves.
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
         return
 
     # Prepare filter options

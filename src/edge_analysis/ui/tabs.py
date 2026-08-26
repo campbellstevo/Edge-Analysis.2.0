@@ -50,6 +50,12 @@ def _df_is_mt5(df) -> bool:
     except Exception:
         return False
 
+def _empty_note(msg: str) -> None:
+    """Section has nothing to show. A quiet caption, not a grey alert box —
+    an empty slice is normal, not a warning (Phase 1: empty states)."""
+    st.caption(msg)
+
+
 def _unavailable(label: str) -> None:
     """Quiet note when a section has no data for this template."""
     st.caption(f"{label}: nothing to show yet — once you log this in Notion, it fills in automatically.")
@@ -856,7 +862,7 @@ def _month_card(f: pd.DataFrame, styler) -> None:
     """Card 1 — This month: month R + week delta, target/stop pills, chart, progress, chips."""
     g = _perf_prep(f)
     if g is None:
-        st.info("No dated rows yet. Add some trades or adjust filters.")
+        _empty_note("Nothing dated in this view yet — it fills in with your next logged trade.")
         return
     TGT_R, STOP_R, auto_tgt = _perf_settings(g)
     daily = g.set_index("__Date")["PnL_from_RR"].groupby(pd.Grouper(freq="D")).sum().dropna()
@@ -992,7 +998,7 @@ def _month_card(f: pd.DataFrame, styler) -> None:
                                               use_container_width=True)
 
         if md.empty:
-            st.info("No trades this month yet.")
+            _empty_note("No trades this month yet — your first one starts the chart.")
         else:
             firstd = pd.Timestamp(now_p.start_time.date())
             lastd = pd.Timestamp(now_p.end_time.date())
@@ -1184,7 +1190,7 @@ def _alltime_card(f: pd.DataFrame, styler) -> None:
                 st.caption("Cumulative curve \u00b7 switch the bucket to Month to see each month "
                            "against your target and max loss.")
             else:
-                st.info("Not enough data for the equity chart.")
+                _empty_note("The equity chart appears once a few trades are logged.")
 
         rrs = pd.to_numeric(g["PnL_from_RR"], errors="coerce").dropna()
         n = int(len(rrs))
@@ -1232,7 +1238,7 @@ def _account_comparison_tab(f: pd.DataFrame, styler):
     st.markdown("### Account Comparison")
 
     if f is None or f.empty:
-        st.info("No trades for current filters.")
+        _empty_note("Nothing matches these filters — widen them to see trades here.")
         st.markdown("</div>", unsafe_allow_html=True)
         return
 
@@ -1702,7 +1708,7 @@ def _psych_3sl_compliance(df: pd.DataFrame, styler) -> None:
     dcol     = next((c for c in ["Date & Time","Day/Time/Date of Trade","Date","Datetime"] if c in df.columns), None)
 
     if wcol is None and (sess_col is None or dcol is None):
-        st.info("Add a '2h session window' Yes/No field to Notion to track 3SL window compliance.")
+        _empty_note("Add a '2h session window' Yes/No field in Notion and this tracks itself.")
         return
 
     g = df.copy()
@@ -1894,7 +1900,7 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
     st.markdown('<div class="section">', unsafe_allow_html=True)
 
     if f is None or f.empty:
-        st.info("No trades for current filters.")
+        _empty_note("Nothing matches these filters — widen them to see trades here.")
         st.markdown("</div>", unsafe_allow_html=True)
         return
 
@@ -1910,14 +1916,14 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
             if s_dt.dt.tz is None:
                 s_dt = s_dt.dt.tz_localize("UTC")
         else:
-            st.info("No datetime column found — psychology metrics require a date/time per trade.")
+            _empty_note("Psychology metrics need a date/time per trade — add one in Notion and this fills in.")
             st.markdown("</div>", unsafe_allow_html=True)
             return
 
     g["__ts"] = s_dt
     g = g[g["__ts"].notna()].sort_values("__ts").reset_index(drop=True)
     if g.empty:
-        st.info("No dated trades in current filters.")
+        _empty_note("Nothing dated matches these filters — widen them to see trades here.")
         st.markdown("</div>", unsafe_allow_html=True)
         return
 
@@ -2087,7 +2093,7 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
                              f"The 3SL system exists specifically to eliminate these mechanically — "
                              f"review the compliance section below.", "bad")
         else:
-            st.info("Not enough data for rolling chart yet.")
+            _empty_note("The rolling view appears once a few trades are logged.")
 
     st.divider()
 
@@ -2106,29 +2112,29 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
 def _entry_models_tab(f: pd.DataFrame, show_table):
     st.markdown('<div class="section">', unsafe_allow_html=True)
     if f is None or f.empty:
-        st.info("No trades for current filters.")
+        _empty_note("Nothing matches these filters — widen them to see trades here.")
         st.markdown("</div>", unsafe_allow_html=True)
         return
     f_norm = _ensure_entry_models_list(f)
     if "Entry Models List" not in f_norm.columns:
-        st.info("No entry model data.")
+        _empty_note("Appears once trades carry an Entry Model tag.")
         st.markdown("</div>", unsafe_allow_html=True)
         return
     em = f_norm.copy()
     em = em[em["Entry Models List"].apply(lambda x: isinstance(x, (list, tuple)) and len(x) > 0)]
     if em.empty:
-        st.info("No entry model data.")
+        _empty_note("Appears once trades carry an Entry Model tag.")
         st.markdown("</div>", unsafe_allow_html=True)
         return
     em = em.explode("Entry Models List", ignore_index=True)
     em = em[em["Entry Models List"].astype(str).str.strip() != ""]
     if em.empty:
-        st.info("No entry model data.")
+        _empty_note("Appears once trades carry an Entry Model tag.")
         st.markdown("</div>", unsafe_allow_html=True)
         return
     counted = em[em["Outcome"].isin(["Win", "BE", "Loss"])]
     if counted.empty:
-        st.info("No counted outcomes yet.")
+        _empty_note("Appears once trades have a Win/Loss/BE result.")
         st.markdown("</div>", unsafe_allow_html=True)
         return
     rates = []
@@ -2156,14 +2162,14 @@ def _entry_models_tab(f: pd.DataFrame, show_table):
                     f"<b>{worst_em['Entry_Model']}</b> is your weakest model at "
                     f"<b>{worst_em['Win %']:.1f}%</b> — consider filtering it out or reviewing entry criteria.", "info")
     else:
-        st.info("No counted outcomes yet.")
+        _empty_note("Appears once trades have a Win/Loss/BE result.")
     st.markdown("</div>", unsafe_allow_html=True)
 
 
 def _confluences_tab(f: pd.DataFrame, show_table):
     st.markdown('<div class="section">', unsafe_allow_html=True)
     if f is None or f.empty:
-        st.info("No trades for current filters.")
+        _empty_note("Nothing matches these filters — widen them to see trades here.")
         st.markdown("</div>", unsafe_allow_html=True)
         return
     g = f.copy()
@@ -2218,12 +2224,12 @@ def _confluences_tab(f: pd.DataFrame, show_table):
     g["Confluence"] = g.apply(_classify_row, axis=1)
     g = g[g["Confluence"].notna()]
     if g.empty:
-        st.info("No DIV / Sweep confluence data in current slice.")
+        _empty_note("Appears once trades carry DIV / Sweep tags.")
         st.markdown("</div>", unsafe_allow_html=True)
         return
     counted = g[g["Outcome"].isin(["Win", "BE", "Loss"])]
     if counted.empty:
-        st.info("No counted outcomes yet for any confluence.")
+        _empty_note("Appears once tagged trades have results.")
         st.markdown("</div>", unsafe_allow_html=True)
         return
     rows = []
@@ -2253,7 +2259,7 @@ def _confluences_tab(f: pd.DataFrame, show_table):
                 f"<b>{best_conf['Win %']:.1f}%</b> win rate across {int(best_conf['Trades'])} trades. "
                 f"Prioritise setups where this confluence is present.")
     else:
-        st.info("No confluence stats available.")
+        _empty_note("Appears once trades carry confluence tags.")
     st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -2288,7 +2294,7 @@ def _hourly_expectancy_clock(df_raw: pd.DataFrame) -> None:
         return None
 
     if df_raw is None or df_raw.empty:
-        st.info("No trade data available for the hourly clock.")
+        _empty_note("The hourly clock appears once trades carry a time.")
         return
 
     df = df_raw.copy()
@@ -2338,7 +2344,7 @@ def _hourly_expectancy_clock(df_raw: pd.DataFrame) -> None:
         hour_data[int(h)] = {"e": exp, "n": int(n)}
 
     if not hour_data:
-        st.info("Not enough data to build the hourly expectancy clock.")
+        _empty_note("Not enough data to build the hourly expectancy clock.")
         return
 
     all_exp     = [v["e"] for v in hour_data.values()]
@@ -2490,7 +2496,7 @@ def _hourly_expectancy_clock(df_raw: pd.DataFrame) -> None:
 def _sessions_tab(f: pd.DataFrame, show_table):
     st.markdown('<div class="section">', unsafe_allow_html=True)
     if f.empty or "Session Norm" not in f.columns or f["Session Norm"].isna().all():
-        st.info("No session data.")
+        _empty_note("No session data.")
     else:
         counted = f[f["Outcome"].isin(["Win", "BE", "Loss"])]
         rates = []
@@ -2520,12 +2526,12 @@ def _sessions_tab(f: pd.DataFrame, show_table):
 def _instruments_tab(f: pd.DataFrame, show_table):
     st.markdown('<div class="section">', unsafe_allow_html=True)
     if f is None or f.empty:
-        st.info("No trades for current filters.")
+        _empty_note("Nothing matches these filters — widen them to see trades here.")
         st.markdown("</div>", unsafe_allow_html=True)
         return
     g = _ensure_instrument_column(f)
     if "Instrument" not in g.columns:
-        st.info("No instrument/pair column detected.")
+        _empty_note("No instrument/pair column detected.")
         st.markdown("</div>", unsafe_allow_html=True)
         return
     g = g.copy()
@@ -2536,12 +2542,12 @@ def _instruments_tab(f: pd.DataFrame, show_table):
         st.markdown("</div>", unsafe_allow_html=True)
         return
     if g.empty:
-        st.info("No instrument values present.")
+        _empty_note("No instrument values present.")
         st.markdown("</div>", unsafe_allow_html=True)
         return
     counted = g[g["Outcome"].isin(["Win", "BE", "Loss"])]
     if counted.empty:
-        st.info("No counted outcomes yet for any instrument.")
+        _empty_note("No counted outcomes yet for any instrument.")
         st.markdown("</div>", unsafe_allow_html=True)
         return
     rows = []
@@ -2565,7 +2571,7 @@ def _instruments_tab(f: pd.DataFrame, show_table):
                     f"Focus on assets where your system has trending HTF conditions — "
                     f"the playbook principle of switching pairs when conditions don't suit your edge.")
     else:
-        st.info("No instrument stats available.")
+        _empty_note("No instrument stats available.")
     st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -2574,13 +2580,13 @@ def _time_days_tab(f: pd.DataFrame, show_table):
     counted = f[f["Outcome"].isin(["Win", "BE", "Loss"])]
     day_col = "DayName" if "DayName" in counted.columns else ("Day" if "Day" in counted.columns else None)
     if not day_col or counted.empty:
-        st.info("No day-of-week signal in current slice.")
+        _empty_note("No day-of-week signal in current slice.")
         st.markdown("</div>", unsafe_allow_html=True)
         return
     order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
     df_days = counted[counted[day_col].isin(order)].copy()
     if df_days.empty:
-        st.info("No Mon–Fri data in current slice.")
+        _empty_note("No Mon–Fri data in current slice.")
         st.markdown("</div>", unsafe_allow_html=True)
         return
     df_days["__Day"] = pd.Categorical(df_days[day_col], categories=order, ordered=True)
@@ -2619,7 +2625,7 @@ def _time_days_tab(f: pd.DataFrame, show_table):
 def _gap_alignment_tab(f: pd.DataFrame, show_table):
     st.markdown('<div class="section">', unsafe_allow_html=True)
     if f is None or f.empty or "Gap Alignment" not in f.columns:
-        st.info("No GAP Alignment data in current slice.")
+        _empty_note("No GAP Alignment data in current slice.")
         st.markdown("</div>", unsafe_allow_html=True)
         return
     g = f.copy()
@@ -2627,7 +2633,7 @@ def _gap_alignment_tab(f: pd.DataFrame, show_table):
     counted["Gap Alignment"] = counted["Gap Alignment"].astype(str).str.strip()
     counted = counted[~counted["Gap Alignment"].isin(["", "nan", "NaN", "None"])]
     if counted.empty:
-        st.info("No counted outcomes with GAP Alignment set.")
+        _empty_note("No counted outcomes with GAP Alignment set.")
         st.markdown("</div>", unsafe_allow_html=True)
         return
     rows = []
@@ -2641,7 +2647,7 @@ def _gap_alignment_tab(f: pd.DataFrame, show_table):
         render_entry_model_table(pd.DataFrame(rows).sort_values("Entry_Model").reset_index(drop=True),
                                  title="GAP Alignment")
     else:
-        st.info("No GAP Alignment stats available.")
+        _empty_note("No GAP Alignment stats available.")
     st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -2666,7 +2672,7 @@ def _parse_target_rr_label(label: str):
 def _target_rr_tab(f: pd.DataFrame, show_table):
     st.markdown('<div class="section">', unsafe_allow_html=True)
     if f is None or f.empty or "Targeted RR" not in f.columns:
-        st.info("No Target RR data in current slice.")
+        _empty_note("No Target RR data in current slice.")
         st.markdown("</div>", unsafe_allow_html=True)
         return
     g = f.copy()
@@ -2674,7 +2680,7 @@ def _target_rr_tab(f: pd.DataFrame, show_table):
     counted["Targeted RR"] = counted["Targeted RR"].astype(str).str.strip()
     counted = counted[counted["Targeted RR"] != ""]
     if counted.empty:
-        st.info("No counted outcomes with Target RR set.")
+        _empty_note("No counted outcomes with Target RR set.")
         st.markdown("</div>", unsafe_allow_html=True)
         return
     rows = []
@@ -2692,7 +2698,7 @@ def _target_rr_tab(f: pd.DataFrame, show_table):
                  .rename(columns={"Target_RR": "Entry_Model"}))
         render_entry_model_table(df_rr, title="Risk to Reward")
     else:
-        st.info("No Target RR stats available.")
+        _empty_note("No Target RR stats available.")
     st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -3522,7 +3528,7 @@ def _conditions_tab(f: pd.DataFrame, show_table):
     st.markdown("### Conditions")
 
     if f is None or f.empty:
-        st.info("No trades for current filters.")
+        _empty_note("Nothing matches these filters — widen them to see trades here.")
         st.markdown("</div>", unsafe_allow_html=True)
         return
 
@@ -3533,7 +3539,7 @@ def _conditions_tab(f: pd.DataFrame, show_table):
     tf_labels = {"Conditions ETF": "ETF", "Conditions MTF": "MTF", "Conditions HTF": "HTF"}
 
     if not present_cols:
-        st.info("No Conditions ETF/MTF/HTF columns in current data.")
+        _empty_note("No Conditions ETF/MTF/HTF columns in current data.")
         st.markdown("</div>", unsafe_allow_html=True)
         return
 
@@ -3553,7 +3559,7 @@ def _conditions_tab(f: pd.DataFrame, show_table):
     counted = counted[mask]
 
     if counted.empty:
-        st.info("No Conditions values in current slice.")
+        _empty_note("No Conditions values in current slice.")
         st.markdown("</div>", unsafe_allow_html=True)
         return
 
@@ -3623,26 +3629,26 @@ def _conditions_tab(f: pd.DataFrame, show_table):
 def _timeframes_tab(f: pd.DataFrame, show_table):
     st.markdown('<div class="section">', unsafe_allow_html=True)
     if f is None or f.empty:
-        st.info("No trades for current filters.")
+        _empty_note("Nothing matches these filters — widen them to see trades here.")
         st.markdown("</div>", unsafe_allow_html=True)
         return
     lower_map = {str(c).strip().lower(): c for c in f.columns}
     tf_col = (lower_map.get("entry timeframe") or lower_map.get("timeframe")
               or lower_map.get("time frame") or lower_map.get("tf"))
     if tf_col is None:
-        st.info("No 'Timeframe' column found in current data.")
+        _empty_note("No 'Timeframe' column found in current data.")
         st.markdown("</div>", unsafe_allow_html=True)
         return
     g = f.copy()
     g["__TF"] = g[tf_col].astype(str).str.strip()
     g = g[~g["__TF"].isin(["", "nan", "NaN", "None"])]
     if g.empty:
-        st.info("No timeframe values present.")
+        _empty_note("No timeframe values present.")
         st.markdown("</div>", unsafe_allow_html=True)
         return
     counted = g[g["Outcome"].isin(["Win", "BE", "Loss"])]
     if counted.empty:
-        st.info("No counted outcomes yet for any timeframe.")
+        _empty_note("No counted outcomes yet for any timeframe.")
         st.markdown("</div>", unsafe_allow_html=True)
         return
     _TF_ORDER = {
@@ -3669,7 +3675,7 @@ def _timeframes_tab(f: pd.DataFrame, show_table):
                          **{"Win %": r["win_rate"], "BE %": r["be_rate"], "Loss %": r["loss_rate"],
                             "Avg RR": avg_rr, "Profit Factor": profit_factor}))
     if not rows:
-        st.info("No timeframe stats available.")
+        _empty_note("No timeframe stats available.")
         st.markdown("</div>", unsafe_allow_html=True)
         return
     tf_df = (pd.DataFrame(rows)
@@ -3691,7 +3697,7 @@ def _timeframes_tab(f: pd.DataFrame, show_table):
 def _coach_tab(f: pd.DataFrame):
     st.markdown('<div class="section">', unsafe_allow_html=True)
     st.markdown("## Edge Coach (disabled for now)")
-    st.info("Coach is hidden for now.")
+    _empty_note("Coach is hidden for now.")
     st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -3699,16 +3705,16 @@ def _coach_tab(f: pd.DataFrame):
 def _render_data_completeness_by_instrument(f_all: pd.DataFrame):
     st.markdown("### Data Completeness by Instrument")
     if f_all is None or f_all.empty:
-        st.info("No rows for the current filters.")
+        _empty_note("No rows for the current filters.")
         return
     g = _ensure_instrument_column(f_all.copy())
     if "Instrument" not in g.columns:
-        st.info("No instrument-like column found.")
+        _empty_note("No instrument-like column found.")
         return
     g["Instrument"] = g["Instrument"].astype(str).str.strip()
     g = g[g["Instrument"] != ""]
     if g.empty:
-        st.info("No instrument values present.")
+        _empty_note("No instrument values present.")
         return
     closed_rr = (pd.to_numeric(g["Closed RR"], errors="coerce")
                  if "Closed RR" in g.columns else pd.Series(index=g.index, dtype=float))
@@ -4661,7 +4667,7 @@ def _refinements_tab(f_perf: pd.DataFrame, df_all_safe: pd.DataFrame, styler):
     """, unsafe_allow_html=True)
 
     if f_perf is None or f_perf.empty:
-        st.info("No trades for current filters.")
+        _empty_note("Nothing matches these filters — widen them to see trades here.")
         st.markdown("</div>", unsafe_allow_html=True)
         return
 
@@ -4732,7 +4738,7 @@ def _salty_execution_quality_tab(f: pd.DataFrame) -> None:
     g = g[g["__dev_num"].notna()]
 
     if g.empty:
-        st.info("No deviation score data recorded.")
+        _empty_note("No deviation score data recorded.")
         st.markdown("</div>", unsafe_allow_html=True)
         return
 
@@ -4762,7 +4768,7 @@ def _salty_execution_quality_tab(f: pd.DataFrame) -> None:
                 f"<b>large deviation ({rows[-1]['Win %']:.1f}% WR)</b>. "
                 f"Precise entries near your planned level give your system its best chance.", "good")
     else:
-        st.info("Not enough data for deviation score analysis.")
+        _empty_note("Not enough data for deviation score analysis.")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -4791,7 +4797,7 @@ def _early_close_tab_salty(df: pd.DataFrame, styler):
     g = g[g["__rr"].notna()]
 
     if g.empty:
-        st.info("No early close data with RR values.")
+        _empty_note("No early close data with RR values.")
         st.markdown("</div>", unsafe_allow_html=True)
         return
 
@@ -5011,7 +5017,7 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
                                        .properties(height=300)),
                                 use_container_width=True)
             else:
-                st.info("Not enough monthly history for the stacked view yet.")
+                _empty_note("Not enough monthly history for the stacked view yet.")
 
         # records as one slim chip row
         weekly = mg["__rr"].resample("W-MON", label="left", closed="left").sum()

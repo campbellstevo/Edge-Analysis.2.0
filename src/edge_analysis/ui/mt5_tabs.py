@@ -455,7 +455,7 @@ def render_mt5_tab(f_perf: pd.DataFrame, df_all: pd.DataFrame, styler) -> None:
     """Render all MT5-only analytics sections."""
     data = f_perf if (f_perf is not None and not f_perf.empty) else df_all
     if data is None or data.empty:
-        st.info("No trades for current filters.")
+        _t()._empty_note("Nothing matches these filters — widen them to see trades here.")
         return
     st.markdown('<div class="section">', unsafe_allow_html=True)
 

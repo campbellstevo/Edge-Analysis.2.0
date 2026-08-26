@@ -955,6 +955,23 @@ def inject_theme():
         color: #4800ff !important;
     }}
 
+    /* Loading feel: house-styled spinner + skeleton shimmer */
+    [data-testid="stSpinner"] > div {{
+        border-top-color: #4800ff !important;
+        border-right-color: #4800ff !important;
+    }}
+    [data-testid="stSpinner"] p {{ color: #5b6270 !important; font-size: 13.5px; }}
+    [data-testid="stSkeleton"] {{
+        background: linear-gradient(90deg, #eef0f6 25%, #f7f8fc 50%, #eef0f6 75%) !important;
+        background-size: 200% 100% !important;
+        animation: ea-shimmer 1.4s ease-in-out infinite !important;
+        border-radius: 8px !important;
+    }}
+    @keyframes ea-shimmer {{
+        0% {{ background-position: 200% 0; }}
+        100% {{ background-position: -200% 0; }}
+    }}
+
     /* Verdict lines: one sentence, coloured tick, no box */
     .ea-verdict {{
         display: flex; gap: 9px; align-items: baseline;
