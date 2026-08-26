@@ -979,7 +979,7 @@ def inject_theme():
     /* Group headers own their band: fixed height, nothing can paint over it */
     div[data-testid="stPopoverBody"]:has(.ea-moremenu)
         div[data-testid="stElementContainer"]:has(.ea-menu-eyebrow) {{
-        margin: 0 !important; padding: 10px 12px 4px !important;
+        margin: 0 !important; padding: 14px 12px 9px !important;
         position: relative; z-index: 2;
     }}
     div[data-testid="stPopoverBody"]:has(.ea-moremenu) .ea-menu-eyebrow {{
