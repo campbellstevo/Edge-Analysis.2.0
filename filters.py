@@ -438,13 +438,16 @@ def _mt5sync_body() -> None:
         "Every trade you close in **MetaTrader 5** lands in your Notion journal "
         "by itself — prices, P&L, session, R multiple, MAE/MFE. You only fill in "
         "the thinking.\n\n"
-        "Download the little sync program, follow the README inside "
-        "(about 5 minutes, one Notion token to paste), and keep it running on "
-        "the Windows PC where MT5 lives. Your journal's ID comes pre-filled.")
+        "Your download is personal: your journal and its key are already inside. "
+        "Unzip, double-click **run_sync.bat** on the Windows PC where MT5 lives, "
+        "leave it running. That's the whole setup.")
     try:
         from edge_analysis.mt5_sync_pack import build_zip
         _dbid = str(st.session_state.get("override_DATABASE_ID") or "")
-        st.download_button("⬇ Download the sync (zip)", data=build_zip(_dbid),
+        _utok = str(st.session_state.get("user_notion_token")
+                    or st.session_state.get("override_NOTION_TOKEN") or "")
+        st.download_button("⬇ Download your sync (zip)",
+                           data=build_zip(_dbid, _utok),
                            file_name="edge-analysis-mt5-sync.zip",
                            mime="application/zip", use_container_width=True)
     except Exception:
@@ -475,22 +478,27 @@ except Exception:
 
 def _setup_body() -> None:
     st.markdown(
-        "**1. Get the trading journal template**\n"
-        "Duplicate the Edge Analysis MT5 journal template into your own Notion workspace. "
-        "Every column the dashboard reads is already set up in it.\n\n"
-        "**2. Connect it here**\n"
-        "Settings → Page → *Change Template*, sign in with Notion, and pick the journal "
-        "you just duplicated. Your data appears within seconds.\n\n"
-        "**3. Automatic MT5 import (optional)**\n"
-        "If you trade on MetaTrader 5, the sync tool fills your journal automatically after "
-        "every trade — R multiples, MFE/MAE, timings, costs. Without it you can still log "
-        "trades in Notion by hand.\n\n"
-        "**4. Put it on your phone**\n"
-        "Settings → Page → *Sign in on iPhone*, scan the code once, add to home screen. "
-        "Stays signed in.\n\n"
-        "**5. Make it yours**\n"
-        "Log the manual fields (A+ Setup, Conviction, Mental State, Mistake) — the Plan, "
-        "Psychology and Refinements tabs get sharper with every tagged trade."
+        "**1. Get the journal template**\n"
+        "Duplicate it into your own Notion — one click, every column ready. "
+        "Already journal in Notion? Skip this; the app recognises your journal "
+        "when you sign in.\n\n"
+        "**2. Sign in with Notion**\n"
+        "No keys, no setup. Notion shows a checklist of your pages — tick your "
+        "Trade Journal and the app finds it by itself.\n\n"
+        "**3. Get your trades in**\n"
+        "**MetaTrader 5:** ⋯ menu → *MT5 auto-sync* — your download comes with "
+        "everything pre-filled; unzip and run it on the PC where MT5 lives, and "
+        "every closed trade writes itself into your journal.\n"
+        "**Any other broker:** log trades straight into the Notion journal — "
+        "the dashboard works identically; auto-sync for other platforms is on "
+        "the roadmap.\n\n"
+        "**4. Phone**\n"
+        "⋯ menu → *Sign in on iPhone*, scan once, add to home screen. Stays "
+        "signed in.\n\n"
+        "**5. Tag the thinking**\n"
+        "The numbers arrive on their own; the edge is in the manual fields — "
+        "A+ Setup, Conviction, Mental State, Mistake. Every tagged trade sharpens "
+        "Plan, Psychology and What-needs-work."
     )
     st.caption("Analytics on your own journal — not financial advice.")
 
