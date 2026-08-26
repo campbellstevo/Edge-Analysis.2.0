@@ -955,6 +955,24 @@ def inject_theme():
         color: #4800ff !important;
     }}
 
+    /* Verdict lines: one sentence, coloured tick, no box */
+    .ea-verdict {{
+        display: flex; gap: 9px; align-items: baseline;
+        padding: 4px 2px 4px 6px; margin: 10px 0 2px;
+        border-left: 3px solid transparent; padding-left: 10px;
+        font-size: 13.5px; line-height: 1.65; color: #3b3f4d;
+    }}
+    .ea-verdict b {{ color: #1c2030; }}
+    .ea-verdict-tick {{ font-size: 12px; flex: 0 0 auto; }}
+    .ea-verdict-info {{ border-left-color: #4800ff; }}
+    .ea-verdict-info .ea-verdict-tick {{ color: #4800ff; }}
+    .ea-verdict-good {{ border-left-color: #16a34a; }}
+    .ea-verdict-good .ea-verdict-tick {{ color: #16a34a; }}
+    .ea-verdict-warn {{ border-left-color: #f59e0b; }}
+    .ea-verdict-warn .ea-verdict-tick {{ color: #f59e0b; }}
+    .ea-verdict-bad {{ border-left-color: #ef4444; }}
+    .ea-verdict-bad .ea-verdict-tick {{ color: #ef4444; }}
+
     /* ⋯ menu items: quiet left-aligned rows, not buttons */
     div[data-testid="stPopoverBody"]:has(.ea-moremenu) {{ width: 268px !important; }}
     div[data-testid="stPopoverBody"]:has(.ea-moremenu) button {{
@@ -1385,6 +1403,9 @@ def inject_dark_overlay():
     [data-testid="stHeader"], .stAppHeader, [data-testid="stToolbar"] {
         background: #0e1117 !important;
     }
+    .ea-verdict { color: #aeb6c6 !important; }
+    .ea-verdict b { color: #e8ebf1 !important; }
+    .ea-verdict-body { color: inherit; }
     div[style*="background: rgb(255, 255, 255)"] {
         background: #161b27 !important;
         border-color: rgba(255,255,255,0.09) !important;

@@ -205,10 +205,10 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
     st.markdown("#### Pre-trade checklist — every box yes, or pass")
     if _min_rr_derived and _min_rr_ev:
         st.markdown(
-            f"<div style='background:#f0ebff;border-left:4px solid #4800ff;"
-            f"border-radius:6px;padding:9px 13px;margin:0 0 10px;font-size:13px;"
-            f"color:#3b3f4d;'><b>Your minimum target: {_min_rr:g}R</b> \u2014 "
-            f"{_min_rr_ev}.</div>", unsafe_allow_html=True)
+            f'<div class="ea-verdict ea-verdict-info">'
+            f'<span class="ea-verdict-tick">\u25CF</span>'
+            f'<span class="ea-verdict-body"><b>Your minimum target: {_min_rr:g}R</b> '
+            f'\u2014 {_min_rr_ev}.</span></div>', unsafe_allow_html=True)
     all_pass = pd.Series(True, index=g.index)
     entries = []
     for rule, mask, lab_y, lab_n in gates:

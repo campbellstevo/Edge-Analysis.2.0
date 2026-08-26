@@ -87,13 +87,14 @@ def _insight_box(body: str, kind: str = "info") -> None:
 
 
 def _insight_box_raw(body: str, kind: str = "info") -> None:
-    """Live-data insight callout. Always purple — kind only affects the prefix icon."""
-    icons = {"info": "", "warn": "⚠ ", "good": "✓ ", "bad": "✕ "}
-    prefix = icons.get(kind, "")
+    """Verdict line: one sentence, a coloured tick, no box. The finding is the
+    point — chrome around it was clutter (Campbell's ruling, Aug 2026)."""
+    icons = {"info": "\u25CF", "warn": "\u26A0", "good": "\u2713", "bad": "\u2715"}
+    prefix = icons.get(kind, "\u25CF")
     st.markdown(
-        f'<div style="background:#f0ebff;border-left:4px solid #4800ff;border-radius:6px;'
-        f'padding:14px 18px;font-size:14px;line-height:1.8;margin:12px 0;">'
-        f'{prefix}{body}</div>',
+        f'<div class="ea-verdict ea-verdict-{kind}">'
+        f'<span class="ea-verdict-tick">{prefix}</span>'
+        f'<span class="ea-verdict-body">{body}</span></div>',
         unsafe_allow_html=True,
     )
 
@@ -5122,9 +5123,12 @@ def _whoop_enabled() -> bool:
             return False
         if not (_st.secrets.get("WHOOP_CLIENT_ID") and _st.secrets.get("WHOOP_CLIENT_SECRET")):
             return False
+        # Personal feature: WHOOP is Campbell's own recovery layer, not a
+        # product surface. Without an explicit WHOOP_OWNER match it stays
+        # hidden — a stranger must never see (or feed) someone else's store.
         owner = str(_st.secrets.get("WHOOP_OWNER") or "").strip().lower()
         if not owner:
-            return True
+            return False
         email = str(_st.session_state.get("ea_user_email") or "").strip().lower()
         uid = str(_st.session_state.get("ea_user_id") or "").strip().lower()
         return owner in (email, uid)
