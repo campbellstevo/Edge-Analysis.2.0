@@ -197,3 +197,107 @@ def findings(df: pd.DataFrame, min_n: int = _MIN_N) -> list:
         if k not in best or f["stake"] > best[k]["stake"]:
             best[k] = f
     return sorted(best.values(), key=lambda f: -f["stake"])
+
+
+def _edge_finding(df, rr, mask, kind, label, note_yes, min_n=8):
+    """Positive mirror of _gap_finding: how much a decision-time bucket EARNS
+    above the trader's own baseline. Strengths carry a stricter evidence bar
+    than leaks (n >= 8, gap >= 0.15R/trade): praising noise creates bad habits
+    faster than missing a leak does."""
+    mask = mask.fillna(False) if hasattr(mask, "fillna") else mask
+    n_in, n_out = int(mask.sum()), int((~mask).sum())
+    if n_in < min_n or n_out < min_n:
+        return None
+    a, b = rr[mask], rr[~mask]
+    if not (a.notna().any() and b.notna().any()):
+        return None
+    avg_in, avg_out = float(a.mean()), float(b.mean())
+    gap = avg_in - avg_out
+    if gap < 0.15:
+        return None
+    edge = gap * n_in
+    if edge < 2.0:
+        return None
+    return {
+        "kind": kind, "label": label, "edge": round(edge, 1), "n": n_in,
+        "evidence": (f"{n_in} {note_yes} averaged {avg_in:+.2f}R vs "
+                     f"{avg_out:+.2f}R everywhere else"),
+    }
+
+
+def strengths(df: pd.DataFrame, min_n: int = 8) -> list:
+    """Ranked list of what's WORKING — the decision-time buckets that earn the
+    most R above the trader's own baseline. Same honesty rules as findings():
+    decision-time conditioning only, minimum samples or silence, measured vs
+    the trader's own baseline. Outcome-derived tags never qualify."""
+    out = []
+    if df is None or df.empty:
+        return out
+    if "Type of Trade" in df.columns:
+        _tt = df["Type of Trade"].astype(str).str.lower()
+        _sim = (_tt.str.contains("forward") | _tt.str.contains("back test")
+                | _tt.str.contains("backtest") | _tt.str.contains("paper"))
+        df = df[~_sim]
+        if df.empty:
+            return out
+    rr = _rr(df)
+    if rr is None or rr.notna().sum() < min_n * 2:
+        return out
+    ok = rr.notna()
+    df, rr = df[ok], rr[ok]
+
+    # 1. The session that pays
+    sess_col = next((c for c in ("Session Norm", "Session") if c in df.columns), None)
+    if sess_col:
+        vals = df[sess_col].astype(str).str.strip()
+        for sess in vals.dropna().unique():
+            if not sess or sess.lower() in ("nan", "none", ""):
+                continue
+            f = _edge_finding(df, rr, vals == sess, "session",
+                              f"Lean on {sess}", f"{sess} trades", min_n)
+            if f:
+                out.append(f)
+
+    # 2. The entry model that earns
+    if "Entry Models List" in df.columns:
+        ex = df.copy()
+        ex["__rr"] = rr
+        ex = ex.explode("Entry Models List")
+        ex["__m"] = ex["Entry Models List"].astype(str).str.strip()
+        ex = ex[~ex["__m"].isin(["", "nan", "None"])]
+        if not ex.empty:
+            exr = pd.to_numeric(ex["__rr"], errors="coerce")
+            for m in ex["__m"].unique():
+                f = _edge_finding(ex, exr, ex["__m"] == m, "model",
+                                  f"{m} is your edge", f"{m} entries", min_n)
+                if f:
+                    out.append(f)
+
+    # 3. The timeframe that works (decision-time: chosen before entry)
+    if "Entry Timeframe" in df.columns:
+        tf = df["Entry Timeframe"].astype(str).str.strip()
+        for t in tf.dropna().unique():
+            if not t or t.lower() in ("nan", "none", ""):
+                continue
+            f = _edge_finding(df, rr, tf == t, "timeframe",
+                              f"{t} entries are paying", f"{t}-entry trades",
+                              min_n)
+            if f:
+                out.append(f)
+
+    # 4. The state worth protecting
+    if "Mental State" in df.columns:
+        ms = df["Mental State"].astype(str).str.strip().str.lower()
+        calm = ms.str.contains("clear") | ms.str.contains("calm")
+        f = _edge_finding(df, rr, calm, "mental",
+                          "Protect the clear-and-calm state",
+                          "trades taken clear and calm", min_n)
+        if f:
+            out.append(f)
+
+    best = {}
+    for f in out:
+        k = f["kind"]
+        if k not in best or f["edge"] > best[k]["edge"]:
+            best[k] = f
+    return sorted(best.values(), key=lambda f: -f["edge"])

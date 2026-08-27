@@ -744,6 +744,46 @@ def _digest_card(f: pd.DataFrame) -> None:
         st.markdown("".join(rows), unsafe_allow_html=True)
 
 
+def _strengths_card(f: pd.DataFrame) -> None:
+    """The other half of the briefing: what's earning, ranked by R above the
+    trader's own baseline. Same house rows as What-needs-work, green ladder."""
+    try:
+        from edge_analysis.digest import strengths
+        fs = strengths(f)
+    except Exception:
+        return
+    if not fs:
+        return
+    import html as _h2
+    with st.container(border=True):
+        st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
+        _card_header("What's working",
+                     "Your biggest edges across your executed history \u2014 "
+                     "protect them.")
+        rows = []
+        for i, f_ in enumerate(fs[:3], 1):
+            _sev = "#16a34a" if i == 1 else ("#22c55e" if i == 2 else "#64748b")
+            _lab = _h2.escape(str(f_["label"]))
+            _ev = _h2.escape(str(f_["evidence"]))
+            _bord = "" if i == 1 else "border-top:1px solid #eef0f6;"
+            _edge = f_["edge"]
+            rows.append(
+                "<div style='display:flex;justify-content:space-between;"
+                "align-items:flex-start;gap:16px;padding:13px 2px;" + _bord + "'>"
+                "<div style='min-width:0;'>"
+                "<div style='font-size:11px;font-weight:700;letter-spacing:0.07em;"
+                f"color:{_sev};'>NO. {i}</div>"
+                "<div style='font-size:16.5px;font-weight:800;color:#0f172a;"
+                f"margin:1px 0 2px;'>{_lab}</div>"
+                f"<div style='font-size:13px;color:#64748b;'>{_ev}</div></div>"
+                "<div style='text-align:right;flex:0 0 auto;'>"
+                "<div style='font-size:21px;font-weight:800;"
+                f"color:{_sev};white-space:nowrap;'>+{_edge:g}R</div>"
+                "<div style='font-size:11px;font-weight:600;letter-spacing:0.06em;"
+                "color:#64748b;'>EARNED</div></div></div>")
+        st.markdown("".join(rows), unsafe_allow_html=True)
+
+
 def _track_only(f: pd.DataFrame):
     """The month card is a TRACK RECORD: one account, one set of plan rules.
     A profit target, a max monthly loss and a trade cap belong to the account
@@ -5187,8 +5227,8 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
         _f_track, _track_label, _track_others = _track_only(f_perf)
         _month_card(_f_track, styler)
         _breaker_strip(_track_only(df_all_safe)[0])
+        _strengths_card(df_all_safe)
         _digest_card(df_all_safe)
-        _alltime_card(_f_track, styler)
         return
 
     # Speed: render ONLY the active tab. st.tabs runs all six server-side on
