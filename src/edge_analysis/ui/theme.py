@@ -904,6 +904,15 @@ def inject_theme():
     div[data-testid="stHorizontalBlock"]:has(.ea-themeseg) > div:nth-child(3) {{
         display: flex; justify-content: flex-end;
     }}
+    /* One-band header (has the logo): Filters stays left beside the logo,
+       the status pill right-aligns toward the controls */
+    div[data-testid="stHorizontalBlock"]:has(.ea-band-logo) {{
+        align-items: center !important;
+    }}
+    div[data-testid="stHorizontalBlock"]:has(.ea-band-logo) > div:nth-child(2) {{
+        justify-content: flex-start !important;
+    }}
+    .ea-band-logo img {{ width: 148px !important; height: auto; display: block; }}
 
     /* Segmented sun/moon theme toggle */
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-themeseg) [role="radiogroup"] {{
