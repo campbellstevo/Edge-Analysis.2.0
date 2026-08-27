@@ -134,9 +134,13 @@ def render_filters(
     _hc1, _hcd, _hc2, _hc3 = st.columns([5.3, 2.1, 1.5, 0.9])
     with _hcd:
         # Density: Focus = track record + what needs work; All = the six tabs.
+        _dwant = "Focus" if st.session_state.get("ea_density_pref") == "Focus" else "All"
         if st.session_state.get("ea_density_seg") not in ("Focus", "All"):
-            st.session_state["ea_density_seg"] = (
-                "Focus" if st.session_state.get("ea_density_pref") == "Focus" else "All")
+            st.session_state["ea_density_seg"] = _dwant
+        elif st.session_state.get("ea_density_seg") != _dwant:
+            # keep the toggle locked to the pref — a boot rerun that recreated
+            # the widget must never drag the pref the other way
+            st.session_state["ea_density_seg"] = _dwant
 
         def _density_cb():
             want = st.session_state.get("ea_density_seg") or "All"

@@ -2210,10 +2210,15 @@ def main() -> None:
         _saved_density = _prefs.get("d") or ""
         if _saved_density in ("Focus", "All"):
             st.session_state["ea_density_pref"] = _saved_density
-    if st.session_state.pop("ea_density_dirty", False):
-        _js_eval("localStorage.setItem('ea_density', "
-                 + json.dumps(st.session_state.get("ea_density_pref", "All")) + ")",
-                 key="ea_density_save")
+    st.session_state.pop("ea_density_dirty", False)
+    # Idempotent persistence: one constant-key component always writes the
+    # CURRENT pref. A transient dirty-save component proved to re-fire during
+    # boot replays and could stamp a stale value; re-writing the truth every
+    # run makes any replay harmless by construction.
+    _dcur = st.session_state.get("ea_density_pref")
+    if _dcur in ("Focus", "All"):
+        _js_eval("localStorage.setItem('ea_density', " + json.dumps(_dcur) + ")",
+                 key="ea_density_sync")
     if st.session_state.pop("ea_setup_dirty", False):
         _js_eval("localStorage.setItem('ea_setup', \"1\")", key="ea_setup_save")
     if "ea_theme_pref" not in st.session_state:
