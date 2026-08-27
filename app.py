@@ -2178,13 +2178,30 @@ def main() -> None:
                 if _pb.get("a") and "ea_track_account" not in st.session_state:
                     st.session_state["ea_track_account"] = str(_pb["a"])
     if st.session_state.pop("ea_mplan_dirty", False) and not _demo:
-        _pb = {"t": float(st.session_state.get("ea_m_tgt", 5.0)),
-               "s": float(st.session_state.get("ea_m_stop", -6.0)),
-               "c": int(st.session_state.get("ea_m_cap", 12)),
-               "b": float(st.session_state.get("ea_m_bal", 10000.0)),
-               "r": float(st.session_state.get("ea_m_risk", 1.0)),
-               "d": str(st.session_state.get("ea_bal_asof") or ""),
-               "a": str(st.session_state.get("ea_track_account") or "")}
+        # Overlay-only save: start from the last saved plan and update just the
+        # keys present in session. Rebuilding from defaults once wrote a phantom
+        # $10,000 balance anchor when setup saved before the plan card seeded.
+        _pb = dict(st.session_state.get("ea_mplan_saved") or {})
+        if "ea_m_tgt" in st.session_state:
+            _pb["t"] = float(st.session_state["ea_m_tgt"])
+        if "ea_m_stop" in st.session_state:
+            _pb["s"] = float(st.session_state["ea_m_stop"])
+        if "ea_m_cap" in st.session_state:
+            _pb["c"] = int(st.session_state["ea_m_cap"])
+        # b/d is a HAND-TYPED anchor for people without a synced balance.
+        # When the journal stamps the balance, the journal is the source of
+        # truth — never persist it as an anchor (and heal any phantom one).
+        if st.session_state.get("ea_m_bal_src") == "from your journal":
+            _pb.pop("b", None)
+            _pb.pop("d", None)
+        elif "ea_m_bal" in st.session_state:
+            _pb["b"] = float(st.session_state["ea_m_bal"])
+            _pb["d"] = str(st.session_state.get("ea_bal_asof") or "")
+        if "ea_m_risk" in st.session_state:
+            _pb["r"] = float(st.session_state["ea_m_risk"])
+        if st.session_state.get("ea_track_account"):
+            _pb["a"] = str(st.session_state["ea_track_account"])
+        st.session_state["ea_mplan_saved"] = dict(_pb)
         _js_eval("localStorage.setItem('ea_mplan', " + json.dumps(json.dumps(_pb)) + ")",
                  key="ea_mplan_save")
     if st.session_state.pop("ea_mplan_clear", False):
