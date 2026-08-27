@@ -295,7 +295,7 @@ def render_filters(
         st.markdown('<div class="ea-moremenu"></div>', unsafe_allow_html=True)
         _cur = st.session_state.get(SessionKeys.NAV_PAGE, PageNames.DASHBOARD)
         st.markdown(_eyebrow.format("VIEW"), unsafe_allow_html=True)
-        st.button(("\u2713  " if _cur == PageNames.DASHBOARD else "") + PageNames.DASHBOARD,
+        st.button(("\u2713 " if _cur == PageNames.DASHBOARD else "") + PageNames.DASHBOARD,
                   key="mm_dash", use_container_width=True,
                   on_click=_go, args=(PageNames.DASHBOARD,))
         st.button(PageNames.CONNECT, key="mm_tmpl", use_container_width=True,

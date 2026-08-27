@@ -990,6 +990,12 @@ def inject_theme():
         color: #ffffff !important;
     }}
 
+    /* Streamlit Cloud viewer badge (red crown, bottom right): hide — it
+       lands on top of the chat pill for every visitor */
+    [class*="viewerBadge"], [data-testid="stAppDeployButton"] {{
+        display: none !important;
+    }}
+
     /* Loading feel: house-styled spinner + skeleton shimmer */
     [data-testid="stSpinner"] > div {{
         border-top-color: #4800ff !important;
@@ -1026,7 +1032,6 @@ def inject_theme():
     .ea-verdict-bad .ea-verdict-tick {{ color: #ef4444; }}
 
     /* ⋯ menu items: quiet left-aligned rows, not buttons */
-    div[data-testid="stPopoverBody"]:has(.ea-moremenu) {{ width: 268px !important; }}
     div[data-testid="stPopoverBody"]:has(.ea-moremenu) button {{
         background: transparent !important; border: none !important; box-shadow: none !important;
         padding: 7px 10px !important; border-radius: 9px !important; text-align: left !important;
@@ -1296,14 +1301,21 @@ def inject_theme():
     /* Tab underline: only under the tabs, not the full page width */
     .stTabs [data-baseweb="tab-border"] {{ display: none !important; }}
 
-    /* Filters popover: comfortable panel, no edge-cramping */
-    [data-testid="stPopoverBody"] {{
+    /* Filters popover: comfortable panel, no edge-cramping. Scoped so the
+       ⋯ menu (its own compact rules) is not floored to 400px — that was the
+       "giant airy menu" bug. */
+    [data-testid="stPopoverBody"]:not(:has(.ea-moremenu)) {{
         min-width: 400px !important;
         max-width: 460px !important;
         max-height: 78vh !important;
         overflow-y: auto !important;
         padding: 14px 16px !important;
         border-radius: 12px !important;
+    }}
+    div[data-testid="stPopoverBody"]:has(.ea-moremenu) {{
+        min-width: 0 !important; width: 248px !important;
+        max-height: 78vh !important; overflow-y: auto !important;
+        padding: 6px 8px 10px !important; border-radius: 12px !important;
     }}
 
     /* Mobile: hint that the tab row scrolls */
