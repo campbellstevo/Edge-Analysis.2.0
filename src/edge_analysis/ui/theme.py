@@ -1056,7 +1056,7 @@ def inject_theme():
     /* Group headers own their band: fixed height, nothing can paint over it */
     div[data-testid="stPopoverBody"]:has(.ea-moremenu)
         div[data-testid="stElementContainer"]:has(.ea-menu-eyebrow) {{
-        margin: 0 !important; padding: 18px 12px 14px !important;
+        margin: 0 !important; padding: 13px 12px 9px !important;
         position: relative; z-index: 2;
     }}
     div[data-testid="stPopoverBody"]:has(.ea-moremenu) .ea-menu-eyebrow {{
@@ -1099,7 +1099,7 @@ def inject_theme():
 
     /* Floating analyst chat */
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-chatfab) {{
-        position: fixed; bottom: 22px; right: 22px; z-index: 998; width: auto;
+        position: fixed; bottom: 74px; right: 22px; z-index: 998; width: auto;
     }}
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-chatfab) button {{
         background: #4800ff !important; color: #ffffff !important;
