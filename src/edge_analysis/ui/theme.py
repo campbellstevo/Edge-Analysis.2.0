@@ -965,7 +965,7 @@ def inject_theme():
     }}
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"] > label,
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-setupseg) [role="radiogroup"] > label {{
-        margin: 0 !important; padding: 7px 0 !important; min-width: 62px;
+        margin: 0 !important; padding: 7px 10px !important; min-width: 62px;
         display: flex; align-items: center; justify-content: center;
         border-radius: 999px; cursor: pointer;
     }}
@@ -988,6 +988,16 @@ def inject_theme():
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"] > label:has(input:checked) p,
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-setupseg) [role="radiogroup"] > label:has(input:checked) p {{
         color: #ffffff !important;
+    }}
+
+    /* Chat pill: compact on short viewports so it clears card content */
+    @media (max-height: 800px) {{
+        div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-chatfab) button {{
+            padding: 8px 14px !important;
+        }}
+        div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-chatfab) button p {{
+            font-size: 13px !important;
+        }}
     }}
 
     /* Streamlit Cloud viewer badge (red crown, bottom right): hide — it
@@ -1805,8 +1815,8 @@ def _img_tag_from_file(path: Path) -> str:
         return ""
 
 
-def inject_header_bar(status_text: str = "", status_ok: bool = True):
-    """Compact top bar: logo left, connection pill right. Logo follows the theme."""
+def header_parts(status_text: str = "", status_ok: bool = True):
+    """(logo_html, pill_html) for the one-band header. Logo follows the theme."""
     _dark = st.session_state.get("ea_theme_pref") == "dark"
     if _dark and HEADER_LOGO_DARK.exists():
         logo_path = HEADER_LOGO_DARK
@@ -1817,12 +1827,19 @@ def inject_header_bar(status_text: str = "", status_ok: bool = True):
     if status_text:
         col = "#16a34a" if status_ok else "#ef4444"
         pill = (
-            "<div style='display:flex;align-items:center;gap:8px;background:#ffffff;"
+            "<div style='display:inline-flex;align-items:center;gap:8px;background:#ffffff;"
             "border:1px solid rgba(0,0,0,0.06);border-radius:999px;padding:8px 16px;"
-            "box-shadow:0 2px 10px rgba(0,0,0,0.04);font-size:13px;font-weight:600;color:#334155;'>"
+            "box-shadow:0 2px 10px rgba(0,0,0,0.04);font-size:13px;font-weight:600;color:#334155;"
+            "white-space:nowrap;'>"
             f"<span style='width:8px;height:8px;border-radius:50%;background:{col};display:inline-block;'></span>"
             f"{status_text}</div>"
         )
+    return logo, pill
+
+
+def inject_header_bar(status_text: str = "", status_ok: bool = True):
+    """Two-band header (mobile): logo left, connection pill right."""
+    logo, pill = header_parts(status_text, status_ok)
     st.markdown(
         "<div class='ea-topbar' style='display:flex;justify-content:space-between;"
         "align-items:center;gap:16px;margin:0 0 14px;'>"

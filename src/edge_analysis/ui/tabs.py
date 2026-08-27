@@ -722,7 +722,7 @@ def _digest_card(f: pd.DataFrame) -> None:
                      "fix the top one first.")
         rows = []
         for i, f_ in enumerate(fs[:3], 1):
-            _sev = "#ef4444" if i == 1 else ("#f59e0b" if i == 2 else "#94a3b8")
+            _sev = "#ef4444" if i == 1 else ("#f59e0b" if i == 2 else "#64748b")
             _lab = _h2.escape(str(f_["label"]))
             _ev = _h2.escape(str(f_["evidence"]).split(" \u2014 ")[0])
             _bord = "" if i == 1 else "border-top:1px solid #eef0f6;"
@@ -740,7 +740,7 @@ def _digest_card(f: pd.DataFrame) -> None:
                 "<div style='font-size:21px;font-weight:800;"
                 f"color:{_sev};white-space:nowrap;'>&minus;{_stk:g}R</div>"
                 "<div style='font-size:11px;font-weight:600;letter-spacing:0.06em;"
-                "color:#94a3b8;'>AT STAKE</div></div></div>")
+                "color:#64748b;'>AT STAKE</div></div></div>")
         st.markdown("".join(rows), unsafe_allow_html=True)
 
 
@@ -908,7 +908,7 @@ def _month_card(f: pd.DataFrame, styler) -> None:
             _wk_txt = f"{_wk_pct:+.2f}%" if _wk_pct is not None else _pct_txt(wk_r, _rp)
             st.markdown(
                 f"<div style='font-size:12px;font-weight:700;letter-spacing:0.08em;"
-                f"color:#94a3b8;'>{pd.Timestamp.now().strftime('%B').upper()}</div>"
+                f"color:#64748b;'>{pd.Timestamp.now().strftime('%B').upper()}</div>"
                 f"<div style='font-size:38px;font-weight:800;color:{cc};line-height:1.1;'>"
                 f"{_cur_txt}"
                 f"<span style='font-size:15px;font-weight:700;color:{wc};margin-left:14px;'>"
@@ -931,9 +931,7 @@ def _month_card(f: pd.DataFrame, styler) -> None:
                     f"border-radius:999px;padding:7px 14px;'>Max loss&nbsp; "
                     f"{_as_pct(STOP_R, _rp):+.1f}%&nbsp;<span style='font-weight:600;opacity:0.7;'>"
                     f"({STOP_R:.1f}R)</span></span>"
-                    "</div>"
-                    "<div style='text-align:right;font-size:11.5px;color:#94a3b8;margin-top:5px;'>"
-                    "auto from your data · edit →</div>",
+                    "</div>",
                     unsafe_allow_html=True)
             with p2:
                 try:
@@ -951,8 +949,11 @@ def _month_card(f: pd.DataFrame, styler) -> None:
                         st.session_state["ea_m_cap"] = int(c_)
                         st.session_state["ea_mplan_dirty"] = True
                         st.session_state["ea_plan_user_edited"] = True
-                    st.markdown("<div style='font-size:11px;font-weight:700;"
-                                "letter-spacing:0.06em;color:#94a3b8;'>PICK A PACE</div>",
+                    st.markdown("<div style='font-size:11.5px;color:#64748b;"
+                                "margin-bottom:8px;'>Auto-set from your data "
+                                "&mdash; edit anything below and Save.</div>"
+                                "<div style='font-size:11px;font-weight:700;"
+                                "letter-spacing:0.06em;color:#64748b;'>PICK A PACE</div>",
                                 unsafe_allow_html=True)
                     pc1, pc2 = st.columns(2)
                     with pc1:
@@ -970,7 +971,7 @@ def _month_card(f: pd.DataFrame, styler) -> None:
                                   use_container_width=True,
                                   on_click=_preset, args=(8.0, -8.0, 20))
                     st.markdown("<div style='font-size:11px;font-weight:700;"
-                                "letter-spacing:0.06em;color:#94a3b8;margin-top:6px;'>"
+                                "letter-spacing:0.06em;color:#64748b;margin-top:6px;'>"
                                 "FINE-TUNE</div>", unsafe_allow_html=True)
                     with st.form("plan_form", border=False):
                         st.slider("Monthly target (R)", min_value=0.5, max_value=20.0,
@@ -1006,7 +1007,8 @@ def _month_card(f: pd.DataFrame, styler) -> None:
             yhi = max(TGT_R + 1.5, float(md["Cum"].max()) + 1)
             ysc = alt.Scale(domain=[ylo, yhi])
             xsc = alt.Scale(domain=[firstd.isoformat(), lastd.isoformat()])
-            xax = alt.Axis(format="%d", labelColor="#94a3b8", grid=False, tickCount=10)
+            xax = alt.Axis(format="%d", labelColor="#64748b", grid=False, tickCount=10)
+            st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
             vals = _to_alt_values(md[["Date", "Cum"]])
             lays = []
             for yv, col in ((0.0, "#cbd5e1"), (TGT_R, "#16a34a"), (STOP_R, "#ef4444")):
@@ -1046,7 +1048,7 @@ def _month_card(f: pd.DataFrame, styler) -> None:
                        f"{abs(_now_pct - _stop_pct):.2f}% of room left")
             st.markdown(
                 f"<div style='font-size:11px;font-weight:700;letter-spacing:0.06em;"
-                f"color:#94a3b8;margin-top:2px;'>{bar_title}</div>"
+                f"color:#64748b;margin-top:2px;'>{bar_title}</div>"
                 f"<div style='background:#f1f5f9;border-radius:7px;height:13px;margin:7px 0 6px;'>"
                 f"<div style='width:{barw * 100:.1f}%;height:13px;border-radius:7px;"
                 f"background:{barc};'></div></div>"
@@ -1069,7 +1071,7 @@ def _month_card(f: pd.DataFrame, styler) -> None:
                     f"<div style='flex:1;min-width:140px;background:#f8f9fc;border-radius:12px;"
                     f"padding:12px 14px;'>"
                     f"<div style='font-size:11px;font-weight:600;letter-spacing:0.06em;"
-                    f"color:#94a3b8;'>{k}</div>"
+                    f"color:#64748b;'>{k}</div>"
                     f"<div style='font-size:21px;font-weight:800;color:{c};'>{v}</div></div>"
                     for k, v, c in chips) + "</div>", unsafe_allow_html=True)
 
@@ -1138,7 +1140,7 @@ def _alltime_card(f: pd.DataFrame, styler) -> None:
                 x=xenc,
                 y=alt.Y("Net:Q", title=None, scale=alt.Scale(domain=dom),
                         axis=alt.Axis(format="+.0f", grid=True, gridColor="#eef0f5",
-                                      labelColor="#94a3b8")),
+                                      labelColor="#64748b")),
                 color=alt.Color("Colour:N", legend=None,
                                 scale=alt.Scale(domain=["good", "bad"],
                                                 range=["#16a34a", "#ef4444"])),
@@ -1177,7 +1179,7 @@ def _alltime_card(f: pd.DataFrame, styler) -> None:
             if vals:
                 xenc = alt.X("Bucket:T", title=None,
                              axis=alt.Axis(format="%d %b", labelAngle=-45,
-                                           labelColor="#94a3b8", labelOverlap="greedy",
+                                           labelColor="#64748b", labelOverlap="greedy",
                                            tickCount=min(10, len(eq))))
                 ytitle = "Cumulative " + unit
                 area = (alt.Chart(alt.Data(values=vals)).mark_area(opacity=0.12, color="#4800ff")
@@ -1218,7 +1220,7 @@ def _alltime_card(f: pd.DataFrame, styler) -> None:
                 f"<div style='flex:1;min-width:118px;background:#f8f9fc;border-radius:12px;"
                 f"padding:11px 13px;'>"
                 f"<div style='font-size:10.5px;font-weight:600;letter-spacing:0.05em;"
-                f"color:#94a3b8;'>{k}</div>"
+                f"color:#64748b;'>{k}</div>"
                 f"<div style='font-size:19px;font-weight:800;color:{c};'>{v}</div></div>"
                 for k, v, c in chips) + "</div>", unsafe_allow_html=True)
 
@@ -3147,7 +3149,7 @@ def _powered_on_panel(df: pd.DataFrame) -> None:
             hint = ("<span style='font-size:11.5px;color:#c9a36a;'>column there \u2014 "
                     "log it on a few trades</span>")
         else:
-            mark, mc, tc, fw = "\u2014", "#c3c9d4", "#94a3b8", 500
+            mark, mc, tc, fw = "\u2014", "#c3c9d4", "#64748b", 500
             hint = ("<span style='font-size:11.5px;color:#c3c9d4;'>needs "
                     + _h.escape(need) + "</span>")
         parts.append(
@@ -3308,7 +3310,7 @@ _EA_VIZ_CSS = """<style>
 .ea-pb-row{display:flex;align-items:center;gap:10px;}
 .ea-pb-lab{flex:0 0 34%;max-width:230px;min-width:0;text-align:right;font-size:13px;font-weight:600;
   color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.ea-pb-n{color:#94a3b8;font-weight:500;font-size:11px;margin-left:6px;}
+.ea-pb-n{color:#64748b;font-weight:500;font-size:11px;margin-left:6px;}
 .ea-pb-track{flex:1;position:relative;background:#f8fafc;border-radius:7px;height:14px;}
 .ea-pb-bar{height:14px;}
 .ea-pb-zero{position:absolute;left:50%;top:-3px;bottom:-3px;border-left:1.5px dashed #cbd5e1;}
@@ -3321,7 +3323,7 @@ _EA_VIZ_CSS = """<style>
 .ea-et-val{font-size:19px;font-weight:700;margin:2px 0 7px;}
 .ea-et-meter{height:4px;background:#f1f5f9;border-radius:2px;overflow:hidden;}
 .ea-et-meter div{height:4px;border-radius:2px;}
-.ea-et-meta{font-size:11px;color:#94a3b8;margin-top:7px;}
+.ea-et-meta{font-size:11px;color:#64748b;margin-top:7px;}
 .ea-ew-wrap{max-width:660px;margin:0 auto;}
 .ea-ew-wrap svg{width:100%;height:auto;display:block;}
 .ea-ew-val{font-size:10.5px;font-weight:700;}
@@ -3835,7 +3837,7 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
         font-weight: 700;
         letter-spacing: 0.06em;
         text-transform: uppercase;
-        color: #94a3b8;
+        color: #64748b;
         margin-bottom: 4px;
     }
     .proj-stat-value {
@@ -4943,7 +4945,7 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
                     f"border:1px solid #eef0f4;border-left:5px solid {c};"
                     f"border-radius:0 12px 12px 0;padding:13px 16px;'>"
                     f"<div style='font-size:12px;font-weight:700;letter-spacing:0.08em;"
-                    f"color:{'#4800ff' if live else '#94a3b8'};'>"
+                    f"color:{'#4800ff' if live else '#64748b'};'>"
                     f"{dt_.strftime('%B').upper()}{badge}</div>"
                     f"<div style='font-size:28px;font-weight:800;color:{c};margin:2px 0;'>"
                     f"{_mbm_head(r_, row, dt_.to_period('M'))}</div>"
@@ -4984,8 +4986,8 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
                 past = base.transform_filter(alt.datum.kind == "past").mark_line(
                     color="#d5d9e2", strokeWidth=2).encode(
                     x=alt.X("Day:Q", title="Day of month", scale=xsc,
-                            axis=alt.Axis(tickMinStep=1, grid=False, labelColor="#94a3b8",
-                                          titleColor="#94a3b8")),
+                            axis=alt.Axis(tickMinStep=1, grid=False, labelColor="#64748b",
+                                          titleColor="#64748b")),
                     y=alt.Y("Cum:Q", title=None, scale=ysc), detail="Month:N",
                     tooltip=[alt.Tooltip("Month:N"), alt.Tooltip("Cum:Q", format="+.2f")])
                 curl = base.transform_filter(alt.datum.kind == "cur").mark_line(
@@ -5034,15 +5036,15 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
         rows.append(("BEST MONTH", f"{monthly['r'].max():+.1f}R", bm.strftime("%b %Y"), "#16a34a"))
         rows.append(("WORST MONTH", f"{monthly['r'].min():+.1f}R", wm.strftime("%b %Y"), "#ef4444"))
         st.markdown(
-            "<div style='font-size:11px;font-weight:700;letter-spacing:0.06em;color:#94a3b8;"
+            "<div style='font-size:11px;font-weight:700;letter-spacing:0.06em;color:#64748b;"
             "margin-top:14px;'>RECORDS</div>"
             "<div style='display:flex;gap:12px;flex-wrap:wrap;margin-top:8px;'>" + "".join(
                 f"<div style='flex:1;min-width:150px;background:#f8f9fc;border-radius:12px;"
                 f"padding:11px 14px;'>"
                 f"<div style='font-size:10.5px;font-weight:600;letter-spacing:0.05em;"
-                f"color:#94a3b8;'>{k}</div>"
+                f"color:#64748b;'>{k}</div>"
                 f"<div style='font-size:20px;font-weight:800;color:{c};'>{v}</div>"
-                f"<div style='font-size:12px;color:#94a3b8;'>{sub}</div></div>"
+                f"<div style='font-size:12px;color:#64748b;'>{sub}</div></div>"
                 for k, v, sub, c in rows) + "</div>", unsafe_allow_html=True)
 
         # the ONE evidence strip on the tab
@@ -5184,7 +5186,9 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
     if st.session_state.get("ea_density_pref") == "Focus":
         _f_track, _track_label, _track_others = _track_only(f_perf)
         _month_card(_f_track, styler)
+        _breaker_strip(_track_only(df_all_safe)[0])
         _digest_card(df_all_safe)
+        _alltime_card(_f_track, styler)
         return
 
     # Speed: render ONLY the active tab. st.tabs runs all six server-side on

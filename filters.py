@@ -72,6 +72,7 @@ def render_filters(
     max_date: DateType,
     acct_opts: list | None = None,
     tot_opts: list | None = None,
+    brand: tuple | None = None,
 ) -> Tuple[str, str, str, Optional[DateRange], str]:
     """
     Render filter controls for both desktop and mobile layouts.
@@ -131,11 +132,28 @@ def render_filters(
         _active += 1
     _flabel = f"Filters · {_active} on" if _active else "Filters"
     st.markdown('<div class="ea-hdrbar"></div>', unsafe_allow_html=True)
-    _hc1, _hcd, _hc2, _hc3 = st.columns([5.3, 2.1, 1.5, 0.9])
+    if brand and not mobile:
+        _logo_html, _pill_html = brand
+        try:
+            _hcl, _hc1, _hcp, _hcd, _hc2, _hc3 = st.columns(
+                [1.75, 1.15, 3.05, 1.75, 1.15, 0.65], vertical_alignment="center")
+        except TypeError:
+            _hcl, _hc1, _hcp, _hcd, _hc2, _hc3 = st.columns(
+                [1.75, 1.15, 3.05, 1.75, 1.15, 0.65])
+        with _hcl:
+            st.markdown(f"<div class='ea-topbar-logo ea-band-logo'>{_logo_html}</div>",
+                        unsafe_allow_html=True)
+        with _hcp:
+            if _pill_html:
+                st.markdown(f"<div style='text-align:right;'>{_pill_html}</div>",
+                            unsafe_allow_html=True)
+    else:
+        _hc1, _hcd, _hc2, _hc3 = st.columns([5.3, 2.1, 1.5, 0.9])
     with _hcd:
         # Density: Focus = track record + what needs work; All = the six tabs.
-        _dwant = "Focus" if st.session_state.get("ea_density_pref") == "Focus" else "All"
-        if st.session_state.get("ea_density_seg") not in ("Focus", "All"):
+        _dwant = ("Focus" if st.session_state.get("ea_density_pref") == "Focus"
+                  else "Everything")
+        if st.session_state.get("ea_density_seg") not in ("Focus", "Everything"):
             st.session_state["ea_density_seg"] = _dwant
         elif st.session_state.get("ea_density_seg") != _dwant:
             # keep the toggle locked to the pref — a boot rerun that recreated
@@ -143,15 +161,17 @@ def render_filters(
             st.session_state["ea_density_seg"] = _dwant
 
         def _density_cb():
-            want = st.session_state.get("ea_density_seg") or "All"
+            want = ("Focus" if st.session_state.get("ea_density_seg") == "Focus"
+                    else "All")
             if st.session_state.get("ea_density_pref", "All") != want:
                 st.session_state["ea_density_pref"] = want
                 st.session_state["ea_density_dirty"] = True
 
         st.markdown('<div class="ea-densityseg"></div>', unsafe_allow_html=True)
-        st.radio("Density", ["Focus", "All"], key="ea_density_seg",
+        st.radio("Density", ["Focus", "Everything"], key="ea_density_seg",
                  horizontal=True, on_change=_density_cb, label_visibility="collapsed",
-                 help="Focus shows your track record and what needs work. All shows every tab.")
+                 help="Focus shows your track record and what needs work. "
+                      "Everything shows all six tabs.")
     with _hc1:
         try:
             flt = st.popover(_flabel, use_container_width=False)
@@ -180,7 +200,7 @@ def render_filters(
             _more = st.expander("More")
     with flt:
         st.markdown("<div style='font-size:11px;font-weight:700;letter-spacing:0.06em;"
-                    "color:#94a3b8;margin-bottom:2px;'>FILTERS</div>", unsafe_allow_html=True)
+                    "color:#64748b;margin-bottom:2px;'>FILTERS</div>", unsafe_allow_html=True)
         c1, c2 = st.columns(2, gap="small")
         with c1:
             sel_inst = st.selectbox(
@@ -292,7 +312,7 @@ def render_filters(
         st.session_state[k] = True
 
     _eyebrow = ("<div class='ea-menu-eyebrow' style='font-size:10.5px;font-weight:700;"
-                "letter-spacing:0.07em;color:#94a3b8;'>{}</div>")
+                "letter-spacing:0.07em;color:#64748b;'>{}</div>")
     _eyebrow_div = ("<div class='ea-menu-sep' style='border-top:1px solid "
                     "rgba(148,163,184,0.22);'></div>" + _eyebrow)
     with _more:

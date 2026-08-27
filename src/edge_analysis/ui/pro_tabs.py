@@ -55,7 +55,7 @@ def _exit_optimizer(df, styler) -> None:
             .encode(x=alt.X("Target:Q", title="Fixed R target"),
                     y=alt.Y("Expectancy:Q", title="Expectancy (R / trade)"),
                     tooltip=["Target:Q", "Expectancy:Q", "Total R:Q"]).properties(height=280))
-    cur = alt.Chart(alt.Data(values=[{"y": actual_exp}])).mark_rule(color="#94a3b8", strokeDash=[4, 4]).encode(y=alt.Y("y:Q", title=None))
+    cur = alt.Chart(alt.Data(values=[{"y": actual_exp}])).mark_rule(color="#64748b", strokeDash=[4, 4]).encode(y=alt.Y("y:Q", title=None))
     best_data = alt.Chart(alt.Data(values=[{"bx": float(best["Target"]), "by": float(best["Expectancy"])}]))
     best_pt = best_data.mark_point(filled=True, size=220, color="#16a34a", stroke="#fff", strokeWidth=2.5).encode(x=alt.X("bx:Q", title=None), y=alt.Y("by:Q", title=None))
     st.altair_chart(styler(alt.layer(line, cur, best_pt)), use_container_width=True)
@@ -222,7 +222,7 @@ def _tilt(df, styler) -> None:
     def _tchip(lab, val, sub, col):
         return (f"<div style='flex:1;min-width:170px;background: rgb(248, 249, 252);border-radius:10px;"
                 f"padding:12px 16px;'><div style='font-size:11px;font-weight:700;"
-                f"letter-spacing:0.06em;color:#94a3b8;'>{lab}</div>"
+                f"letter-spacing:0.06em;color:#64748b;'>{lab}</div>"
                 f"<div style='font-size:21px;font-weight:800;color:{col};'>{val}</div>"
                 f"<div style='font-size:11.5px;color:#64748b;'>{sub}</div></div>")
 

@@ -228,7 +228,7 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
     def _row(i, e, faded=False):
         rule, edge, logged, low, a, b, na, nb, lab_y, lab_n = e
         if not logged:
-            stat = ("<span style='font-size:12px;color:#94a3b8;'>not logged yet — "
+            stat = ("<span style='font-size:12px;color:#64748b;'>not logged yet — "
                     "start tagging this in Notion</span>")
             small = ""
         else:
@@ -236,10 +236,10 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
             chip = (f"<span style='background:{ec}1a;color:{ec};font-weight:800;font-size:13px;"
                     f"border-radius:999px;padding:3px 12px;'>edge {edge:+.2f}R</span>"
                     if edge == edge else "")
-            lows = (" <span style='font-size:10px;color:#94a3b8;border:1px solid rgba(148,163,184,0.4);"
+            lows = (" <span style='font-size:10px;color:#64748b;border:1px solid rgba(148,163,184,0.4);"
                     "border-radius:999px;padding:1px 7px;'>low sample</span>" if low else "")
             stat = chip + lows
-            small = (f"<div style='font-size:11px;color:#94a3b8;margin-top:3px;'>"
+            small = (f"<div style='font-size:11px;color:#64748b;margin-top:3px;'>"
                      f"{lab_y} {_fmt_r(a)} ({na}) · {lab_n} {_fmt_r(b)} ({nb})</div>")
         op = "opacity:0.65;" if faded else ""
         num_bg = "#c3c9d4" if faded else PURPLE
@@ -256,7 +256,7 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
     rows_html = "".join(_row(i, e) for i, e in enumerate(proven, 1))
     if review:
         rows_html += ("<div style='padding:9px 16px;font-size:11px;font-weight:700;"
-                      "letter-spacing:0.08em;color:#94a3b8;background:#fafbfd;"
+                      "letter-spacing:0.08em;color:#64748b;background:#fafbfd;"
                       "border-bottom:1px solid rgba(148,163,184,0.15);'>UNDER REVIEW — "
                       "NO PROVEN EDGE YET</div>")
         rows_html += "".join(_row(i, e, faded=True)
@@ -281,7 +281,7 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
     st.markdown("<div style='display:flex;gap:12px;flex-wrap:wrap;margin:6px 0 10px;'>" + "".join(
         f"<div style='flex:1;min-width:150px;background:#fff;border:1px solid rgba(0,0,0,0.06);"
         f"border-radius:12px;padding:12px 14px;box-shadow:0 2px 10px rgba(0,0,0,0.04);'>"
-        f"<div style='font-size:11px;font-weight:600;letter-spacing:0.06em;color:#94a3b8;'>{lab}</div>"
+        f"<div style='font-size:11px;font-weight:600;letter-spacing:0.06em;color:#64748b;'>{lab}</div>"
         f"<div style='font-size:22px;font-weight:800;color:{col};'>{val}</div></div>"
         for lab, val, col in cards) + "</div>", unsafe_allow_html=True)
 
@@ -310,7 +310,7 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
             f"<div style='display:flex;justify-content:space-between;gap:10px;padding:9px 16px;"
             f"border-bottom:1px solid rgba(148,163,184,0.15);font-size:13px;'>"
             f"<span style='color:#334155;'><span style='color:{col};font-weight:800;'>{sym}</span>"
-            f"  {name} <span style='color:#94a3b8;'>({n})</span></span>"
+            f"  {name} <span style='color:#64748b;'>({n})</span></span>"
             f"<span style='font-weight:800;color:{GREEN if v >= 0 else RED};'>{_fmt_r(v)}</span></div>"
             for name, v, n in items)
         return (f"<div style='flex:1;min-width:280px;background:#fff;border:1px solid rgba(0,0,0,0.06);"
@@ -504,7 +504,7 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
     def card(lab, val, sub, col):
         return (f"<div style='flex:1;min-width:150px;background: rgb(248, 249, 252);border:1px solid rgba(0,0,0,0.06);"
                 f"border-radius:12px;padding:12px 14px;'>"
-                f"<div style='font-size:11px;font-weight:600;letter-spacing:0.06em;color:#94a3b8;'>{lab}</div>"
+                f"<div style='font-size:11px;font-weight:600;letter-spacing:0.06em;color:#64748b;'>{lab}</div>"
                 f"<div style='font-size:22px;font-weight:800;color:{col};'>{val}</div>"
                 f"<div style='font-size:12px;color:#64748b;'>{sub}</div></div>")
 
@@ -559,7 +559,7 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
         cards.append(card("WEEK GRADE", grade, "process, not profit", PURPLE))
     elif comps:
         cards.append(card("WEEK GRADE", "\u2014", f"{n} trade{'s' if n != 1 else ''} — too few to grade",
-                          "#94a3b8"))
+                          "#64748b"))
     if not cards:
         cards = [card("TRADES", f"{n}", f"{n_w}W · {n_be}BE · {n_l}L", "#0f172a"),
                  card("NET R", _fmt_r(net), f"ex-best: {_fmt_r(ex_best)}", GREEN if net >= 0 else RED)]
@@ -577,7 +577,7 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
     for _, r in wk.iterrows():
         rv = float(r["__rr"])
         res = "Win" if rv > 0.15 else ("Loss" if rv < -0.15 else "BE")
-        rescol = GREEN if res == "Win" else (RED if res == "Loss" else "#94a3b8")
+        rescol = GREEN if res == "Win" else (RED if res == "Loss" else "#64748b")
         day = r["__dt"].strftime("%a")
         sess = str(r.get("Session", "") or "")[:18]
         dirn = str(r.get("Direction", "") or "")
@@ -722,7 +722,7 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
         st.markdown("".join(
             f"<div style='display:flex;gap:18px;align-items:center;padding:5px 0;'>"
             f"<div style='flex:0 0 150px;font-size:13.5px;font-weight:700;color:#0f172a;'>{_l}</div>"
-            f"<div style='flex:0 0 140px;font-size:12.5px;color:#94a3b8;'>last {_a}</div>"
+            f"<div style='flex:0 0 140px;font-size:12.5px;color:#64748b;'>last {_a}</div>"
             f"<div style='font-size:13px;font-weight:800;color:{GREEN if _ok else RED};'>now {_b}</div></div>"
             for _l, _a, _b, _ok in _cmp), unsafe_allow_html=True)
         if n > pn and net < float(pr.sum()):

@@ -1067,7 +1067,7 @@ def _render_login_page():
         _tpl_html = (f'<a href="{_tpl}" target="_blank" style="color:#4800ff;'
                      f'font-weight:700;">Get the free template</a> · ' if _tpl else "")
         st.markdown(
-            f"""<div style="font-size:12.5px;color:#94a3b8;margin:6px 0 16px;">
+            f"""<div style="font-size:12.5px;color:#64748b;margin:6px 0 16px;">
               Realistic simulated journal — nothing to connect</div>
             <a href="{auth_url}" class="ea-link-btn">Sign in with Notion</a>
             <div style="font-size:12.5px;color:#64748b;margin:10px 0 0;">
@@ -1246,7 +1246,7 @@ def _require_notion_login():
         # localStorage read still in flight — don't dump the user on the
         # Connect page yet (under load the report can lag a few runs).
         st.session_state["ea_auth_tries"] = st.session_state.get("ea_auth_tries", 0) + 1
-        st.markdown("<div style='text-align:center;color:#94a3b8;font-size:14px;"
+        st.markdown("<div style='text-align:center;color:#64748b;font-size:14px;"
                     "padding:120px 0 8px;'>Restoring your session…</div>",
                     unsafe_allow_html=True)
         import time as _t
@@ -1368,7 +1368,12 @@ def render_dashboard(mobile: bool):
             _status += f" · synced {_ago}"
         except (TypeError, ValueError):
             pass  # legacy HH:MM stamp from an older session — drop it
-    inject_header_bar(_status, bool(token and dbid) or _demo)
+    if mobile:
+        inject_header_bar(_status, bool(token and dbid) or _demo)
+        _brand = None
+    else:
+        from edge_analysis.ui.theme import header_parts
+        _brand = header_parts(_status, bool(token and dbid) or _demo)
     st.session_state["_ea_connected"] = bool(token and dbid) or _demo
 
     if _demo:
@@ -1561,21 +1566,21 @@ def render_dashboard(mobile: bool):
                 _cur = st.session_state.get("ea_track_account")
                 st.markdown(
                     "<div style='font-size:11px;font-weight:700;letter-spacing:0.06em;"
-                    "color:#94a3b8;margin:6px 0 4px;'>MAIN ACCOUNT &mdash; MONEY CARDS FOLLOW IT</div>",
+                    "color:#64748b;margin:6px 0 4px;'>MAIN ACCOUNT &mdash; MONEY CARDS FOLLOW IT</div>",
                     unsafe_allow_html=True)
                 st.selectbox("Main account", _s_accts,
                              index=_s_accts.index(_cur) if _cur in _s_accts else 0,
                              key="ea_setup_acct", label_visibility="collapsed")
             st.markdown(
                 "<div style='font-size:11px;font-weight:700;letter-spacing:0.06em;"
-                "color:#94a3b8;margin:12px 0 4px;'>YOUR NUMBERS AS</div>",
+                "color:#64748b;margin:12px 0 4px;'>YOUR NUMBERS AS</div>",
                 unsafe_allow_html=True)
             st.markdown('<div class="ea-setupseg"></div>', unsafe_allow_html=True)
             st.radio("Numbers", ["Tables", "Charts"], key="ea_setup_view",
                      horizontal=True, label_visibility="collapsed")
             st.markdown(
                 "<div style='font-size:11px;font-weight:700;letter-spacing:0.06em;"
-                "color:#94a3b8;margin:12px 0 4px;'>HOW MUCH AT ONCE</div>",
+                "color:#64748b;margin:12px 0 4px;'>HOW MUCH AT ONCE</div>",
                 unsafe_allow_html=True)
             st.markdown('<div class="ea-setupseg"></div>', unsafe_allow_html=True)
             st.radio("Density", ["Everything", "Focus"], key="ea_setup_density",
@@ -1608,7 +1613,7 @@ def render_dashboard(mobile: bool):
         with st.container(border=True):
             st.markdown(
                 "<div style='font-size:11px;font-weight:700;letter-spacing:0.06em;"
-                "color:#94a3b8;margin-bottom:8px;'>WHERE TO LOOK FIRST</div>"
+                "color:#64748b;margin-bottom:8px;'>WHERE TO LOOK FIRST</div>"
                 "<div style='font-size:14px;line-height:2.0;color:#3b3f4d;'>"
                 "<b>Your month vs your plan</b> — the first card, target and "
                 "max-loss included.<br>"
@@ -1621,7 +1626,8 @@ def render_dashboard(mobile: bool):
                 _st_rerun()
 
     sel_inst, sel_em, sel_sess, date_range, sel_acct, sel_tot = render_filters(
-        mobile, inst_opts, em_opts, sess_opts, date_mode_options, min_date, max_date, acct_opts, tot_opts
+        mobile, inst_opts, em_opts, sess_opts, date_mode_options, min_date, max_date,
+        acct_opts, tot_opts, brand=_brand
     )
 
     # The Trade-Type coaching lives on the select itself (its help tooltip) —

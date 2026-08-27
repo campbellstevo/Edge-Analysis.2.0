@@ -125,7 +125,7 @@ def _line_metric(rows, title, styler, value="Avg R", x_order=None, x_title="",
             .mark_rule(color="#cbd5e1", strokeDash=[4, 4]).encode(y=alt.Y("y:Q", title=None)))
     line = base.mark_line(color="#4800ff", strokeWidth=2.5, interpolate="monotone").encode(
         x=xenc, y=alt.Y("__v:Q", title=value,
-                        axis=alt.Axis(labelColor="#94a3b8", titleColor="#94a3b8", grid=True, gridColor="#eef0f5")))
+                        axis=alt.Axis(labelColor="#64748b", titleColor="#64748b", grid=True, gridColor="#eef0f5")))
     pts = base.mark_point(filled=True, size=120, stroke="#fff", strokeWidth=2).encode(
         x=xenc, y="__v:Q",
         color=alt.Color("__sign:N", legend=None,
@@ -695,9 +695,9 @@ def _spread_section(df: pd.DataFrame, styler) -> None:
     pts = alt.Chart(alt.Data(values=vals)).mark_circle(size=80, opacity=0.55, stroke="#fff", strokeWidth=1).encode(
         x=alt.X("Spread:Q", title="Spread at entry",
                 scale=alt.Scale(domain=[s_lo - s_pad, s_hi + s_pad]),
-                axis=alt.Axis(grid=True, gridColor="#eef0f5", labelColor="#94a3b8", titleColor="#94a3b8")),
+                axis=alt.Axis(grid=True, gridColor="#eef0f5", labelColor="#64748b", titleColor="#64748b")),
         y=alt.Y("R:Q", title="Realised R",
-                axis=alt.Axis(format="+.0f", grid=True, gridColor="#eef0f5", labelColor="#94a3b8", titleColor="#94a3b8")),
+                axis=alt.Axis(format="+.0f", grid=True, gridColor="#eef0f5", labelColor="#64748b", titleColor="#64748b")),
         color=alt.Color("OutcomeC:N", legend=None,
                         scale=alt.Scale(domain=["Win", "BE", "Loss"],
                                         range=["#16a34a", "#9ca3af", "#ef4444"])),
