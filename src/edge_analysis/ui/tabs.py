@@ -715,18 +715,13 @@ def _digest_card(f: pd.DataFrame) -> None:
     if not fs:
         return
     try:
-        # One lever, two halves: when the top session leak coexists with a
-        # session edge, say so — the reader should see one decision.
+        # One lever, two halves: when a session leak coexists with a session
+        # edge, the leak's line says so — the reader should see one decision.
         _sess_edge = next((x for x in strengths(f) if x["kind"] == "session"), None)
-        if _sess_edge:
-            for _fx in fs:
-                if _fx["kind"] == "session":
-                    _good = _sess_edge["label"].replace("Lean on ", "")
-                    _fx["evidence"] = (str(_fx["evidence"])
-                                       + f" \u2014 the other half of your {_good} edge")
-                    break
+        _sess_good = (_sess_edge["label"].replace("Lean on ", "")
+                      if _sess_edge else None)
     except Exception:
-        pass
+        _sess_good = None
     import html as _h2
     with st.container(border=True):
         st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
@@ -739,6 +734,8 @@ def _digest_card(f: pd.DataFrame) -> None:
             _eyeb = "#64748b"
             _lab = _h2.escape(str(f_["label"]))
             _ev = _h2.escape(str(f_["evidence"]).split(" \u2014 ")[0])
+            if f_["kind"] == "session" and _sess_good:
+                _ev += _h2.escape(f" \u00b7 the other half of your {_sess_good} edge")
             _bord = "" if i == 1 else "border-top:1px solid #eef0f6;"
             _stk = f_["stake"]
             rows.append(
