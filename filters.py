@@ -136,10 +136,10 @@ def render_filters(
         _logo_html, _pill_html = brand
         try:
             _hcl, _hc1, _hcp, _hcd, _hc2, _hc3 = st.columns(
-                [1.75, 1.15, 3.05, 1.75, 1.15, 0.65], vertical_alignment="center")
+                [1.7, 1.2, 2.75, 2.0, 1.2, 0.65], vertical_alignment="center")
         except TypeError:
             _hcl, _hc1, _hcp, _hcd, _hc2, _hc3 = st.columns(
-                [1.75, 1.15, 3.05, 1.75, 1.15, 0.65])
+                [1.7, 1.2, 2.75, 2.0, 1.2, 0.65])
         with _hcl:
             st.markdown(f"<div class='ea-topbar-logo ea-band-logo'>{_logo_html}</div>",
                         unsafe_allow_html=True)

@@ -909,8 +909,12 @@ def inject_theme():
     div[data-testid="stHorizontalBlock"]:has(.ea-band-logo) button {{
         white-space: nowrap !important;
     }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"] {{
+        display: flex !important; flex-wrap: nowrap !important;
+        width: 100%; max-width: 216px;
+    }}
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"] > label {{
-        min-width: 96px !important;
+        flex: 1 1 0 !important; min-width: 0 !important; padding: 7px 8px !important;
     }}
 
     /* One-band header (has the logo): Filters stays left beside the logo,
