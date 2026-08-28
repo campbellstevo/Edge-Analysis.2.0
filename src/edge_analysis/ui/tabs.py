@@ -1071,6 +1071,9 @@ def _month_card(f: pd.DataFrame, styler) -> None:
             # plan's target/stop are converted at the planned risk, so the bar
             # can't disagree with the number directly above it.
             _now_pct = _mtd_pct if _mtd_pct is not None else _as_pct(cur, _rp)
+            # the breaker strip quotes THIS figure — two month numbers on one
+            # page was a real bug (hero -6.71% vs breaker -6.50%)
+            st.session_state["ea_month_now_pct"] = float(_now_pct)
             _tgt_pct = _as_pct(TGT_R, _rp)
             _stop_pct = _as_pct(STOP_R, _rp)
             if cur >= 0:
@@ -1083,9 +1086,14 @@ def _month_card(f: pd.DataFrame, styler) -> None:
                 bar_title = "STOP USED"
                 barw = max(0.0, min(1.0, _now_pct / _stop_pct)) if _stop_pct < 0 else 0.0
                 barc = "#ef4444"
-                sub = (f"{_now_pct:+.2f}% now \u00b7 {barw * 100:.0f}% of the "
-                       f"{_stop_pct:+.1f}% stop used \u00b7 "
-                       f"{abs(_now_pct - _stop_pct):.2f}% of room left")
+                _room_pct = _now_pct - _stop_pct  # both negative; <=0 = breached
+                if _room_pct <= 0:
+                    sub = (f"{_now_pct:+.2f}% now \u00b7 stop exceeded by "
+                           f"{abs(_room_pct):.2f}%")
+                else:
+                    sub = (f"{_now_pct:+.2f}% now \u00b7 {barw * 100:.0f}% of the "
+                           f"{_stop_pct:+.1f}% stop used \u00b7 "
+                           f"{_room_pct:.2f}% of room left")
             st.markdown(
                 f"<div style='font-size:11px;font-weight:700;letter-spacing:0.06em;"
                 f"color:#64748b;margin-top:2px;'>{bar_title}</div>"
@@ -1102,8 +1110,9 @@ def _month_card(f: pd.DataFrame, styler) -> None:
                       "#16a34a" if _now_pct >= _tgt_pct else "#0f172a"),
                      ("MAX DRAWDOWN", f"-{_as_pct(maxdd, _rp):.2f}%",
                       "#ef4444" if maxdd > 0 else "#64748b"),
-                     ("STOP ROOM", f"{abs(_now_pct - _stop_pct):.2f}%",
-                      "#ef4444" if cur - STOP_R < 2 else "#0f172a"),
+                     ("STOP ROOM", f"{max(0.0, _now_pct - _stop_pct):.2f}%",
+                      "#ef4444" if _now_pct - _stop_pct <= 0
+                      else ("#ef4444" if cur - STOP_R < 2 else "#0f172a")),
                      ("TRADES · PACE", f"{n_tr} of {cap}" + (" ⚠" if n_tr > cap else ""),
                       "#ef4444" if n_tr > cap else pace_c)]
             st.markdown(
@@ -3081,11 +3090,16 @@ def _breaker_strip(df_raw: pd.DataFrame) -> None:
     mon = (now - pd.Timedelta(days=int(now.dayofweek))).normalize()
     wk_n = int((g["__dt"] >= mon).sum())
     closed = mtd <= stop_r
+    _hero_pct = st.session_state.get("ea_month_now_pct")
+    def _mtd_txt():
+        if _hero_pct is not None:
+            return f"{_hero_pct:+.2f}% ({mtd:+.1f}R)"
+        return f"{mtd:+.1f}R"
     if closed:
         bg, bc, ic, icon = "#fde8e8", "#f3b8b8", "#7f1d1d", "\u25a0"
         head = "Month closed \u2014 circuit breaker hit"
-        sub = (f"{_as_pct(mtd, _rp_b):+.2f}% ({mtd:+.1f}R) this month is at your "
-               f"{_as_pct(stop_r, _rp_b):+.1f}% max loss. "
+        sub = (f"{_mtd_txt()} this month is past your "
+               f"{stop_r:+.1f}R max loss. "
                "Flat until the 1st \u2014 that's the rule that keeps the account.")
     else:
         room = mtd - stop_r
@@ -3094,8 +3108,8 @@ def _breaker_strip(df_raw: pd.DataFrame) -> None:
         ic = "#7c4a03" if warn else "#14532d"
         icon = "\u26a0" if warn else "\u2713"
         head = "Circuit breaker \u2014 month open"
-        bits = [f"{_as_pct(mtd, _rp_b):+.2f}% this month ({mtd:+.1f}R)",
-                f"{_as_pct(room, _rp_b):.2f}% above the {_as_pct(stop_r, _rp_b):+.1f}% stop",
+        bits = [f"{_mtd_txt()} this month",
+                f"{room:.1f}R above the {stop_r:+.1f}R stop",
                 f"{wk_n} of {wk_cap} trades this week"]
         sub = " \u00b7 ".join(bits)
     st.markdown(
