@@ -66,7 +66,7 @@ class SessionKeys:
 
 class PageNames:
     DASHBOARD = "Dashboard"
-    CONNECT = "Connect journal"
+    CONNECT = "Journals"
 
 
 class APIConstants:
@@ -657,10 +657,31 @@ def render_connect_page(mobile: bool):
 
     with st.container():
         st.markdown('<div class="connect-wrap">', unsafe_allow_html=True)
-        st.markdown('<div class="ea-title">Connect your journal</div>'
+        _signed_in = bool(st.session_state.get(SessionKeys.USER_TOKEN)
+                          or st.session_state.get(SessionKeys.OAUTH_TOKEN))
+        _ttl = "Your journals" if _signed_in else "Connect your journal"
+        _sub = ("Switching only changes which data the dashboard reads \u2014 "
+                "nothing in your Notion is touched."
+                if _signed_in else
+                "Sign in once \u2014 your journals appear by themselves.")
+        st.markdown(f'<div class="ea-title">{_ttl}</div>'
                     "<div style='text-align:center;font-size:14px;color:#64748b;"
-                    "margin:2px 0 14px;'>Sign in once \u2014 your journals appear "
-                    "by themselves. Switch any time.</div>", unsafe_allow_html=True)
+                    f"margin:2px 0 14px;'>{_sub}</div>", unsafe_allow_html=True)
+        if _signed_in:
+            _cur_db0 = str(st.session_state.get(SessionKeys.DB_ID) or "").replace("-", "")
+            _cands0 = st.session_state.get("ea_db_cands") or []
+            _cur_t = next((c["title"] for c in _cands0
+                           if c.get("id") == _cur_db0), None)
+            if _cur_db0:
+                _cur_lab = _cur_t or "your journal"
+                st.markdown(
+                    "<div style='display:flex;justify-content:center;margin:0 0 16px;'>"
+                    "<div style='display:inline-flex;align-items:center;gap:9px;"
+                    "background:#e9f7ef;border:1px solid #bfe6cd;border-radius:999px;"
+                    "padding:9px 18px;font-size:13.5px;font-weight:700;color:#14532d;'>"
+                    "<span style='width:9px;height:9px;border-radius:50%;"
+                    "background:#16a34a;display:inline-block;'></span>"
+                    f"Reading from: {_cur_lab}</div></div>", unsafe_allow_html=True)
         if not st.session_state.get(SessionKeys.USER_TOKEN):
             st.markdown(
                 "<div style='text-align:center;font-size:14px;color:#64748b;"
@@ -790,6 +811,8 @@ def render_connect_page(mobile: bool):
                         _uid = st.session_state.get(SessionKeys.USER_ID)
                         if _uid:
                             set_user_db(_uid, _c["id"], template=_c["schema"])
+                        # force the device memory to follow the new choice
+                        st.session_state.pop("ea_auth_sig", None)
                         st.session_state[SessionKeys.NAV_TARGET] = PageNames.DASHBOARD
                         _st_rerun()
             elif _cands is not None:
@@ -830,6 +853,7 @@ def render_connect_page(mobile: bool):
                         uid = st.session_state.get(SessionKeys.USER_ID)
                         if uid:
                             set_user_db(uid, dbid)
+                        st.session_state.pop("ea_auth_sig", None)
                         st.session_state[SessionKeys.NAV_TARGET] = PageNames.DASHBOARD
                         _st_rerun()
                     else:
@@ -864,6 +888,7 @@ def render_connect_page(mobile: bool):
                                 uid = st.session_state.get(SessionKeys.USER_ID)
                                 if uid:
                                     set_user_db(uid, _res)
+                                st.session_state.pop("ea_auth_sig", None)
                                 st.session_state[SessionKeys.NAV_TARGET] = PageNames.DASHBOARD
                                 _st_rerun()
                             else:
@@ -1213,9 +1238,14 @@ def _restore_device_auth() -> bool:
     if not (isinstance(rec, dict) and rec.get("t")):
         return False
     _complete_login_with_token(rec["t"])
+    # The device remembers the journal you used LAST TIME ON THIS DEVICE —
+    # the server store remembers what you actually chose last. Server wins;
+    # the device value only fills a gap (e.g. store wiped by a redeploy).
     dbid = str(rec.get("d") or "")
-    if dbid and _validate_dbid(dbid.replace("-", "")):
+    if dbid and _validate_dbid(dbid.replace("-", "")) \
+            and not st.session_state.get(SessionKeys.DB_ID):
         st.session_state[SessionKeys.DB_ID] = dbid
+    if st.session_state.get(SessionKeys.DB_ID):
         st.session_state[SessionKeys.NAV_TARGET] = PageNames.DASHBOARD
     return True
 

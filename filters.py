@@ -32,7 +32,7 @@ class SessionKeys:
 class PageNames:
     """Navigation page names (replicated from the main app)."""
     DASHBOARD = "Dashboard"
-    CONNECT = "Connect journal"
+    CONNECT = "Journals"
 
 
 # Type alias for date range selection
@@ -362,16 +362,14 @@ def render_filters(
                   on_click=_refresh)
         st.button("Sign in on iPhone", key="mm_qr", use_container_width=True,
                   on_click=_flag, args=("ea_show_qr",))
-        st.button("MT5 auto-sync", key="mm_mt5sync", use_container_width=True,
-                  on_click=_flag, args=("ea_show_mt5sync",))
+        st.button("Auto-log my trades", key="mm_broker", use_container_width=True,
+                  on_click=_flag, args=("ea_show_broker",))
         if _fb:
             st.button("Send feedback", key="mm_fb", use_container_width=True,
                       on_click=_flag, args=("ea_show_feedback",))
         st.markdown(_eyebrow_div.format("HELP"), unsafe_allow_html=True)
         st.button("Getting started", key="mm_setup", use_container_width=True,
                   on_click=_flag, args=("ea_show_setup",))
-        st.button("Connect your broker", key="mm_broker", use_container_width=True,
-                  on_click=_flag, args=("ea_show_broker",))
         st.button("What the stats mean", key="mm_help", use_container_width=True,
                   on_click=_flag, args=("ea_show_help",))
         st.button("Privacy & terms", key="mm_legal", use_container_width=True,
@@ -400,12 +398,6 @@ def render_filters(
         else:
             with st.expander("Getting started", expanded=True):
                 _setup_body()
-    if st.session_state.pop("ea_show_mt5sync", False):
-        if _mt5sync_dialog is not None:
-            _mt5sync_dialog()
-        else:
-            with st.expander("MT5 auto-sync", expanded=True):
-                _mt5sync_body()
     if st.session_state.pop("ea_show_legal", False):
         if _legal_dialog is not None:
             _legal_dialog()
@@ -516,12 +508,15 @@ _Contact: campbellstevo@gmail.com \u00b7 Full text: PRIVACY.md and TERMS.md in t
 
 def _mt5sync_body() -> None:
     st.markdown(
-        "Every trade you close in **MetaTrader 5** lands in your Notion journal "
-        "by itself — prices, P&L, session, R multiple, MAE/MFE. You only fill in "
-        "the thinking.\n\n"
-        "Your download is personal: your journal and its key are already inside. "
-        "Unzip, double-click **run_sync.bat** on the Windows PC where MT5 lives, "
-        "leave it running. That's the whole setup.")
+        "Every trade you close in **MetaTrader 5** will appear in your journal "
+        "by itself. Three steps, once:\n\n"
+        "**1. Press the purple button below.** A zip file downloads \u2014 it's "
+        "yours only, your journal key is already inside.\n\n"
+        "**2. Right-click the downloaded file \u2192 Extract All.**\n\n"
+        "**3. Open the new folder and double-click `run_sync.bat`** on the "
+        "Windows PC where MetaTrader 5 is installed.\n\n"
+        "Done. A small black window appears when it runs \u2014 that's normal. "
+        "Run it again any time; trades are never duplicated.")
     try:
         from edge_analysis.mt5_sync_pack import build_zip
         _dbid = str(st.session_state.get("override_DATABASE_ID") or "")
@@ -547,8 +542,6 @@ except Exception:
 
 def _broker_body() -> None:
     """Per-platform truth: what syncs itself today, what doesn't, no pretending."""
-    st.markdown("**MetaTrader 5** — automatic. Your personal sync is ready below; "
-                "every closed trade writes itself into your journal.")
     _mt5sync_body()
     st.markdown("---")
     st.markdown(
