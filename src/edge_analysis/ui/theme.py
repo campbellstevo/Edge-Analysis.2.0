@@ -914,7 +914,10 @@ def inject_theme():
         width: 100%; max-width: 216px;
     }}
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"] > label {{
-        flex: 1 1 0 !important; min-width: 0 !important; padding: 7px 8px !important;
+        flex: 1 1 0 !important; padding: 7px 10px !important;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"] > label p {{
+        white-space: nowrap !important;
     }}
 
     /* One-band header (has the logo): Filters stays left beside the logo,
