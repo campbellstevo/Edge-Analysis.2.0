@@ -904,6 +904,15 @@ def inject_theme():
     div[data-testid="stHorizontalBlock"]:has(.ea-themeseg) > div:nth-child(3) {{
         display: flex; justify-content: flex-end;
     }}
+    /* Band geometry: the Filters chip never wraps, and the Focus/Everything
+       segments are equal halves (the 46px theme-toggle law, scaled to words) */
+    div[data-testid="stHorizontalBlock"]:has(.ea-band-logo) button {{
+        white-space: nowrap !important;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"] > label {{
+        min-width: 96px !important;
+    }}
+
     /* One-band header (has the logo): Filters stays left beside the logo,
        the status pill right-aligns toward the controls */
     div[data-testid="stHorizontalBlock"]:has(.ea-band-logo) {{
@@ -1489,6 +1498,28 @@ def inject_dark_overlay():
     .ea-verdict { color: #aeb6c6 !important; }
     .ea-verdict b { color: #e8ebf1 !important; }
     .ea-verdict-body { color: inherit; }
+    /* Segmented controls (Focus/Everything, setup pills): dark cards, not white */
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"],
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-setupseg) [role="radiogroup"] {
+        background: #161b27 !important; border-color: rgba(255,255,255,0.09) !important;
+    }
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"] > label p,
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-setupseg) [role="radiogroup"] > label p {
+        color: #aeb6c6;
+    }
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"] > label:has(input:checked) p,
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-setupseg) [role="radiogroup"] > label:has(input:checked) p {
+        color: #ffffff !important;
+    }
+    /* Empty states: readable on dark */
+    .ea-empty-title { color: #e8ebf1 !important; }
+    .ea-empty-wrap div { color: #aeb6c6 !important; }
+    .ea-empty-wrap .ea-empty-title { color: #e8ebf1 !important; }
+    /* Connect / sign-in page cards */
+    div[style*="background: #f8f6ff"], div[style*="background:#f8f6ff"] {
+        background: #1d2331 !important; border-color: rgba(255,255,255,0.09) !important;
+    }
+    .ea-divider { background: rgba(255,255,255,0.09) !important; }
     div[style*="background: rgb(255, 255, 255)"] {
         background: #161b27 !important;
         border-color: rgba(255,255,255,0.09) !important;

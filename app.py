@@ -711,7 +711,7 @@ def render_connect_page(mobile: bool):
         # Callback fallback
         if st.session_state.get(SessionKeys.OAUTH_CALLBACK):
             st.info("We received a callback from Notion but your session was reset.")
-            if st.button("Finalize sign-in", key="btn_finalize_oauth"):
+            if st.button("Finalise sign-in", key="btn_finalize_oauth"):
                 code = st.session_state.get(SessionKeys.OAUTH_CALLBACK)
                 try:
                     data = _exchange_code_for_token(code, code_verifier=None)
@@ -845,7 +845,7 @@ def render_connect_page(mobile: bool):
                             st.error(f"Couldn't verify the database. {info}")
 
         st.markdown('<div class="ea-divider"></div>', unsafe_allow_html=True)
-        if st.button("Return to Dashboard", key="btn_return_dashboard_connect", use_container_width=True):
+        if st.button("Back to dashboard", key="btn_return_dashboard_connect", use_container_width=True):
             st.session_state[SessionKeys.NAV_TARGET] = PageNames.DASHBOARD
             _st_rerun()
 
