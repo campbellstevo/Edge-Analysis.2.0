@@ -833,7 +833,7 @@ def render_chat_bubble(df: pd.DataFrame) -> None:
     llm_on = chat_enabled()
     with st.container():
         st.markdown('<div class="ea-chatfab"></div>', unsafe_allow_html=True)
-        with st.popover("💬 Ask your data"):
+        with st.popover("💬", help="Ask your data"):
             st.markdown('<div class="ea-chat-body"></div>', unsafe_allow_html=True)
             if not hist:
                 st.caption("Ask about your own stats — \"what's my best session?\", "

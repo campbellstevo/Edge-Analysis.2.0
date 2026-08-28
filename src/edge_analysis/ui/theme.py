@@ -1015,16 +1015,6 @@ def inject_theme():
         color: #ffffff !important;
     }}
 
-    /* Chat pill: compact on short viewports so it clears card content */
-    @media (max-height: 800px) {{
-        div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-chatfab) button {{
-            padding: 8px 14px !important;
-        }}
-        div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-chatfab) button p {{
-            font-size: 13px !important;
-        }}
-    }}
-
     /* Streamlit Cloud viewer badge (red crown, bottom right): hide — it
        lands on top of the chat pill for every visitor */
     [class*="viewerBadge"], [data-testid="stAppDeployButton"] {{
@@ -1139,8 +1129,15 @@ def inject_theme():
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-chatfab) button {{
         background: #4800ff !important; color: #ffffff !important;
         border: none !important; border-radius: 999px !important;
-        padding: 11px 20px !important; font-weight: 700 !important;
+        width: 54px !important; height: 54px !important; min-width: 54px !important;
+        padding: 0 !important; font-weight: 700 !important;
         box-shadow: 0 6px 22px rgba(72,0,255,0.35) !important;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-chatfab) button p {{
+        font-size: 22px !important; line-height: 1 !important; margin: 0 !important;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-chatfab) button svg {{
+        display: none !important;
     }}
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-chatfab) button p {{
         color: #ffffff !important; font-weight: 700 !important;

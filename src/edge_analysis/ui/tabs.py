@@ -708,12 +708,25 @@ def _pct_txt(r_value: float, risk_pct: float, dp: int = 2) -> str:
 def _digest_card(f: pd.DataFrame) -> None:
     """The reason to open the app: your weaknesses priced in R, worst first."""
     try:
-        from edge_analysis.digest import findings
+        from edge_analysis.digest import findings, strengths
         fs = findings(f)
     except Exception:
         return
     if not fs:
         return
+    try:
+        # One lever, two halves: when the top session leak coexists with a
+        # session edge, say so — the reader should see one decision.
+        _sess_edge = next((x for x in strengths(f) if x["kind"] == "session"), None)
+        if _sess_edge:
+            for _fx in fs:
+                if _fx["kind"] == "session":
+                    _good = _sess_edge["label"].replace("Lean on ", "")
+                    _fx["evidence"] = (str(_fx["evidence"])
+                                       + f" \u2014 the other half of your {_good} edge")
+                    break
+    except Exception:
+        pass
     import html as _h2
     with st.container(border=True):
         st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
@@ -723,6 +736,7 @@ def _digest_card(f: pd.DataFrame) -> None:
         rows = []
         for i, f_ in enumerate(fs[:3], 1):
             _sev = "#ef4444" if i == 1 else ("#f59e0b" if i == 2 else "#64748b")
+            _eyeb = "#64748b"
             _lab = _h2.escape(str(f_["label"]))
             _ev = _h2.escape(str(f_["evidence"]).split(" \u2014 ")[0])
             _bord = "" if i == 1 else "border-top:1px solid #eef0f6;"
@@ -732,7 +746,7 @@ def _digest_card(f: pd.DataFrame) -> None:
                 "align-items:flex-start;gap:16px;padding:13px 2px;" + _bord + "'>"
                 "<div style='min-width:0;'>"
                 "<div style='font-size:11px;font-weight:700;letter-spacing:0.07em;"
-                f"color:{_sev};'>NO. {i}</div>"
+                f"color:{_eyeb};'>NO. {i}</div>"
                 "<div style='font-size:16.5px;font-weight:800;color:#0f172a;"
                 f"margin:1px 0 2px;'>{_lab}</div>"
                 f"<div style='font-size:13px;color:#64748b;'>{_ev}</div></div>"
@@ -762,7 +776,8 @@ def _strengths_card(f: pd.DataFrame) -> None:
                      "protect them.")
         rows = []
         for i, f_ in enumerate(fs[:3], 1):
-            _sev = "#16a34a" if i == 1 else ("#22c55e" if i == 2 else "#64748b")
+            _sev = "#16a34a"
+            _eyeb = "#64748b"
             _lab = _h2.escape(str(f_["label"]))
             _ev = _h2.escape(str(f_["evidence"]))
             _bord = "" if i == 1 else "border-top:1px solid #eef0f6;"
@@ -772,7 +787,7 @@ def _strengths_card(f: pd.DataFrame) -> None:
                 "align-items:flex-start;gap:16px;padding:13px 2px;" + _bord + "'>"
                 "<div style='min-width:0;'>"
                 "<div style='font-size:11px;font-weight:700;letter-spacing:0.07em;"
-                f"color:{_sev};'>NO. {i}</div>"
+                f"color:{_eyeb};'>NO. {i}</div>"
                 "<div style='font-size:16.5px;font-weight:800;color:#0f172a;"
                 f"margin:1px 0 2px;'>{_lab}</div>"
                 f"<div style='font-size:13px;color:#64748b;'>{_ev}</div></div>"
@@ -1106,8 +1121,12 @@ def _month_card(f: pd.DataFrame, styler) -> None:
             maxdd = float((md["Cum"].cummax() - md["Cum"]).max())
             cap = int(st.session_state.get("ea_m_cap", 12))
             pace_c = "#ef4444" if n_tr > cap else "#0f172a"
-            chips = [("TO TARGET", f"{max(0.0, _tgt_pct - _now_pct):.2f}%",
-                      "#16a34a" if _now_pct >= _tgt_pct else "#0f172a"),
+            _month_closed = (_now_pct - _stop_pct) <= 0
+            chips = [("TO TARGET",
+                      "\u2014" if _month_closed
+                      else f"{max(0.0, _tgt_pct - _now_pct):.2f}%",
+                      "#64748b" if _month_closed
+                      else ("#16a34a" if _now_pct >= _tgt_pct else "#0f172a")),
                      ("MAX DRAWDOWN", f"-{_as_pct(maxdd, _rp):.2f}%",
                       "#ef4444" if maxdd > 0 else "#64748b"),
                      ("STOP ROOM", f"{max(0.0, _now_pct - _stop_pct):.2f}%",
@@ -3060,7 +3079,7 @@ def _entry_criteria(f: pd.DataFrame) -> None:
                                            title="Entry criteria \u2014 full numbers"))
 
 
-def _breaker_strip(df_raw: pd.DataFrame) -> None:
+def _breaker_strip(df_raw: pd.DataFrame, terse: bool = False) -> None:
     """Circuit-breaker status: month MTD vs the max-loss line, week volume vs 3."""
     if df_raw is None or df_raw.empty or "Date" not in df_raw.columns:
         return
@@ -3098,9 +3117,15 @@ def _breaker_strip(df_raw: pd.DataFrame) -> None:
     if closed:
         bg, bc, ic, icon = "#fde8e8", "#f3b8b8", "#7f1d1d", "\u25a0"
         head = "Month closed \u2014 circuit breaker hit"
-        sub = (f"{_mtd_txt()} this month is past your "
-               f"{stop_r:+.1f}R max loss. "
-               "Flat until the 1st \u2014 that's the rule that keeps the account.")
+        if terse:
+            # the month card above already carries every number — repeat the
+            # RULE, not the figures
+            sub = ("Past your max loss. Flat until the 1st \u2014 "
+                   "that's the rule that keeps the account.")
+        else:
+            sub = (f"{_mtd_txt()} this month is past your "
+                   f"{stop_r:+.1f}R max loss. "
+                   "Flat until the 1st \u2014 that's the rule that keeps the account.")
     else:
         room = mtd - stop_r
         warn = room < 2 or wk_n > wk_cap
@@ -3108,9 +3133,13 @@ def _breaker_strip(df_raw: pd.DataFrame) -> None:
         ic = "#7c4a03" if warn else "#14532d"
         icon = "\u26a0" if warn else "\u2713"
         head = "Circuit breaker \u2014 month open"
-        bits = [f"{_mtd_txt()} this month",
-                f"{room:.1f}R above the {stop_r:+.1f}R stop",
-                f"{wk_n} of {wk_cap} trades this week"]
+        if terse:
+            bits = [f"{room:.1f}R above the stop",
+                    f"{wk_n} of {wk_cap} trades this week"]
+        else:
+            bits = [f"{_mtd_txt()} this month",
+                    f"{room:.1f}R above the {stop_r:+.1f}R stop",
+                    f"{wk_n} of {wk_cap} trades this week"]
         sub = " \u00b7 ".join(bits)
     st.markdown(
         f"<div style='display:flex;align-items:center;gap:14px;background:{bg};"
@@ -5240,7 +5269,7 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
     if st.session_state.get("ea_density_pref") == "Focus":
         _f_track, _track_label, _track_others = _track_only(f_perf)
         _month_card(_f_track, styler)
-        _breaker_strip(_track_only(df_all_safe)[0])
+        _breaker_strip(_track_only(df_all_safe)[0], terse=True)
         _strengths_card(df_all_safe)
         _digest_card(df_all_safe)
         return
