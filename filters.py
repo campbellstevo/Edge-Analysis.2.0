@@ -62,6 +62,31 @@ def apply_date_filter(df: pd.DataFrame, date_range: Optional[DateRange]) -> pd.S
     return df["Date"].dt.date == date_range
 
 
+def _render_density_seg():
+    """Focus/Everything segment — shared by the rail and stacked layouts."""
+    _dwant = ("Focus" if st.session_state.get("ea_density_pref") == "Focus"
+              else "Everything")
+    if st.session_state.get("ea_density_seg") not in ("Focus", "Everything"):
+        st.session_state["ea_density_seg"] = _dwant
+    elif st.session_state.get("ea_density_seg") != _dwant:
+        # keep the toggle locked to the pref — a boot rerun that recreated
+        # the widget must never drag the pref the other way
+        st.session_state["ea_density_seg"] = _dwant
+
+    def _density_cb():
+        want = ("Focus" if st.session_state.get("ea_density_seg") == "Focus"
+                else "All")
+        if st.session_state.get("ea_density_pref", "All") != want:
+            st.session_state["ea_density_pref"] = want
+            st.session_state["ea_density_dirty"] = True
+
+    st.markdown('<div class="ea-densityseg"></div>', unsafe_allow_html=True)
+    st.radio("Density", ["Focus", "Everything"], key="ea_density_seg",
+             horizontal=True, on_change=_density_cb, label_visibility="collapsed",
+             help="Focus shows your track record and what needs work. "
+                  "Everything shows all six tabs.")
+
+
 def render_filters(
     mobile: bool,
     inst_opts: list,
@@ -132,14 +157,15 @@ def render_filters(
         _active += 1
     _flabel = f"Filters · {_active} on" if _active else "Filters"
     st.markdown('<div class="ea-hdrbar"></div>', unsafe_allow_html=True)
-    if brand and not mobile:
+    _rail = bool(brand and not mobile)
+    if _rail:
+        # Band 1 — identity: logo left; status, theme, menu right
         _logo_html, _pill_html = brand
         try:
-            _hcl, _hc1, _hcp, _hcd, _hc2, _hc3 = st.columns(
-                [1.7, 1.2, 2.75, 2.0, 1.2, 0.65], vertical_alignment="center")
+            _hcl, _hcp, _hc2, _hc3 = st.columns(
+                [2.0, 5.45, 1.15, 0.62], vertical_alignment="center")
         except TypeError:
-            _hcl, _hc1, _hcp, _hcd, _hc2, _hc3 = st.columns(
-                [1.7, 1.2, 2.75, 2.0, 1.2, 0.65])
+            _hcl, _hcp, _hc2, _hc3 = st.columns([2.0, 5.45, 1.15, 0.62])
         with _hcl:
             st.markdown(f"<div class='ea-topbar-logo ea-band-logo'>{_logo_html}</div>",
                         unsafe_allow_html=True)
@@ -147,36 +173,43 @@ def render_filters(
             if _pill_html:
                 st.markdown(f"<div style='text-align:right;'>{_pill_html}</div>",
                             unsafe_allow_html=True)
+        # Band 2 — THE RAIL: nav + Filters + density in one contained bar
+        _focus_now = st.session_state.get("ea_density_pref") == "Focus"
+        with st.container():
+            st.markdown('<div class="ea-rail"></div>', unsafe_allow_html=True)
+            _rc_nav, _rc_flt, _rc_seg = st.columns([6.35, 1.0, 1.8])
+            with _rc_nav:
+                if not _focus_now:
+                    st.markdown('<div class="ea-rail-nav"></div>',
+                                unsafe_allow_html=True)
+                    st.radio("View",
+                             ["Performance", "Entry", "Externals", "Psychology",
+                              "Plan", "Review"],
+                             horizontal=True, key="ea_tab",
+                             label_visibility="collapsed")
+                    st.session_state["ea_nav_external"] = True
+                else:
+                    st.session_state.pop("ea_nav_external", None)
+                    st.markdown("<div class='ea-rail-focus'>FOCUS \u00b7 your "
+                                "briefing</div>", unsafe_allow_html=True)
+            with _rc_flt:
+                st.markdown('<div class="ea-rail-flt"></div>', unsafe_allow_html=True)
+                try:
+                    flt = st.popover(_flabel, use_container_width=False)
+                except Exception:
+                    flt = st.expander(_flabel)
+            with _rc_seg:
+                _render_density_seg()
     else:
+        st.session_state.pop("ea_nav_external", None)
         _hc1, _hcd, _hc2, _hc3 = st.columns([5.3, 2.1, 1.5, 0.9])
-    with _hcd:
-        # Density: Focus = track record + what needs work; All = the six tabs.
-        _dwant = ("Focus" if st.session_state.get("ea_density_pref") == "Focus"
-                  else "Everything")
-        if st.session_state.get("ea_density_seg") not in ("Focus", "Everything"):
-            st.session_state["ea_density_seg"] = _dwant
-        elif st.session_state.get("ea_density_seg") != _dwant:
-            # keep the toggle locked to the pref — a boot rerun that recreated
-            # the widget must never drag the pref the other way
-            st.session_state["ea_density_seg"] = _dwant
-
-        def _density_cb():
-            want = ("Focus" if st.session_state.get("ea_density_seg") == "Focus"
-                    else "All")
-            if st.session_state.get("ea_density_pref", "All") != want:
-                st.session_state["ea_density_pref"] = want
-                st.session_state["ea_density_dirty"] = True
-
-        st.markdown('<div class="ea-densityseg"></div>', unsafe_allow_html=True)
-        st.radio("Density", ["Focus", "Everything"], key="ea_density_seg",
-                 horizontal=True, on_change=_density_cb, label_visibility="collapsed",
-                 help="Focus shows your track record and what needs work. "
-                      "Everything shows all six tabs.")
-    with _hc1:
-        try:
-            flt = st.popover(_flabel, use_container_width=False)
-        except Exception:
-            flt = st.expander(_flabel)
+        with _hcd:
+            _render_density_seg()
+        with _hc1:
+            try:
+                flt = st.popover(_flabel, use_container_width=False)
+            except Exception:
+                flt = st.expander(_flabel)
     with _hc2:
         _dark_now = st.session_state.get("ea_theme_pref", "light") == "dark"
         _want = "\u263e" if _dark_now else "\u2600"

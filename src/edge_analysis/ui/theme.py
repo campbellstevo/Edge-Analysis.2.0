@@ -1038,6 +1038,71 @@ def inject_theme():
         100% {{ background-position: -200% 0; }}
     }}
 
+    /* ── THE RAIL: one contained bar for nav + Filters + density ── */
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail) {{
+        gap: 0 !important;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail)
+        > div[data-testid="stElementContainer"]:has(.ea-rail) {{
+        margin: 0 !important; height: 0 !important;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail)
+        > div[data-testid="stHorizontalBlock"] {{
+        background: #ffffff; border: 1px solid rgba(15,23,42,0.07);
+        border-radius: 999px; padding: 6px 10px;
+        box-shadow: 0 10px 30px rgba(15,23,42,0.07);
+        align-items: center !important; gap: 8px !important;
+        margin: 6px 0 14px;
+    }}
+    /* rail nav: quiet text pills, active = filled */
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail-nav) [role="radiogroup"] {{
+        gap: 2px !important; flex-wrap: nowrap !important;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail-nav) [role="radiogroup"] > label {{
+        margin: 0 !important; padding: 9px 18px !important; border-radius: 999px;
+        background: transparent; cursor: pointer; transition: background 140ms ease;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail-nav) [role="radiogroup"] > label > div:first-child {{
+        display: none;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail-nav) [role="radiogroup"] > label p {{
+        font-size: 15px !important; font-weight: 700 !important; color: #64748b;
+        margin: 0 !important; line-height: 1 !important; white-space: nowrap;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail-nav) [role="radiogroup"] > label:hover {{
+        background: rgba(72,0,255,0.06);
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail-nav) [role="radiogroup"] > label:hover p {{
+        color: #0f172a;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail-nav) [role="radiogroup"] > label:has(input:checked) {{
+        background: #4800ff; box-shadow: 0 4px 14px rgba(72,0,255,0.35);
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail-nav) [role="radiogroup"] > label:has(input:checked) p {{
+        color: #ffffff !important;
+    }}
+    /* rail Filters: borderless chip inside the bar */
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail-flt) button {{
+        background: transparent !important; border: none !important;
+        box-shadow: none !important; padding: 9px 12px !important;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail-flt) button p {{
+        font-weight: 700 !important; color: #334155 !important; font-size: 14.5px !important;
+        white-space: nowrap !important;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail-flt) button:hover p {{
+        color: #4800ff !important;
+    }}
+    /* density seg nests quietly inside the rail */
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail)
+        div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"] {{
+        background: #f1f3f9; border-color: transparent; box-shadow: none;
+    }}
+    .ea-rail-focus {{
+        font-size: 12.5px; font-weight: 800; letter-spacing: 0.09em;
+        color: #4800ff; padding: 12px 8px 12px 16px; white-space: nowrap;
+    }}
+
     /* Verdict lines: one sentence, coloured tick, no box */
     .ea-verdict {{
         display: flex; gap: 9px; align-items: baseline;
@@ -1524,6 +1589,45 @@ def inject_dark_overlay():
         background: #1d2331 !important; border-color: rgba(255,255,255,0.09) !important;
     }
     .ea-divider { background: rgba(255,255,255,0.09) !important; }
+    /* Aurora night: the dark page gets the brand glow */
+    .stApp, [data-testid="stAppViewContainer"] {
+        background:
+            radial-gradient(900px 460px at 16% -12%, rgba(72,0,255,0.16), transparent 60%),
+            radial-gradient(820px 420px at 96% -14%, rgba(255,45,205,0.07), transparent 55%),
+            #0e1117 !important;
+    }
+    /* Glass rail */
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail)
+        > div[data-testid="stHorizontalBlock"] {
+        background: rgba(255,255,255,0.06) !important;
+        border-color: rgba(255,255,255,0.12) !important;
+        box-shadow: none !important;
+        backdrop-filter: blur(14px);
+    }
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail-nav) [role="radiogroup"] > label p {
+        color: #aeb6c6;
+    }
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail-nav) [role="radiogroup"] > label:hover {
+        background: rgba(255,255,255,0.08);
+    }
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail-nav) [role="radiogroup"] > label:hover p {
+        color: #eef0f8;
+    }
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail-nav) [role="radiogroup"] > label:has(input:checked) {
+        background: linear-gradient(120deg, #5a14f0, #8a1eff) !important;
+        box-shadow: 0 0 22px rgba(120,30,255,0.5) !important;
+    }
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail-flt) button {
+        background: transparent !important; border: none !important;
+    }
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail-flt) button p {
+        color: #c7cde2 !important;
+    }
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail)
+        div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"] {
+        background: rgba(255,255,255,0.08) !important; border-color: transparent !important;
+    }
+    .ea-rail-focus { color: #b18cff !important; }
     div[style*="background: rgb(255, 255, 255)"] {
         background: #161b27 !important;
         border-color: rgba(255,255,255,0.09) !important;

@@ -5272,12 +5272,16 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
         return
 
     # Speed: render ONLY the active tab. st.tabs runs all six server-side on
-    # every rerun; this radio-nav (styled as the same pills) does one.
+    # every rerun; this radio-nav does one. When the header rail already
+    # rendered the nav (desktop), just read the choice.
     _TABS = ["Performance", "Entry", "Externals", "Psychology", "Plan", "Review"]
-    with st.container():
-        st.markdown('<div class="ea-nav"></div>', unsafe_allow_html=True)
-        _active = st.radio("View", _TABS, horizontal=True, key="ea_tab",
-                           label_visibility="collapsed") or "Performance"
+    if st.session_state.pop("ea_nav_external", False):
+        _active = st.session_state.get("ea_tab") or "Performance"
+    else:
+        with st.container():
+            st.markdown('<div class="ea-nav"></div>', unsafe_allow_html=True)
+            _active = st.radio("View", _TABS, horizontal=True, key="ea_tab",
+                               label_visibility="collapsed") or "Performance"
 
     # ── Performance ────────────────────────────────────────────────────────
     if _active == "Performance":
