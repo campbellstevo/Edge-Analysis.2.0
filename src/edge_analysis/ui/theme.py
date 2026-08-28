@@ -1052,31 +1052,36 @@ def inject_theme():
         border-radius: 999px; padding: 6px 10px;
         box-shadow: 0 10px 30px rgba(15,23,42,0.07);
         align-items: center !important; gap: 8px !important;
-        margin: 6px 0 14px;
+        max-width: 1220px; margin: 6px auto 14px;
     }}
     /* rail nav: quiet text pills, active = filled */
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail-nav) [role="radiogroup"] {{
         gap: 2px !important; flex-wrap: nowrap !important;
     }}
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail-nav) [role="radiogroup"] > label {{
-        margin: 0 !important; padding: 9px 18px !important; border-radius: 999px;
-        background: transparent; cursor: pointer; transition: background 140ms ease;
+        margin: 0 !important; padding: 9px 18px !important;
+        border-radius: 999px !important;
+        background: transparent !important;
+        border: none !important; box-shadow: none !important;
+        cursor: pointer; transition: background 140ms ease;
     }}
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail-nav) [role="radiogroup"] > label > div:first-child {{
         display: none;
     }}
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail-nav) [role="radiogroup"] > label p {{
-        font-size: 15px !important; font-weight: 700 !important; color: #64748b;
+        font-size: 15px !important; font-weight: 700 !important;
+        color: #64748b !important;
         margin: 0 !important; line-height: 1 !important; white-space: nowrap;
     }}
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail-nav) [role="radiogroup"] > label:hover {{
-        background: rgba(72,0,255,0.06);
+        background: rgba(72,0,255,0.06) !important;
     }}
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail-nav) [role="radiogroup"] > label:hover p {{
-        color: #0f172a;
+        color: #0f172a !important;
     }}
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail-nav) [role="radiogroup"] > label:has(input:checked) {{
-        background: #4800ff; box-shadow: 0 4px 14px rgba(72,0,255,0.35);
+        background: #4800ff !important;
+        box-shadow: 0 4px 14px rgba(72,0,255,0.35) !important;
     }}
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail-nav) [role="radiogroup"] > label:has(input:checked) p {{
         color: #ffffff !important;
@@ -1096,7 +1101,12 @@ def inject_theme():
     /* density seg nests quietly inside the rail */
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail)
         div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"] {{
-        background: #f1f3f9; border-color: transparent; box-shadow: none;
+        background: #f1f3f9 !important; border: none !important;
+        box-shadow: none !important;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail)
+        div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"] > label {{
+        border: none !important; box-shadow: none !important;
     }}
     .ea-rail-focus {{
         font-size: 12.5px; font-weight: 800; letter-spacing: 0.09em;
@@ -1605,13 +1615,13 @@ def inject_dark_overlay():
         backdrop-filter: blur(14px);
     }
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail-nav) [role="radiogroup"] > label p {
-        color: #aeb6c6;
+        color: #aeb6c6 !important;
     }
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail-nav) [role="radiogroup"] > label:hover {
-        background: rgba(255,255,255,0.08);
+        background: rgba(255,255,255,0.08) !important;
     }
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail-nav) [role="radiogroup"] > label:hover p {
-        color: #eef0f8;
+        color: #eef0f8 !important;
     }
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail-nav) [role="radiogroup"] > label:has(input:checked) {
         background: linear-gradient(120deg, #5a14f0, #8a1eff) !important;
@@ -1625,7 +1635,15 @@ def inject_dark_overlay():
     }
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail)
         div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"] {
-        background: rgba(255,255,255,0.08) !important; border-color: transparent !important;
+        background: rgba(255,255,255,0.08) !important; border: none !important;
+        box-shadow: none !important;
+    }
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail-nav) [role="radiogroup"] > label {
+        background: transparent !important; border: none !important; box-shadow: none !important;
+    }
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail-nav) [role="radiogroup"] > label:has(input:checked) {
+        background: linear-gradient(120deg, #5a14f0, #8a1eff) !important;
+        box-shadow: 0 0 22px rgba(120,30,255,0.5) !important;
     }
     .ea-rail-focus { color: #b18cff !important; }
     div[style*="background: rgb(255, 255, 255)"] {
