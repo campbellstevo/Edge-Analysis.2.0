@@ -66,7 +66,7 @@ class SessionKeys:
 
 class PageNames:
     DASHBOARD = "Dashboard"
-    CONNECT = "Change Template"
+    CONNECT = "Connect journal"
 
 
 class APIConstants:
@@ -657,7 +657,10 @@ def render_connect_page(mobile: bool):
 
     with st.container():
         st.markdown('<div class="connect-wrap">', unsafe_allow_html=True)
-        st.markdown('<div class="ea-title">Change Template</div>', unsafe_allow_html=True)
+        st.markdown('<div class="ea-title">Connect your journal</div>'
+                    "<div style='text-align:center;font-size:14px;color:#64748b;"
+                    "margin:2px 0 14px;'>Sign in once \u2014 your journals appear "
+                    "by themselves. Switch any time.</div>", unsafe_allow_html=True)
         if not st.session_state.get(SessionKeys.USER_TOKEN):
             st.markdown(
                 "<div style='text-align:center;font-size:14px;color:#64748b;"
@@ -774,8 +777,8 @@ def render_connect_page(mobile: bool):
             _cands = st.session_state.get("ea_db_cands")
             if _cands:
                 from edge_analysis.data.db_finder import schema_label
-                st.markdown('<div class="ea-help">Found in your Notion — tap yours:</div>',
-                            unsafe_allow_html=True)
+                st.markdown('<div class="ea-help">Your journals \u2014 tap to connect '
+                            'or switch:</div>', unsafe_allow_html=True)
                 for _c in _cands[:6]:
                     _is_cur = _cur_db and _c["id"] == str(_cur_db).replace("-", "")
                     _lab = (("✓ " if _is_cur else "📒 ") + _c["title"]
@@ -790,10 +793,11 @@ def render_connect_page(mobile: bool):
                         st.session_state[SessionKeys.NAV_TARGET] = PageNames.DASHBOARD
                         _st_rerun()
             elif _cands is not None:
-                st.warning("You're signed in, but your journal page isn't shared with "
-                           "the app yet. Tap **Connect Notion** above again — on "
-                           "Notion's checklist, tick your Trade Journal page — then "
-                           "press the button below.")
+                st.warning("Signed in, but no journal is shared with the app yet. "
+                           "Notion only shares the pages you TICK at sign-in \u2014 and "
+                           "pages created later aren't added automatically. Tap "
+                           "**Connect Notion** above, tick the page that holds your "
+                           "journal, then **\u21bb Look again**.")
             if st.button("↻ Look again", key="ea_db_refind"):
                 st.session_state.pop("ea_db_cands", None)
                 _st_rerun()
@@ -837,10 +841,47 @@ def render_connect_page(mobile: bool):
                             if st.button("Verify again"):
                                 _st_rerun()
                         elif status == 404:
-                            st.error(
-                                "Notion can't find that database (404). Ensure it's a database "
-                                "(not a page) and the ID/link is correct."
-                            )
+                            # A 404 on a private object usually means ACCESS,
+                            # not existence: the sign-in didn't include it.
+                            _res = None
+                            if oauth_token:
+                                try:
+                                    import requests as _rq
+                                    _kids = _rq.get(
+                                        f"https://api.notion.com/v1/blocks/{dbid}/children",
+                                        headers={"Authorization": f"Bearer {oauth_token}",
+                                                 "Notion-Version": "2022-06-28"},
+                                        params={"page_size": 50}, timeout=15)
+                                    for _blk in (_kids.json() or {}).get("results", []):
+                                        if _blk.get("type") == "child_database":
+                                            _res = _blk["id"].replace("-", "")
+                                            break
+                                except Exception:
+                                    _res = None
+                            if _res:
+                                st.success("That link was a page — found the journal inside it.")
+                                st.session_state[SessionKeys.DB_ID] = _res
+                                uid = st.session_state.get(SessionKeys.USER_ID)
+                                if uid:
+                                    set_user_db(uid, _res)
+                                st.session_state[SessionKeys.NAV_TARGET] = PageNames.DASHBOARD
+                                _st_rerun()
+                            else:
+                                st.error(
+                                    "Notion answered 404 — for private databases that "
+                                    "almost always means your sign-in doesn't include "
+                                    "it, not that it doesn't exist.")
+                                st.markdown(
+                                    "<div style='font-size:13.5px;color:#64748b;line-height:1.7;'>"
+                                    "Fix: press <b>Connect Notion</b> above and on Notion's "
+                                    "checklist tick the page that holds this database "
+                                    "(new pages aren't included automatically) — or in "
+                                    "Notion open the database &rarr; &#8943; &rarr; "
+                                    "<b>Connections</b> &rarr; add Edge Analysis. "
+                                    "Then press Verify again.</div>",
+                                    unsafe_allow_html=True)
+                                if st.button("Verify again", key="btn_verify_404"):
+                                    _st_rerun()
                         else:
                             st.error(f"Couldn't verify the database. {info}")
 
@@ -1466,7 +1507,16 @@ def render_dashboard(mobile: bool):
     instruments = sorted(df["Instrument"].dropna().unique().tolist())
     instruments = [i for i in instruments if i != "DUMMY ROW"]
     inst_opts = ["All"] + instruments
-    em_opts = ["All"] + MODEL_SET
+    _models_seen = []
+    if "Entry Models List" in df.columns:
+        try:
+            _models_seen = sorted({
+                str(m).strip() for lst in df["Entry Models List"].dropna()
+                for m in (lst if isinstance(lst, (list, tuple)) else [lst])
+                if str(m).strip() and str(m).strip().lower() not in ("nan", "none")})
+        except Exception:
+            _models_seen = []
+    em_opts = ["All"] + [m for m in MODEL_SET if m in _models_seen]         + [m for m in _models_seen if m not in MODEL_SET]         if _models_seen else ["All"] + MODEL_SET
     sess_opts = ["All"] + sorted(set(SESSION_CANONICAL) | set(df["Session Norm"].dropna().unique()))
     date_mode_options = ["All", "Last 30 days", "Last 90 days", "This year", "Custom"]
 

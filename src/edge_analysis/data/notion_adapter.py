@@ -238,6 +238,34 @@ def normalise_mt5_df(df: pd.DataFrame) -> pd.DataFrame:
     rename = {src: dst for src, dst in _MT5_COLUMN_MAP.items() if src in out.columns}
     out = out.rename(columns=rename)
 
+    # Double-Confirmations journal (2026-08): two entry models and two
+    # timeframes per trade, plus a Double Confirmation? checkbox.
+    if "Entry Model 1" in out.columns and "Entry Model" not in out.columns:
+        _em2 = out["Entry Model 2"] if "Entry Model 2" in out.columns else ""
+        def _join_models(a, b):
+            parts = []
+            for v in (a, b):
+                sv = "" if v is None or (isinstance(v, float) and pd.isna(v)) else str(v).strip()
+                if sv and sv.lower() not in ("nan", "none"):
+                    parts.append(sv)
+            return ", ".join(parts)
+        out["Entry Model"] = [
+            _join_models(a, b) for a, b in zip(out["Entry Model 1"], _em2)
+        ] if "Entry Model 2" in out.columns else out["Entry Model 1"]
+    if "Timeframe 1" in out.columns:
+        if "Entry Timeframe" not in out.columns:
+            out["Entry Timeframe"] = out["Timeframe 1"]
+        if "Timeframe" not in out.columns:
+            out["Timeframe"] = out["Timeframe 1"]
+    if "Double Confirmation?" in out.columns             and "Multi Entry Model Setup" not in out.columns:
+        out["Multi Entry Model Setup"] = out["Double Confirmation?"].map(
+            lambda v: "Yes" if bool(v) and str(v).lower() not in ("false", "no", "")
+            else "No")
+    if "GAP Alignment?" in out.columns and "GAP Alignment" not in out.columns:
+        out["GAP Alignment"] = out["GAP Alignment?"].map(
+            lambda v: "Yes" if bool(v) and str(v).lower() not in ("false", "no", "")
+            else "No")
+
     if "Result" in out.columns:
         _fix = {"win": "Win", "loss": "Loss", "be": "BE", "breakeven": "BE"}
         out["Result"] = out["Result"].map(

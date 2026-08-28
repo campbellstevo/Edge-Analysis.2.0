@@ -32,7 +32,7 @@ class SessionKeys:
 class PageNames:
     """Navigation page names (replicated from the main app)."""
     DASHBOARD = "Dashboard"
-    CONNECT = "Change Template"
+    CONNECT = "Connect journal"
 
 
 # Type alias for date range selection
