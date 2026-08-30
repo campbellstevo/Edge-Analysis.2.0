@@ -809,8 +809,19 @@ def render_connect_page(mobile: bool):
         if oauth_token:
             if st.session_state.get("ea_db_cands") is None:
                 with st.spinner("Looking through your shared pages…"):
-                    from edge_analysis.data.db_finder import find_journals
-                    st.session_state["ea_db_cands"] = find_journals(oauth_token)
+                    from edge_analysis.data.db_finder import (find_journals,
+                                                              sibling_journals)
+                    _found = find_journals(oauth_token)
+                    # search misses newly shared databases (index lag) — also
+                    # walk the current journal's parent page directly
+                    if _cur_db:
+                        _sibs = sibling_journals(oauth_token,
+                                                 str(_cur_db).replace("-", ""))
+                        _have = {c["id"] for c in (_found or [])}
+                        for _sb in _sibs:
+                            if _sb["id"] not in _have:
+                                (_found := _found if _found is not None else []).append(_sb)
+                    st.session_state["ea_db_cands"] = _found
             _cands = st.session_state.get("ea_db_cands")
             if _cands:
                 from edge_analysis.data.db_finder import schema_label

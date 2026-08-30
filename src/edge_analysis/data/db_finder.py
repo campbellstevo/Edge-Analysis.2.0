@@ -64,3 +64,49 @@ def find_journals(token: str, timeout: int = 10) -> Optional[List[dict]]:
         return journals
     except Exception:
         return None
+
+
+def sibling_journals(token: str, current_dbid: str, timeout: int = 10):
+    """Journals living NEXT TO the current one, found without /v1/search.
+
+    Notion's search index lags on newly shared databases (sometimes days),
+    which hides a brand-new journal even though direct access works. The
+    parent page of the CURRENT journal is where people create the next one —
+    walk its children and probe each child database directly."""
+    out = []
+    try:
+        hdr = {"Authorization": f"Bearer {token}", **_NV}
+        r = requests.get(f"https://api.notion.com/v1/databases/{current_dbid}",
+                         headers=hdr, timeout=timeout)
+        if r.status_code != 200:
+            return out
+        parent = (r.json() or {}).get("parent") or {}
+        pid = parent.get("page_id")
+        if not pid:
+            return out
+        kids = requests.get(f"https://api.notion.com/v1/blocks/{pid}/children",
+                            headers=hdr, params={"page_size": 100}, timeout=timeout)
+        if kids.status_code != 200:
+            return out
+        for blk in (kids.json() or {}).get("results", []):
+            if blk.get("type") != "child_database":
+                continue
+            did = str(blk.get("id", "")).replace("-", "")
+            if did == str(current_dbid).replace("-", ""):
+                continue
+            det = requests.get(f"https://api.notion.com/v1/databases/{did}",
+                               headers=hdr, timeout=timeout)
+            if det.status_code != 200:
+                continue
+            dd = det.json() or {}
+            props = (dd.get("properties") or {}).keys()
+            schema, hits = score_columns(props)
+            if schema == "unknown":
+                continue
+            title = "".join(t.get("plain_text", "")
+                            for t in (dd.get("title") or [])) or "Untitled"
+            out.append({"id": did, "title": title.strip(),
+                        "schema": schema, "hits": hits})
+    except Exception:
+        pass
+    return out
