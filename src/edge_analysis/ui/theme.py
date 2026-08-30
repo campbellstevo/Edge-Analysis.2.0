@@ -1038,6 +1038,15 @@ def inject_theme():
         100% {{ background-position: -200% 0; }}
     }}
 
+    /* Journals page: candidate rows read left-to-right like menu rows */
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-jlist) [data-testid="stButton"] > button {{
+        justify-content: flex-start !important; text-align: left !important;
+        padding: 13px 18px !important;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-jlist) [data-testid="stButton"] > button p {{
+        text-align: left !important; width: 100%;
+    }}
+
     /* ── THE RAIL: one contained bar for nav + Filters + density ── */
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail) {{
         gap: 0 !important;

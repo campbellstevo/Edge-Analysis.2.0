@@ -698,25 +698,36 @@ def render_connect_page(mobile: bool):
         st.markdown('<div class="ea-card">', unsafe_allow_html=True)
 
         _tpl_url = _runtime_secret("TEMPLATE_URL")
-        if _tpl_url:
-            st.markdown('<div class="ea-step">Step 1 — Get the journal template</div>',
-                        unsafe_allow_html=True)
-            st.markdown('<div class="ea-help">Open it in Notion and press '
-                        '<b>Duplicate</b> (top-right). Skip this if you already '
-                        'use an Edge Analysis journal.</div>', unsafe_allow_html=True)
-            st.markdown(f'<a href="{_tpl_url}" target="_blank" class="ea-link-btn" '
-                        'style="background:#fff;color:#4800ff;border:2px solid #4800ff;">'
-                        '📒 Get the free template</a>', unsafe_allow_html=True)
-            st.markdown('<div class="ea-divider"></div>', unsafe_allow_html=True)
-            st.markdown('<div class="ea-step">Step 2 — Sign in with Notion</div>',
+        if not _signed_in:
+            if _tpl_url:
+                st.markdown('<div class="ea-step">Step 1 — Get the journal template</div>',
+                            unsafe_allow_html=True)
+                st.markdown('<div class="ea-help">Open it in Notion and press '
+                            '<b>Duplicate</b> (top-right). Skip this if you already '
+                            'use an Edge Analysis journal.</div>', unsafe_allow_html=True)
+                st.markdown(f'<a href="{_tpl_url}" target="_blank" class="ea-link-btn" '
+                            'style="background:#fff;color:#4800ff;border:2px solid #4800ff;">'
+                            '📒 Get the free template</a>', unsafe_allow_html=True)
+                st.markdown('<div class="ea-divider"></div>', unsafe_allow_html=True)
+                st.markdown('<div class="ea-step">Step 2 — Sign in with Notion</div>',
+                            unsafe_allow_html=True)
+            else:
+                st.markdown('<div class="ea-step">Step 1 — Sign in with Notion</div>',
+                            unsafe_allow_html=True)
+            st.markdown('<div class="ea-help">No keys, no setup — one click. Notion will '
+                        'show a checklist of your pages: <b>tick your Trade Journal</b> '
+                        '(or the template you just duplicated) so the app can read it.</div>',
                         unsafe_allow_html=True)
         else:
-            st.markdown('<div class="ea-step">Step 1 — Sign in with Notion</div>',
+            st.markdown('<div class="ea-step">Share more pages</div>',
                         unsafe_allow_html=True)
-        st.markdown('<div class="ea-help">No keys, no setup — one click. Notion will '
-                    'show a checklist of your pages: <b>tick your Trade Journal</b> '
-                    '(or the template you just duplicated) so the app can read it.</div>',
-                    unsafe_allow_html=True)
+            st.markdown('<div class="ea-help">Made a new journal and it\'s not in the '
+                        'list below? Notion only shares what you <b>tick</b>. Press '
+                        '<b>Connect Notion</b>, and on Notion\'s screen choose '
+                        '<b>Select pages</b> and tick the page your new journal lives '
+                        'in \u2014 new pages are never added by themselves. '
+                        'Then press <b>\u21bb Look again</b> below.</div>',
+                        unsafe_allow_html=True)
 
         _cid, _csec, _ruri = _oauth_client()
         missing = []
@@ -784,10 +795,15 @@ def render_connect_page(mobile: bool):
 
         st.markdown('<div class="ea-divider"></div>', unsafe_allow_html=True)
 
-        # Final step: we find the journal — nobody pastes anything
-        _step_n = "3" if _tpl_url else "2"
-        st.markdown(f'<div class="ea-step">Step {_step_n} — We find your journal '
-                    'automatically</div>', unsafe_allow_html=True)
+        # The journal list — nobody pastes anything
+        if _signed_in:
+            st.markdown('<div class="ea-step">Your journals</div>',
+                        unsafe_allow_html=True)
+        else:
+            _step_n = "3" if _tpl_url else "2"
+            st.markdown(f'<div class="ea-step">Step {_step_n} — We find your journal '
+                        'automatically</div>', unsafe_allow_html=True)
+        st.markdown('<div class="ea-jlist"></div>', unsafe_allow_html=True)
         oauth_token = st.session_state.get(SessionKeys.OAUTH_TOKEN)
         _cur_db = st.session_state.get(SessionKeys.DB_ID)
         if oauth_token:
@@ -802,9 +818,9 @@ def render_connect_page(mobile: bool):
                             'or switch:</div>', unsafe_allow_html=True)
                 for _c in _cands[:6]:
                     _is_cur = _cur_db and _c["id"] == str(_cur_db).replace("-", "")
-                    _lab = (("✓ " if _is_cur else "📒 ") + _c["title"]
-                            + "  ·  " + schema_label(_c["schema"])
-                            + ("  ·  connected" if _is_cur else ""))
+                    _lab = (("✓  " if _is_cur else "📒  ") + _c["title"]
+                            + "   ·   " + schema_label(_c["schema"])
+                            + ("   ·   reading now" if _is_cur else ""))
                     if st.button(_lab, key=f"ea_pick_{_c['id'][:10]}",
                                  use_container_width=True, disabled=bool(_is_cur)):
                         st.session_state[SessionKeys.DB_ID] = _c["id"]
