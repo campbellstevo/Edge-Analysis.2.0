@@ -33,6 +33,9 @@ def normalize_entry_model(x:str)->str:
     if not isinstance(x,str): return ""
     t=x.strip().lower()
     if not t: return ""
+    # Double-Confirmations vocabulary (2026-08) — check before the legacy names
+    if "internal nc+s" in t or "internal nc + s" in t: return "Internal NC+S"
+    if "external nc+s" in t or "external nc + s" in t: return "External NC+S"
     if "internal fbos" in t: return "Internal FBoS Protected Structure"
     if "external fbos" in t: return "External FBOS Protected Structure"
     if "internal protected structure" in t: return "Internal Protected Structure"
@@ -51,10 +54,14 @@ def build_models_list(entry_model, multi_entry):
             "Internal FBoS Protected Structure","Internal No Close","Internal Protected Structure",
             "External FBOS Protected Structure","External No Close","External Protected Structure",
         ]
+        # Known-set names keep their canonical order FIRST, but a trade that
+        # carries a new-vocabulary model alongside a legacy one must keep BOTH
+        # (the old branch silently dropped the new model).
         keep=[]
         for m in models:
             if m in MODEL_SET and m not in keep: keep.append(m)
-        if keep: return keep
+        extras=[m for m in dict.fromkeys(models) if m and m not in keep]
+        if keep or extras: return keep + sorted(extras)
     return sorted(set(models))
 
 _RR_RANGE_RE = re.compile(r'([+-]?\d+(?:\.\d+)?)\s*(?:-|–|to)\s*([+-]?\d+(?:\.\d+)?)', re.I)
