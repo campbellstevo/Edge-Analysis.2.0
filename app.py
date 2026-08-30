@@ -859,14 +859,16 @@ def render_connect_page(mobile: bool):
                         'appears here by itself.</div>', unsafe_allow_html=True)
 
         with st.expander("Advanced: paste a database link instead"):
-            db_link = st.text_input(
-                "Database link or ID",
-                value=st.session_state.get("db_link_input", ""),
-                key="db_link_input",
-                placeholder="https://www.notion.so/My-DB-Name-1234567abcd1234ef567890abcd1234",
-            )
-
-            if db_link:
+            with st.form("ea_dblink_form", clear_on_submit=False):
+                db_link = st.text_input(
+                    "Database link or ID",
+                    value=st.session_state.get("db_link_input", ""),
+                    key="db_link_input",
+                    placeholder="https://www.notion.so/My-DB-Name-1234567abcd1234ef567890abcd1234",
+                )
+                _link_go = st.form_submit_button("Connect this journal",
+                                                 type="primary")
+            if db_link and _link_go:
                 dbid = _extract_db_id_from_url_or_id(db_link)
                 if not dbid:
                     st.error("That doesn't look like a valid Notion database link or ID.")
