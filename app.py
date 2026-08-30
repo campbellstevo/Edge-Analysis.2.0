@@ -380,6 +380,8 @@ def _complete_login_with_token(access_token: str, workspace_name: Optional[str] 
     """
     st.session_state[SessionKeys.OAUTH_TOKEN] = access_token
     st.session_state[SessionKeys.USER_TOKEN] = access_token
+    # a different key sees a different Notion — never show the old list
+    st.session_state.pop("ea_db_cands", None)
 
     user_info = _get_notion_me(access_token) or {}
     user_id = user_info.get("id")
@@ -784,6 +786,7 @@ def render_connect_page(mobile: bool):
                     SessionKeys.OAUTH_CALLBACK,
                 ]:
                     st.session_state.pop(key, None)
+                st.session_state.pop("ea_db_cands", None)
                 _clear_device_auth()
                 st.info("Disconnected.")
             st.markdown('</div>', unsafe_allow_html=True)

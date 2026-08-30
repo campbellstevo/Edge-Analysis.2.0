@@ -84,13 +84,26 @@ def sibling_journals(token: str, current_dbid: str, timeout: int = 10):
         pid = parent.get("page_id")
         if not pid:
             return out
-        kids = requests.get(f"https://api.notion.com/v1/blocks/{pid}/children",
-                            headers=hdr, params={"page_size": 100}, timeout=timeout)
-        if kids.status_code != 200:
-            return out
-        for blk in (kids.json() or {}).get("results", []):
-            if blk.get("type") != "child_database":
+        # collect child_database blocks, following containers (columns,
+        # toggles, callouts, synced blocks) two levels deep — people arrange
+        # template pages in columns and the database hides inside one
+        _CONTAINERS = {"column_list", "column", "toggle", "callout",
+                       "synced_block", "template"}
+        db_blocks, queue = [], [(pid, 0)]
+        while queue:
+            bid, depth = queue.pop(0)
+            k = requests.get(f"https://api.notion.com/v1/blocks/{bid}/children",
+                             headers=hdr, params={"page_size": 100},
+                             timeout=timeout)
+            if k.status_code != 200:
                 continue
+            for blk in (k.json() or {}).get("results", []):
+                bt = blk.get("type")
+                if bt == "child_database":
+                    db_blocks.append(blk)
+                elif bt in _CONTAINERS and blk.get("has_children") and depth < 3:
+                    queue.append((blk["id"], depth + 1))
+        for blk in db_blocks:
             did = str(blk.get("id", "")).replace("-", "")
             if did == str(current_dbid).replace("-", ""):
                 continue
