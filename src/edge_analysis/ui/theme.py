@@ -1161,6 +1161,14 @@ def inject_theme():
         div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"] > label:hover p {{
         color: #4800ff !important;
     }}
+    /* audit r8 B1, corrected: the checked pill's text must beat the rail-scoped
+       grey above — same double scope, checked variant, placed after */
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail)
+        div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"] > label:has(input:checked) p,
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail)
+        div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"] > label:has(input:checked):hover p {{
+        color: #ffffff !important;
+    }}
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail)
         div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"] > label:has(input:checked) {{
         background: #4800ff !important;
@@ -1710,6 +1718,16 @@ def inject_dark_overlay():
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail)
         div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"] {
         background: transparent !important;
+    }
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail)
+        div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"] > label p {
+        color: #aeb6c6 !important;
+    }
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail)
+        div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"] > label:has(input:checked) p,
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail)
+        div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"] > label:has(input:checked):hover p {
+        color: #ffffff !important;
     }
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [data-testid="stRadio"] [role="radiogroup"] > label:has(input:checked) p,
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [data-testid="stRadio"] [role="radiogroup"] > label:has(input:checked) span,
