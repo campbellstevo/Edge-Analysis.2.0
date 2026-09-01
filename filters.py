@@ -363,6 +363,16 @@ def render_filters(
                   on_click=_go, args=(PageNames.DASHBOARD,))
         st.button(PageNames.CONNECT, key="mm_tmpl", use_container_width=True,
                   on_click=_go, args=(PageNames.CONNECT,))
+
+        def _flip_privacy():
+            st.session_state["ea_privacy"] = not st.session_state.get("ea_privacy")
+            st.session_state["ea_privacy_dirty"] = True
+
+        _pv_lab = ("✓  Dollars hidden \u00b7 show them"
+                   if st.session_state.get("ea_privacy")
+                   else "Hide dollar amounts")
+        st.button(_pv_lab, key="mm_privacy", use_container_width=True,
+                  on_click=_flip_privacy)
         st.markdown(_eyebrow_div.format("ACTIONS"), unsafe_allow_html=True)
         st.button("Refresh data", key="mm_refresh", use_container_width=True,
                   on_click=_refresh)

@@ -50,6 +50,17 @@ def _df_is_mt5(df) -> bool:
     except Exception:
         return False
 
+def _dollars_hidden() -> bool:
+    """Privacy mode: R and %% stay, dollar figures are masked — for showing
+    the board without showing the account (his ask, Sept 2026)."""
+    return bool(st.session_state.get("ea_privacy"))
+
+
+def _money(txt: str) -> str:
+    """Wrap a fully-formatted $ string; returns a mask when privacy is on."""
+    return "•••" if _dollars_hidden() else txt
+
+
 def _empty_note(msg: str) -> None:
     """Section has nothing to show. A quiet caption, not a grey alert box —
     an empty slice is normal, not a warning (Phase 1: empty states)."""
@@ -980,7 +991,8 @@ def _month_card(f: pd.DataFrame, styler) -> None:
                 f"{arrow} {_wk_txt} this week</span></div>"
                 f"<div style='font-size:12.5px;color:#8a93a6;margin-top:2px;'>"
                 f"{cur:+,.1f}R \u00b7 {n_tr} trades \u00b7 risk {_rp:.2f}%/trade on "
-                f"${_bal_disp:,.0f}{_bal_note}{_risk_note}</div>",
+                f"{_money(f'${_bal_disp:,.0f}')}"
+                f"{'' if _dollars_hidden() else _bal_note}{_risk_note}</div>",
                 unsafe_allow_html=True)
         with h2:
             p1, p2 = st.columns([2.6, 1])
@@ -1171,6 +1183,8 @@ def _alltime_card(f: pd.DataFrame, styler) -> None:
         with h2:
             view = "R"
             _bal = float(st.session_state.get("ea_m_bal", 10000) or 0)
+            if _dollars_hidden():
+                has_usd = False
             _units = (["%", "$", "R"] if (has_usd and _bal > 0)
                       else (["$", "R"] if has_usd else ["R"]))
             if len(_units) > 1:
@@ -1291,7 +1305,7 @@ def _alltime_card(f: pd.DataFrame, styler) -> None:
                   "#16a34a" if pf == pf and pf >= 1 else "#ef4444")]
         if has_usd:
             net_u = float(usd.dropna().sum())
-            chips.append(("NET $", f"{'-' if net_u < 0 else ''}${abs(net_u):,.0f}",
+            chips.append(("NET $", _money(f"{'-' if net_u < 0 else ''}${abs(net_u):,.0f}"),
                           "#16a34a" if net_u >= 0 else "#ef4444"))
         st.markdown(
             "<div style='display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;'>" + "".join(
@@ -4175,7 +4189,7 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
     # ── Inputs (applied when you press Run) ──────────────────────────────────
     with st.form("proj_settings", border=False):
         starting_balance = _slider_row(
-            "Starting balance", lambda v: f"${v:,.0f}",
+            "Starting balance", lambda v: _money(f"${v:,.0f}"),
             lambda: st.slider("Starting balance", min_value=1_000, max_value=200_000,
                               value=int(min(200_000, max(1_000, round(
                                   float(st.session_state.get("ea_m_bal", 10_000)) / 100.0
@@ -5148,6 +5162,8 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
                          "font-weight:800;border-radius:999px;padding:3px 10px;margin-left:8px;'>"
                          "TARGET ✓</span>" if r_ >= need_r else "")
                 usd_note = ""
+                if _dollars_hidden():
+                    has_usd = False
                 if has_usd and "usd" in monthly.columns and row.get("usd") == row.get("usd"):
                     u = float(row["usd"])
                     usd_note = f" · {'-' if u < 0 else ''}${abs(u):,.0f}"

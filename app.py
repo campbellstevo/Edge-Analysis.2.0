@@ -1217,6 +1217,7 @@ def _prefs_blob() -> dict:
         "t:localStorage.getItem('ea_theme')||'',"
         "d:localStorage.getItem('ea_density')||'',"
         "su:localStorage.getItem('ea_setup')||'',"
+        "pv:localStorage.getItem('ea_privacy')||'',"
         "ua:navigator.userAgent||'',"
         "iw:(function(){try{return (window.top||window).innerWidth||0}"
         "catch(e){return window.innerWidth||0}})()})",
@@ -2333,6 +2334,12 @@ def main() -> None:
         _saved_density = _prefs.get("d") or ""
         if _saved_density in ("Focus", "All"):
             st.session_state["ea_density_pref"] = _saved_density
+    if "ea_privacy" not in st.session_state:
+        st.session_state["ea_privacy"] = bool((_prefs.get("pv") or "") == "1")
+    st.session_state.pop("ea_privacy_dirty", False)
+    _pvcur = "1" if st.session_state.get("ea_privacy") else ""
+    _js_eval("localStorage.setItem('ea_privacy', " + json.dumps(_pvcur) + ")",
+             key="ea_privacy_sync")
     st.session_state.pop("ea_density_dirty", False)
     # Idempotent persistence: one constant-key component always writes the
     # CURRENT pref. A transient dirty-save component proved to re-fire during
