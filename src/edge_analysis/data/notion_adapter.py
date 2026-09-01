@@ -257,7 +257,13 @@ def normalise_mt5_df(df: pd.DataFrame) -> pd.DataFrame:
             out["Entry Timeframe"] = out["Timeframe 1"]
         if "Timeframe" not in out.columns:
             out["Timeframe"] = out["Timeframe 1"]
-    if "Double Confirmation?" in out.columns             and "Multi Entry Model Setup" not in out.columns:
+    if "Entry Model 2" in out.columns and "Multi Entry Model Setup" not in out.columns:
+        # In a two-model journal every trade carrying a second model IS a
+        # double confirmation — the checkbox is redundant (his ruling).
+        out["Multi Entry Model Setup"] = out["Entry Model 2"].map(
+            lambda v: "Yes" if v is not None and str(v).strip() not in
+            ("", "nan", "None") else "No")
+    elif "Double Confirmation?" in out.columns and "Multi Entry Model Setup" not in out.columns:
         out["Multi Entry Model Setup"] = out["Double Confirmation?"].map(
             lambda v: "Yes" if bool(v) and str(v).lower() not in ("false", "no", "")
             else "No")

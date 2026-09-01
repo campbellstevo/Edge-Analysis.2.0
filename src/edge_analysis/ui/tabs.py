@@ -2176,6 +2176,64 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
 
 
 # ── Section renderers ─────────────────────────────────────────────────────────
+def _label_stats(counted: pd.DataFrame, labels: pd.Series, name: str = "Entry_Model"):
+    """Outcome/R stats grouped by an arbitrary label series (same shape as the
+    entry-model table expects)."""
+    g = counted.copy()
+    g["__lab"] = labels.astype(str).str.strip()
+    g = g[~g["__lab"].isin(["", "nan", "None"])]
+    rows = []
+    for lab, grp in g.groupby("__lab"):
+        r = outcome_rates_from(grp)
+        net_rr, ex_rr = _rr_stats(grp)
+        rows.append({name: lab, "Trades": len(grp),
+                     "Win %": r["win_rate"], "BE %": r["be_rate"],
+                     "Loss %": r["loss_rate"], "Net PnL (R)": net_rr,
+                     "Expectancy (R)": ex_rr})
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame(rows).sort_values("Win %", ascending=False)
+
+
+def _clean_model_cell(v) -> str:
+    """One role cell ('External NC+S' or 'A, B') -> canonical display label."""
+    from edge_analysis.core.parsing import normalize_entry_model
+    if v is None or (isinstance(v, float) and pd.isna(v)):
+        return ""
+    parts = [normalize_entry_model(p.strip())
+             for p in str(v).split(",") if p.strip()]
+    parts = [p for p in parts if p]
+    return " + ".join(parts)
+
+
+def _two_model_sections(counted: pd.DataFrame) -> bool:
+    """Double-confirmation journals: two models per trade. Model 1 is the
+    structure, Model 2 the trigger — and the PAIR is the strategy. Renders
+    three tables; returns True when it owned the section."""
+    if "Entry Model 1" not in counted.columns or "Entry Model 2" not in counted.columns:
+        return False
+    m1 = counted["Entry Model 1"].map(_clean_model_cell)
+    m2 = counted["Entry Model 2"].map(_clean_model_cell)
+    if not ((m1 != "").any() and (m2 != "").any()):
+        return False
+    st.markdown("### Entry models — double confirmation")
+    st.caption("Model 1 sets the structure, Model 2 confirms the trigger — "
+               "and the pair is the setup. Ranked by win rate.")
+    both = (m1 != "") & (m2 != "")
+    pair_labels = m1.where(both, "") + " \u2192 " + m2.where(both, "")
+    pair_df = _label_stats(counted[both], pair_labels[both])
+    render_entry_model_table(pair_df.rename(columns={"Entry_Model": "Entry_Model"}),
+                             title="Pairs — Model 1 \u2192 Model 2")
+    c1, c2 = st.columns(2)
+    with c1:
+        render_entry_model_table(_label_stats(counted, m1),
+                                 title="Model 1 \u2014 structure")
+    with c2:
+        render_entry_model_table(_label_stats(counted, m2),
+                                 title="Model 2 \u2014 trigger")
+    return True
+
+
 def _entry_models_tab(f: pd.DataFrame, show_table):
     st.markdown('<div class="section">', unsafe_allow_html=True)
     if f is None or f.empty:
@@ -2202,6 +2260,10 @@ def _entry_models_tab(f: pd.DataFrame, show_table):
     counted = em[em["Outcome"].isin(["Win", "BE", "Loss"])]
     if counted.empty:
         _empty_note("Appears once trades have a Win/Loss/BE result.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+    if _two_model_sections(f_norm[f_norm["Outcome"].isin(["Win", "BE", "Loss"])]
+                           if "Outcome" in f_norm.columns else f_norm):
         st.markdown("</div>", unsafe_allow_html=True)
         return
     rates = []
@@ -3764,6 +3826,17 @@ def _timeframes_tab(f: pd.DataFrame, show_table):
              .assign(_sort=lambda d: d["Timeframe"].apply(_tf_sort_key))
              .sort_values(["_sort", "Timeframe"]).drop(columns=["_sort"])
              .reset_index(drop=True).rename(columns={"Timeframe": "Entry_Model"}))
+    if "Timeframe 2" in counted.columns:
+        _t1 = counted.get("Timeframe 1", counted.get("Timeframe", "")).astype(str).str.strip()
+        _t2 = counted["Timeframe 2"].astype(str).str.strip()
+        _bothtf = (~_t1.isin(["", "nan", "None"])) & (~_t2.isin(["", "nan", "None"]))
+        if _bothtf.any():
+            _tfp = _label_stats(counted[_bothtf],
+                                (_t1 + " \u2192 " + _t2)[_bothtf])
+            render_timeframe_table(_tfp, title="Timeframe pairing \u2014 "
+                                               "structure \u2192 trigger")
+            st.markdown("</div>", unsafe_allow_html=True)
+            return
     render_timeframe_table(tf_df, title="Timeframe Performance")
     if (not tf_df.empty and "Win %" in tf_df.columns
             and int(pd.to_numeric(tf_df["Trades"], errors="coerce").max() or 0) >= 8):
@@ -3822,8 +3895,62 @@ def _render_data_completeness_by_instrument(f_all: pd.DataFrame):
                     </div>""", unsafe_allow_html=True)
 
 
+_FIELDLIST_SKIP = {
+    "Date", "Pair", "Outcome", "Session Norm", "Instrument", "DayName", "Hour",
+    "PnL_from_RR", "Closed RR", "Closed RR Num", "Entry Models List",
+    "Entry Confluence List", "PnL", "Trade Duration", "Entry Model",
+    "Entry Timeframe", "Timeframe", "Multi Entry Model Setup", "GAP Alignment",
+}
+
+
 def _data_tab(f_all: pd.DataFrame, show_table):
+    """Live field checklist: the CONNECTED journal's own columns and how
+    filled each one is — schema-driven, so any user's template shows its
+    own truth (no hardcoded expected-column list)."""
     st.markdown('<div class="section">', unsafe_allow_html=True)
+    if f_all is None or f_all.empty:
+        _empty_note("Appears once trades are logged.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+    import html as _h3
+    n = len(f_all)
+    rows = []
+    for c in f_all.columns:
+        cs = str(c)
+        if cs.startswith("__") or cs in _FIELDLIST_SKIP:
+            continue
+        col = f_all[c]
+        try:
+            filled = int((col.notna()
+                          & ~col.astype(str).str.strip().isin(
+                              ["", "nan", "None", "NaT", "[]", "False"])).sum())
+        except Exception:
+            filled = int(col.notna().sum())
+        rows.append((cs, filled))
+    if not rows:
+        _empty_note("Appears once trades are logged.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+    rows.sort(key=lambda x: (x[1] / n, x[0].lower()))
+    body = []
+    for name, filled in rows:
+        pct = 100.0 * filled / n
+        colr = "#16a34a" if pct >= 99.5 else ("#f59e0b" if pct >= 50 else "#ef4444")
+        body.append(
+            "<tr>"
+            f"<td class='text'>{_h3.escape(name)}</td>"
+            f"<td class='num'>{filled} of {n}</td>"
+            f"<td class='num' style='color:{colr};font-weight:700;'>{pct:.0f}%</td>"
+            "</tr>")
+    st.markdown(
+        "<div style='font-size:13px;color:#64748b;margin:0 0 8px;'>"
+        "Every column your journal carries and how often it's filled \u2014 "
+        "the gaps at the top are where analytics are waiting on data.</div>"
+        "<div class='table-wrap'><table class='entry-model-table'>"
+        "<thead><tr><th class='text'>Field</th><th class='num'>Filled</th>"
+        "<th class='num'>%</th></tr></thead>"
+        "<tbody>" + "".join(body) + "</tbody></table></div>",
+        unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
 

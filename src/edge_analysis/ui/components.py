@@ -33,17 +33,13 @@ def _fmt_num(v, d: int = 2):
     return out if out not in ("", "-") else "0"
 
 def _split_small(df, min_n: int = 3):
-    """Rows need min_n trades to earn a table row."""
-    if df is None or df.empty or "Trades" not in df.columns:
-        return df, 0
-    tr = pd.to_numeric(df["Trades"], errors="coerce").fillna(0)
-    main = df[tr >= min_n]
-    return main, int(len(df) - len(main))
+    """Every row shows (his ruling: hiding is annoying in both directions).
+    The doctrine's minimum-sample rule still gates VERDICTS, never data."""
+    return df, 0
 
 
 def _small_note(hidden: int):
-    if hidden:
-        st.caption(f"+{hidden} more with under 3 trades \u2014 shown once they have a sample.")
+    return None
 
 
 def render_entry_model_table(df: pd.DataFrame, title: str = "Entry Model Performance"):
@@ -85,7 +81,12 @@ def render_entry_model_table(df: pd.DataFrame, title: str = "Entry Model Perform
             row_cells.append(f'<td class="num">{_fmt_num(r.get("Net PnL (R)"))}</td>')
         if "Expectancy (R)" in df.columns:
             row_cells.append(f'<td class="num">{_fmt_num(r.get("Expectancy (R)"))}</td>')
-        rows.append(f"<tr>{''.join(row_cells)}</tr>")
+        try:
+            _dim_n = float(r.get("Trades") or 0)
+        except (TypeError, ValueError):
+            _dim_n = 0
+        _dim = ' class="dim"' if _dim_n < 3 else ""
+        rows.append(f"<tr{_dim}>{''.join(row_cells)}</tr>")
     st.markdown(f"""
     <div class="entry-card">
       <h2>{title}</h2>
@@ -132,7 +133,12 @@ def render_session_performance_table(df: pd.DataFrame, title: str = "Session Per
             row_cells.append(f'<td class="num">{_fmt_num(r.get("Net PnL (R)"))}</td>')
         if "Expectancy (R)" in df.columns:
             row_cells.append(f'<td class="num">{_fmt_num(r.get("Expectancy (R)"))}</td>')
-        rows.append(f"<tr>{''.join(row_cells)}</tr>")
+        try:
+            _dim_n = float(r.get("Trades") or 0)
+        except (TypeError, ValueError):
+            _dim_n = 0
+        _dim = ' class="dim"' if _dim_n < 3 else ""
+        rows.append(f"<tr{_dim}>{''.join(row_cells)}</tr>")
     st.markdown(f"""
     <div class="entry-card">
       <h2>{title}</h2>
@@ -179,7 +185,12 @@ def render_day_performance_table(df: pd.DataFrame, title: str = "Day Performance
             row_cells.append(f'<td class="num">{_fmt_num(r.get("Net PnL (R)"))}</td>')
         if "Expectancy (R)" in df.columns:
             row_cells.append(f'<td class="num">{_fmt_num(r.get("Expectancy (R)"))}</td>')
-        rows.append(f"<tr>{''.join(row_cells)}</tr>")
+        try:
+            _dim_n = float(r.get("Trades") or 0)
+        except (TypeError, ValueError):
+            _dim_n = 0
+        _dim = ' class="dim"' if _dim_n < 3 else ""
+        rows.append(f"<tr{_dim}>{''.join(row_cells)}</tr>")
     st.markdown(f"""
     <div class="entry-card">
       <h2>{title}</h2>
@@ -230,7 +241,12 @@ def render_timeframe_table(df: pd.DataFrame, title: str = "Timeframe Performance
             row_cells.append(f'<td class="num">{_fmt_num(r.get("Avg RR"))}</td>')
         if "Profit Factor" in df.columns:
             row_cells.append(f'<td class="num">{_fmt_num(r.get("Profit Factor"))}</td>')
-        rows.append(f"<tr>{''.join(row_cells)}</tr>")
+        try:
+            _dim_n = float(r.get("Trades") or 0)
+        except (TypeError, ValueError):
+            _dim_n = 0
+        _dim = ' class="dim"' if _dim_n < 3 else ""
+        rows.append(f"<tr{_dim}>{''.join(row_cells)}</tr>")
     st.markdown(f"""
     <div class="entry-card">
       <h2>{title}</h2>

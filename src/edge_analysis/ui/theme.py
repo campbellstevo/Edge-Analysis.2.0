@@ -964,6 +964,8 @@ def inject_theme():
     }}
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-dots) button {{
         width: 40px !important; min-width: 40px !important; height: 40px !important;
+        display: inline-flex !important; align-items: center !important;
+        justify-content: center !important;
         border-radius: 999px !important; padding: 0 !important;
         background: #ffffff !important; border: 1px solid rgba(0,0,0,0.08) !important;
         box-shadow: 0 2px 8px rgba(0,0,0,0.04) !important;
@@ -971,7 +973,7 @@ def inject_theme():
     }}
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-dots) button p {{
         font-size: 19px !important; font-weight: 700 !important; color: #334155 !important;
-        line-height: 1 !important; margin: 0 !important;
+        line-height: 1 !important; margin: 0 !important; transform: translateY(-2px);
     }}
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-dots) button:hover {{
         border-color: #4800ff !important;
@@ -1038,6 +1040,9 @@ def inject_theme():
         100% {{ background-position: -200% 0; }}
     }}
 
+    /* Small-sample rows show but sit back */
+    .entry-model-table tr.dim td, .table-wrap tr.dim td {{ opacity: 0.5; }}
+
     /* Journals page: candidate rows read left-to-right like menu rows */
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-jlist) [data-testid="stButton"] > button {{
         justify-content: flex-start !important; text-align: left !important;
@@ -1068,11 +1073,12 @@ def inject_theme():
         gap: 2px !important; flex-wrap: nowrap !important;
     }}
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail-nav) [role="radiogroup"] > label {{
-        margin: 0 !important; padding: 9px 18px !important;
+        margin: 0 !important; padding: 0 18px !important; height: 40px;
+        display: inline-flex !important; align-items: center !important;
         border-radius: 999px !important;
         background: transparent !important;
         border: none !important; box-shadow: none !important;
-        cursor: pointer; transition: background 140ms ease;
+        cursor: pointer; transition: color 140ms ease;
     }}
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail-nav) [role="radiogroup"] > label > div:first-child {{
         display: none;
@@ -1083,10 +1089,10 @@ def inject_theme():
         margin: 0 !important; line-height: 1 !important; white-space: nowrap;
     }}
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail-nav) [role="radiogroup"] > label:hover {{
-        background: rgba(72,0,255,0.06) !important;
+        background: transparent !important;
     }}
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail-nav) [role="radiogroup"] > label:hover p {{
-        color: #0f172a !important;
+        color: #4800ff !important;
     }}
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail-nav) [role="radiogroup"] > label:has(input:checked) {{
         background: #4800ff !important;
@@ -1110,12 +1116,30 @@ def inject_theme():
     /* density seg nests quietly inside the rail */
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail)
         div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"] {{
-        background: #f1f3f9 !important; border: none !important;
-        box-shadow: none !important;
+        background: transparent !important; border: none !important;
+        box-shadow: none !important; padding: 0 !important; max-width: none;
     }}
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail)
         div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"] > label {{
         border: none !important; box-shadow: none !important;
+        background: transparent !important; flex: 0 0 auto !important;
+        padding: 9px 14px !important;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail)
+        div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"] > label p {{
+        color: #64748b !important; font-size: 14.5px !important;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail)
+        div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"] > label:hover p {{
+        color: #4800ff !important;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail)
+        div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"] > label:has(input:checked) {{
+        background: #4800ff !important;
+        box-shadow: 0 4px 14px rgba(72,0,255,0.35) !important;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"] > label:has(input:checked) p {{
+        color: #ffffff !important;
     }}
     .ea-rail-focus {{
         font-size: 12.5px; font-weight: 800; letter-spacing: 0.09em;
