@@ -713,6 +713,14 @@ def _digest_card(f: pd.DataFrame) -> None:
     except Exception:
         return
     if not fs:
+        with st.container(border=True):
+            st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
+            _card_header("What needs work",
+                         "Your three biggest leaks across your executed history "
+                         "\u2014 fix the top one first.")
+            _n_ex = int(len(f)) if f is not None else 0
+            _empty_note(f"Leaks appear once 5+ trades share a pattern \u2014 "
+                        f"{_n_ex} executed so far, nothing recurring yet.")
         return
     try:
         # One lever, two halves: when a session leak coexists with a session
@@ -763,14 +771,17 @@ def _strengths_card(f: pd.DataFrame) -> None:
         fs = strengths(f)
     except Exception:
         return
-    if not fs:
-        return
     import html as _h2
     with st.container(border=True):
         st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
         _card_header("What's working",
                      "Your biggest edges across your executed history \u2014 "
                      "protect them.")
+        if not fs:
+            _n_ex = int(len(f)) if f is not None else 0
+            _empty_note(f"Your biggest edges appear once 8+ trades share a "
+                        f"pattern \u2014 {_n_ex} executed so far.")
+            return
         rows = []
         for i, f_ in enumerate(fs[:3], 1):
             _sev = "#16a34a"
@@ -954,8 +965,10 @@ def _month_card(f: pd.DataFrame, styler) -> None:
             else:
                 _bal_note = ""
             _mtd_pct = _period_pct(g, g["__Date"].dt.to_period("M") == now_p, _bal_disp)
+            _wk_mon = (pd.Timestamp.now().normalize()
+                       - pd.Timedelta(days=int(pd.Timestamp.now().dayofweek)))
             _wk_pct = _period_pct(
-                g, g["__Date"] >= (pd.Timestamp.now() - pd.Timedelta(days=7)), _bal_disp)
+                g, g["__Date"] >= _wk_mon, _bal_disp)
             _cur_txt = f"{_mtd_pct:+.2f}%" if _mtd_pct is not None else _pct_txt(cur, _rp)
             _wk_txt = f"{_wk_pct:+.2f}%" if _wk_pct is not None else _pct_txt(wk_r, _rp)
             st.markdown(
@@ -1267,7 +1280,7 @@ def _alltime_card(f: pd.DataFrame, styler) -> None:
         expc = float(rrs.mean()) if n else float("nan")
         gw = float(rrs[rrs > 0].sum()); gl = float(abs(rrs[rrs < 0].sum()))
         pf = gw / gl if gl > 0 else float("nan")
-        net = float(rrs.sum())
+        net = round(float(rrs.sum()), 2)
         chips = [("NET", f"{net:+.1f}R", "#16a34a" if net >= 0 else "#ef4444"),
                  ("TRADES", f"{n}", "#0f172a"),
                  ("WIN", f"{win_pct:.0f}%", "#0f172a"),
@@ -3713,7 +3726,7 @@ def _conditions_tab(f: pd.DataFrame, show_table):
 
     tf_titles = {"Conditions ETF": "Entry TF", "Conditions MTF": "Middle TF",
                  "Conditions HTF": "Higher TF"}
-    st.caption("Average R per trade in each market state \u00b7 cells need 3+ trades.")
+    st.caption("Average R per trade in each market state \u00b7 small samples show dimmed.")
     all_rows = []
     grid = []
     for col in present_cols:
@@ -3722,14 +3735,15 @@ def _conditions_tab(f: pd.DataFrame, show_table):
         for state in ("Trending", "Ranging"):
             grp = col_data[col_data[col].astype(str).str.contains(state, case=False, na=False)]
             rr = grp["__rr"].dropna()
-            if len(grp) >= 3 and len(rr) > 0:
+            if len(rr) > 0:
                 avg = float(rr.mean())
+                _big = len(grp) >= 3
                 cells[state] = (f"{avg:+.2f}R \u00b7 {len(grp)}t",
-                                "#16a34a" if avg >= 0 else "#ef4444")
-                all_rows.append({"Condition": f"{tf_titles.get(col, col)} \u00b7 {state}",
-                                 "Expectancy": avg, "N": len(grp)})
-            elif len(grp) > 0:
-                cells[state] = (f"\u2014  ({len(grp)}t)", "#c3c9d4")
+                                ("#16a34a" if avg >= 0 else "#ef4444") if _big
+                                else "#a8b0c2")
+                if _big:
+                    all_rows.append({"Condition": f"{tf_titles.get(col, col)} \u00b7 {state}",
+                                     "Expectancy": avg, "N": len(grp)})
             else:
                 cells[state] = ("\u2014", "#c3c9d4")
         grid.append((tf_titles.get(col, col), cells))
@@ -4149,8 +4163,10 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
             pass
 
     # ── Header (card title comes from the card) ──────────────────────────────
+    _tiny_note = (" — tiny sample, expect the picture to move a lot"
+                  if total_incl_be < 20 else "")
     st.caption(
-        f"Auto-filled from **{total_incl_be} completed trades** — "
+        f"Auto-filled from **{total_incl_be} completed trades**{_tiny_note} — "
         f"Win rate: **{base_wr:.1%}** · Break-even: **{base_be:.1%}** · "
         f"Avg win RR: **{base_avg_win_rr}** · Avg loss RR: **{base_avg_loss_rr}** · "
         f"Est. trades/month: **{base_trades_per_month}**"
@@ -4220,7 +4236,7 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
     worst_idx  = int(np.argmin(final_balances))
 
     scenario_indices = {
-        "Most Possible": median_idx,
+        "Most likely": median_idx,
         "Worst":         worst_idx,
         "Best":          best_idx,
     }
@@ -4281,7 +4297,7 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
     # ── Scenario toggle ───────────────────────────────────────────────────────
     st.markdown("---")
     selected = st.radio(
-        "Scenario", options=["Most Possible", "Worst", "Best"],
+        "Scenario", options=["Most likely", "Worst", "Best"],
         horizontal=True, label_visibility="collapsed", key="proj_scenario"
     )
 
@@ -4325,7 +4341,7 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
             color=alt.Color(
                 "Scenario:N",
                 scale=alt.Scale(
-                    domain=["Most Possible", "Worst", "Best"],
+                    domain=["Most likely", "Worst", "Best"],
                     range=["#4800ff", "#e03131", "#00a86b"]
                 ),
                 legend=alt.Legend(title=None, orient="top-left")
@@ -5156,7 +5172,7 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
                     f"{dt_.strftime('%B').upper()}{badge}</div>"
                     f"<div style='font-size:28px;font-weight:800;color:{c};margin:2px 0;'>"
                     f"{_mbm_head(r_, row, dt_.to_period('M'))}</div>"
-                    f"<div style='font-size:13px;color:#64748b;'>{r_:+.1f}R \u00b7 "
+                    f"<div style='font-size:13px;color:#64748b;'>{round(r_, 2):+.1f}R \u00b7 "
                     f"{int(row['n'])} trades{usd_note}{' · live' if live else ''}</div></div>")
             st.markdown("<div style='display:flex;gap:14px;flex-wrap:wrap;margin:8px 0 4px;'>"
                         + "".join(cards) + "</div>", unsafe_allow_html=True)
@@ -5235,13 +5251,17 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
         rows = []
         if not weekly.empty:
             bw, ww = weekly.idxmax(), weekly.idxmin()
-            rows.append(("BEST WEEK", f"{weekly.max():+.1f}R",
-                         f"week of {bw.strftime('%d %b')}", "#16a34a"))
-            rows.append(("WORST WEEK", f"{weekly.min():+.1f}R",
-                         f"week of {ww.strftime('%d %b')}", "#ef4444"))
+            _sgn = lambda v: "#16a34a" if v >= 0 else "#ef4444"
+            rows.append(("BEST WEEK", f"{round(weekly.max(), 2):+.1f}R",
+                         f"week of {bw.strftime('%d %b')}", _sgn(weekly.max())))
+            rows.append(("WORST WEEK", f"{round(weekly.min(), 2):+.1f}R",
+                         f"week of {ww.strftime('%d %b')}", _sgn(weekly.min())))
         bm, wm = monthly["r"].idxmax(), monthly["r"].idxmin()
-        rows.append(("BEST MONTH", f"{monthly['r'].max():+.1f}R", bm.strftime("%b %Y"), "#16a34a"))
-        rows.append(("WORST MONTH", f"{monthly['r'].min():+.1f}R", wm.strftime("%b %Y"), "#ef4444"))
+        _sgn2 = lambda v: "#16a34a" if v >= 0 else "#ef4444"
+        rows.append(("BEST MONTH", f"{round(monthly['r'].max(), 2):+.1f}R",
+                     bm.strftime("%b %Y"), _sgn2(monthly["r"].max())))
+        rows.append(("WORST MONTH", f"{round(monthly['r'].min(), 2):+.1f}R",
+                     wm.strftime("%b %Y"), _sgn2(monthly["r"].min())))
         st.markdown(
             "<div style='font-size:11px;font-weight:700;letter-spacing:0.06em;color:#64748b;"
             "margin-top:14px;'>RECORDS</div>"

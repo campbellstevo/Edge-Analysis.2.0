@@ -1023,6 +1023,14 @@ def inject_theme():
         display: none !important;
     }}
 
+    /* Density checked pill: the label must be white — outguns every generic
+       radio label colour rule (was purple-on-purple, audit r8 B1) */
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [data-testid="stRadio"] [role="radiogroup"] > label:has(input:checked) p,
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [data-testid="stRadio"] [role="radiogroup"] > label:has(input:checked) span,
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [data-testid="stRadio"] [role="radiogroup"] > label:has(input:checked) [data-testid="stMarkdownContainer"] * {{
+        color: #ffffff !important;
+    }}
+
     /* Loading feel: house-styled spinner + skeleton shimmer */
     [data-testid="stSpinner"] > div {{
         border-top-color: #4800ff !important;
@@ -1041,7 +1049,12 @@ def inject_theme():
     }}
 
     /* Small-sample rows show but sit back */
-    .entry-model-table tr.dim td, .table-wrap tr.dim td {{ opacity: 0.5; }}
+    .entry-model-table tr.dim td, .table-wrap tr.dim td {{ opacity: 0.45; }}
+    .entry-model-table th {{ white-space: nowrap; }}
+
+    /* Live field checklist: cap the tall table, scroll the rest */
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-card-anchor)
+        .table-wrap:has(td) {{ max-height: 460px; overflow-y: auto; }}
 
     /* Journals page: candidate rows read left-to-right like menu rows */
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-jlist) [data-testid="stButton"] > button {{
@@ -1050,6 +1063,21 @@ def inject_theme():
     }}
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-jlist) [data-testid="stButton"] > button p {{
         text-align: left !important; width: 100%;
+    }}
+
+    /* Rail on narrow desktop windows: wrap into clean rows, no clipping */
+    @media (max-width: 900px) {{
+        div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail)
+            > div[data-testid="stHorizontalBlock"] {{
+            flex-wrap: wrap !important; border-radius: 22px;
+            padding: 8px 12px; max-width: none;
+        }}
+        div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail-nav) [role="radiogroup"] {{
+            flex-wrap: wrap !important;
+        }}
+        div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail-nav) [role="radiogroup"] > label {{
+            padding: 0 12px !important; height: 36px;
+        }}
     }}
 
     /* ── THE RAIL: one contained bar for nav + Filters + density ── */
@@ -1679,6 +1707,15 @@ def inject_dark_overlay():
         box-shadow: 0 0 22px rgba(120,30,255,0.5) !important;
     }
     .ea-rail-focus { color: #b18cff !important; }
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-rail)
+        div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"] {
+        background: transparent !important;
+    }
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [data-testid="stRadio"] [role="radiogroup"] > label:has(input:checked) p,
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [data-testid="stRadio"] [role="radiogroup"] > label:has(input:checked) span,
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [data-testid="stRadio"] [role="radiogroup"] > label:has(input:checked) [data-testid="stMarkdownContainer"] * {
+        color: #ffffff !important;
+    }
     div[style*="background: rgb(255, 255, 255)"] {
         background: #161b27 !important;
         border-color: rgba(255,255,255,0.09) !important;
