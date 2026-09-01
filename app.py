@@ -1712,6 +1712,8 @@ def render_dashboard(mobile: bool):
                 _dwant = ("Focus" if st.session_state.get("ea_setup_density") == "Focus"
                           else "All")
                 st.session_state["ea_density_pref"] = _dwant
+                st.session_state["ea_density_seg"] = ("Focus" if _dwant == "Focus"
+                                                      else "Everything")
                 st.session_state["ea_density_dirty"] = True
                 st.session_state["ea_setup_done"] = True
                 st.session_state["ea_setup_dirty"] = True

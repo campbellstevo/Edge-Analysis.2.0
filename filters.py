@@ -62,29 +62,35 @@ def apply_date_filter(df: pd.DataFrame, date_range: Optional[DateRange]) -> pd.S
     return df["Date"].dt.date == date_range
 
 
+def _st_rerun():
+    try:
+        st.rerun()
+    except Exception:
+        st.experimental_rerun()
+
+
 def _render_density_seg():
     """Focus/Everything segment — shared by the rail and stacked layouts."""
     _dwant = ("Focus" if st.session_state.get("ea_density_pref") == "Focus"
               else "Everything")
     if st.session_state.get("ea_density_seg") not in ("Focus", "Everything"):
         st.session_state["ea_density_seg"] = _dwant
-    elif st.session_state.get("ea_density_seg") != _dwant:
-        # keep the toggle locked to the pref — a boot rerun that recreated
-        # the widget must never drag the pref the other way
-        st.session_state["ea_density_seg"] = _dwant
-
-    def _density_cb():
-        want = ("Focus" if st.session_state.get("ea_density_seg") == "Focus"
-                else "All")
-        if st.session_state.get("ea_density_pref", "All") != want:
-            st.session_state["ea_density_pref"] = want
-            st.session_state["ea_density_dirty"] = True
+    # NO re-sync lock here: it reverted the user's click before the widget
+    # rendered (the r155 restructure changed callback ordering and the lock
+    # started eating every toggle). Value-compare below is the single truth.
 
     st.markdown('<div class="ea-densityseg"></div>', unsafe_allow_html=True)
-    st.radio("Density", ["Focus", "Everything"], key="ea_density_seg",
-             horizontal=True, on_change=_density_cb, label_visibility="collapsed",
-             help="Focus shows your track record and what needs work. "
-                  "Everything shows all six tabs.")
+    _seg_val = st.radio("Density", ["Focus", "Everything"], key="ea_density_seg",
+                        horizontal=True, label_visibility="collapsed",
+                        help="Focus shows your track record and what needs work. "
+                             "Everything shows all six tabs.")
+    # value-compare instead of on_change: callbacks can be dropped across
+    # reruns, but the returned value never lies
+    _want_pref = "Focus" if _seg_val == "Focus" else "All"
+    if st.session_state.get("ea_density_pref", "All") != _want_pref:
+        st.session_state["ea_density_pref"] = _want_pref
+        st.session_state["ea_density_dirty"] = True
+        _st_rerun()
 
 
 def render_filters(
