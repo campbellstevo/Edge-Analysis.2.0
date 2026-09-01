@@ -1216,7 +1216,10 @@ def _prefs_blob() -> dict:
         "p:localStorage.getItem('ea_mplan')||'',"
         "t:localStorage.getItem('ea_theme')||'',"
         "d:localStorage.getItem('ea_density')||'',"
-        "su:localStorage.getItem('ea_setup')||''})",
+        "su:localStorage.getItem('ea_setup')||'',"
+        "ua:navigator.userAgent||'',"
+        "iw:(function(){try{return (window.top||window).innerWidth||0}"
+        "catch(e){return window.innerWidth||0}})()})",
         key="ea_prefs_load")
     if not raw:
         return {}
@@ -2382,9 +2385,20 @@ def main() -> None:
     # user agent: window.innerWidth is useless here because the JS helper runs
     # inside a 0-width iframe.
     if not st.session_state.get("ea_layout_autoset") and not _get_query_param("layout"):
-        _ua = _js_eval("navigator.userAgent || ''", key="ea_ua")
+        _pb_det = st.session_state.get("ea_prefs") or {}
+        _ua = _pb_det.get("ua") if _pb_det.get("ua") else None
+        try:
+            _iw = int(float(_pb_det.get("iw") or 0))
+        except (TypeError, ValueError):
+            _iw = 0
+        if _ua is None:
+            _ua = _js_eval("navigator.userAgent || ''", key="ea_ua")
         if _ua is not None:
             st.session_state["ea_layout_autoset"] = True
+            if _iw and _iw < 720 \
+                    and st.session_state.get(SessionKeys.LAYOUT) != "Mobile Layout":
+                st.session_state[SessionKeys.LAYOUT] = "Mobile Layout"
+                _st_rerun()
             try:
                 if re.search(r"Mobi|Android|iPhone|iPad", str(_ua)) and                         st.session_state.get(SessionKeys.LAYOUT) != "Mobile Layout":
                     st.session_state[SessionKeys.LAYOUT] = "Mobile Layout"

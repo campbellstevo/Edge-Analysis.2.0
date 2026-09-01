@@ -1506,14 +1506,16 @@ def inject_theme():
         /* Popovers become centered sheets that always fit the phone */
         div[data-baseweb="popover"]:has([data-testid="stPopoverBody"]) {{
             position: fixed !important;
-            left: 50% !important;
+            left: 3vw !important;
+            right: 3vw !important;
             top: 8vh !important;
-            transform: translateX(-50%) !important;
+            transform: none !important;
             z-index: 99999 !important;
         }}
         [data-testid="stPopoverBody"] {{
-            width: min(94vw, 420px) !important;
+            width: 94vw !important;
             max-width: 94vw !important;
+            min-width: 0 !important;
             max-height: 80vh !important;
             overflow-y: auto !important;
             -webkit-overflow-scrolling: touch;

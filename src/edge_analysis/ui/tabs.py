@@ -5244,10 +5244,15 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
             else:
                 _empty_note("Not enough monthly history for the stacked view yet.")
 
-        # records as one slim chip row
+        # records as one slim chip row — CLOSED periods only: a month that is
+        # one day old must never be crowned best or worst
         weekly = mg["__rr"].resample("W-MON", label="left", closed="left").sum()
         wk_n = mg["__rr"].resample("W-MON", label="left", closed="left").size()
         weekly = weekly[wk_n > 0]
+        _now_ts = pd.Timestamp.now()
+        _wk_start = (_now_ts.normalize()
+                     - pd.Timedelta(days=int(_now_ts.dayofweek)))
+        weekly = weekly[weekly.index < _wk_start]
         rows = []
         if not weekly.empty:
             bw, ww = weekly.idxmax(), weekly.idxmin()
@@ -5256,12 +5261,16 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
                          f"week of {bw.strftime('%d %b')}", _sgn(weekly.max())))
             rows.append(("WORST WEEK", f"{round(weekly.min(), 2):+.1f}R",
                          f"week of {ww.strftime('%d %b')}", _sgn(weekly.min())))
-        bm, wm = monthly["r"].idxmax(), monthly["r"].idxmin()
-        _sgn2 = lambda v: "#16a34a" if v >= 0 else "#ef4444"
-        rows.append(("BEST MONTH", f"{round(monthly['r'].max(), 2):+.1f}R",
-                     bm.strftime("%b %Y"), _sgn2(monthly["r"].max())))
-        rows.append(("WORST MONTH", f"{round(monthly['r'].min(), 2):+.1f}R",
-                     wm.strftime("%b %Y"), _sgn2(monthly["r"].min())))
+        _mo_start = _now_ts.normalize().replace(day=1)
+        _mclosed = monthly[monthly.index < _mo_start]
+        if not _mclosed.empty:
+            bm, wm = _mclosed["r"].idxmax(), _mclosed["r"].idxmin()
+            _sgn2 = lambda v: "#16a34a" if v >= 0 else "#ef4444"
+            rows.append(("BEST MONTH", f"{round(_mclosed['r'].max(), 2):+.1f}R",
+                         bm.strftime("%b %Y"), _sgn2(_mclosed["r"].max())))
+            if wm != bm:
+                rows.append(("WORST MONTH", f"{round(_mclosed['r'].min(), 2):+.1f}R",
+                             wm.strftime("%b %Y"), _sgn2(_mclosed["r"].min())))
         st.markdown(
             "<div style='font-size:11px;font-weight:700;letter-spacing:0.06em;color:#64748b;"
             "margin-top:14px;'>RECORDS</div>"
@@ -5274,20 +5283,33 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
                 f"<div style='font-size:12px;color:#64748b;'>{sub}</div></div>"
                 for k, v, sub, c in rows) + "</div>", unsafe_allow_html=True)
 
-        # the ONE evidence strip on the tab
-        exp_m = float(monthly["r"].mean())
-        sd_m = float(monthly["r"].std()) if len(monthly) >= 3 else float(monthly["r"].abs().mean())
-        rec_target = max(1.0, exp_m - 0.25 * (sd_m or 0.0))
-        if need_r > rec_target + 0.5:
-            st.markdown(
-                "<div style='background:#fdf6e8;border-radius:10px;padding:12px 18px;"
-                "border-left:5px solid #d97706;margin-top:14px;'>"
-                f"<div style='font-size:14.5px;font-weight:800;color:#7c4a03;'>"
-                f"Your data currently supports about {rec_target:+.1f}R a month — "
-                f"the {need_r:.0f}R target is ambition, not evidence yet.</div>"
-                "<div style='font-size:12.5px;color:#9a6b1f;margin-top:3px;'>"
-                "The gap closes as your live expectancy grows.</div></div>",
-                unsafe_allow_html=True)
+        # the ONE evidence strip on the tab — and it must EARN the word
+        # "evidence": closed months only, and enough of them (his call on the
+        # +2.8R claim from six trades: "I do not think that is accurate")
+        _mo_start2 = pd.Timestamp.now().normalize().replace(day=1)
+        _m_closed = monthly[monthly.index < _mo_start2]
+        _n_trades_all = int(monthly["n"].sum())
+        if len(_m_closed) >= 3 and _n_trades_all >= 20:
+            exp_m = float(_m_closed["r"].mean())
+            sd_m = float(_m_closed["r"].std()) if len(_m_closed) >= 3 \
+                else float(_m_closed["r"].abs().mean())
+            rec_target = max(1.0, exp_m - 0.25 * (sd_m or 0.0))
+            if need_r > rec_target + 0.5:
+                st.markdown(
+                    "<div style='background:#fdf6e8;border-radius:10px;padding:12px 18px;"
+                    "border-left:5px solid #d97706;margin-top:14px;'>"
+                    f"<div style='font-size:14.5px;font-weight:800;color:#7c4a03;'>"
+                    f"Your data currently supports about {rec_target:+.1f}R a month — "
+                    f"the {need_r:.0f}R target is ambition, not evidence yet.</div>"
+                    "<div style='font-size:12.5px;color:#9a6b1f;margin-top:3px;'>"
+                    "The gap closes as your live expectancy grows.</div></div>",
+                    unsafe_allow_html=True)
+        else:
+            _empty_note(f"A supported monthly pace appears after 3 closed months "
+                        f"and 20+ trades in this journal — "
+                        f"{len(_m_closed)} closed month"
+                        f"{'s' if len(_m_closed) != 1 else ''} and "
+                        f"{_n_trades_all} trades so far.")
         try:
             _pdf = _monthly_report_pdf(monthly, need_r, float(need_r), 1.0, rows)
             st.download_button("Download monthly report (PDF)", data=_pdf,
