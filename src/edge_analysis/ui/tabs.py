@@ -3302,33 +3302,25 @@ def _powered_on_panel(df: pd.DataFrame) -> None:
     ]
     on = sum(1 for _, st_, _ in feats if st_ == "on")
     unlogged = sum(1 for _, st_, _ in feats if st_ == "unlogged")
-    st.markdown(f"### What your template powers on")
-    cap = f"{on} of {len(feats)} features active"
-    if unlogged:
-        cap += f" \u00b7 {unlogged} waiting on logged values"
-    cap += " \u00b7 add the missing column in Notion to unlock a feature."
-    st.caption(cap)
     import html as _h
-    parts = []
+    st.markdown(
+        "<div style='font-size:11px;font-weight:700;letter-spacing:0.07em;"
+        f"color:#64748b;margin:2px 0 8px;'>FEATURES \u00b7 {on} OF {len(feats)} LIVE"
+        + (f" \u00b7 {unlogged} WAITING ON LOGGED VALUES" if unlogged else "")
+        + "</div>", unsafe_allow_html=True)
+    chips = []
     for name, st_, need in feats:
         if st_ == "on":
-            mark, mc, tc, fw, hint = "\u2713", "#16a34a", "#0f172a", 700, ""
+            bg, fg, mark, tip = "#e9f7ef", "#14532d", "\u2713", ""
         elif st_ == "unlogged":
-            mark, mc, tc, fw = "\u25d0", "#b45309", "#7c4a03", 600
-            hint = ("<span style='font-size:11.5px;color:#c9a36a;'>column there \u2014 "
-                    "log it on a few trades</span>")
+            bg, fg, mark, tip = "#fdf6e8", "#7c4a03", "\u25d0", " title='Column exists \u2014 log it on a few trades'"
         else:
-            mark, mc, tc, fw = "\u2014", "#c3c9d4", "#64748b", 500
-            hint = ("<span style='font-size:11.5px;color:#c3c9d4;'>needs "
-                    + _h.escape(need) + "</span>")
-        parts.append(
-            "<div style='display:flex;align-items:center;gap:10px;padding:7px 4px;"
-            "flex:1 1 46%;min-width:280px;'>"
-            f"<span style='color:{mc};font-weight:800;font-size:15px;'>{mark}</span>"
-            f"<span style='font-size:13.5px;font-weight:{fw};color:{tc};'>{_h.escape(name)}</span>"
-            + hint + "</div>")
-    rows = "".join(parts)
-    st.markdown("<div style='display:flex;flex-wrap:wrap;gap:0 18px;'>" + rows + "</div>",
+            bg, fg, mark, tip = "#f1f3f9", "#8a93a6", "\u2014", f" title='Needs {_h.escape(need)}'"
+        chips.append(
+            f"<span{tip} style='display:inline-flex;align-items:center;gap:6px;"
+            f"background:{bg};color:{fg};border-radius:999px;padding:5px 11px;"
+            f"font-size:12.5px;font-weight:700;'>{mark} {_h.escape(name)}</span>")
+    st.markdown("<div style='display:flex;flex-wrap:wrap;gap:7px;'>" + "".join(chips) + "</div>",
                 unsafe_allow_html=True)
 
 
@@ -3960,25 +3952,30 @@ def _data_tab(f_all: pd.DataFrame, show_table):
         st.markdown("</div>", unsafe_allow_html=True)
         return
     rows.sort(key=lambda x: (x[1] / n, x[0].lower()))
-    body = []
-    for name, filled in rows:
-        pct = 100.0 * filled / n
-        colr = "#16a34a" if pct >= 99.5 else ("#f59e0b" if pct >= 50 else "#ef4444")
-        body.append(
-            "<tr>"
-            f"<td class='text'>{_h3.escape(name)}</td>"
-            f"<td class='num'>{filled} of {n}</td>"
-            f"<td class='num' style='color:{colr};font-weight:700;'>{pct:.0f}%</td>"
-            "</tr>")
+    gaps = [(nm, fl) for nm, fl in rows if fl < n]
+    full = len(rows) - len(gaps)
     st.markdown(
-        "<div style='font-size:13px;color:#64748b;margin:0 0 8px;'>"
-        "Every column your journal carries and how often it's filled \u2014 "
-        "the gaps at the top are where analytics are waiting on data.</div>"
-        "<div class='table-wrap'><table class='entry-model-table'>"
-        "<thead><tr><th class='text'>Field</th><th class='num'>Filled</th>"
-        "<th class='num'>%</th></tr></thead>"
-        "<tbody>" + "".join(body) + "</tbody></table></div>",
+        "<div style='font-size:11px;font-weight:700;letter-spacing:0.07em;"
+        f"color:#64748b;margin:16px 0 8px;'>FIELDS \u00b7 {full} OF {len(rows)} FILLED ON EVERY TRADE"
+        + (f" \u00b7 {len(gaps)} WITH GAPS" if gaps else "") + "</div>",
         unsafe_allow_html=True)
+    if not gaps:
+        _empty_note("Every field is filled on every trade \u2014 nothing waiting on data.")
+    else:
+        chips = []
+        for name, filled in gaps[:14]:
+            pct = 100.0 * filled / n
+            bg, fg = ("#fdf6e8", "#7c4a03") if pct >= 50 else ("#fde8e8", "#7f1d1d")
+            chips.append(
+                f"<span style='display:inline-flex;align-items:center;gap:6px;"
+                f"background:{bg};color:{fg};border-radius:999px;padding:5px 11px;"
+                f"font-size:12.5px;font-weight:700;'>{_h3.escape(name)} "
+                f"<span style='opacity:.75;font-weight:600;'>{filled}/{n}</span></span>")
+        more = len(gaps) - 14
+        st.markdown("<div style='display:flex;flex-wrap:wrap;gap:7px;'>" + "".join(chips)
+                    + (f"<span style='font-size:12.5px;color:#64748b;padding:5px 4px;'>"
+                       f"+{more} more</span>" if more > 0 else "")
+                    + "</div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -4187,50 +4184,50 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
     )
 
     # ── Inputs (applied when you press Run) ──────────────────────────────────
-    with st.form("proj_settings", border=False):
-        starting_balance = _slider_row(
-            "Starting balance", lambda v: _money(f"${v:,.0f}"),
-            lambda: st.slider("Starting balance", min_value=1_000, max_value=200_000,
-                              value=int(min(200_000, max(1_000, round(
-                                  float(st.session_state.get("ea_m_bal", 10_000)) / 100.0
-                              ) * 100))),
-                              step=1_000, key="proj_balance",
-                              label_visibility="collapsed"))
-        risk_pct = _slider_row(
-            "Risk per trade", lambda v: f"{v:.2f}%",
-            lambda: st.slider("Risk per trade", min_value=0.25, max_value=10.0,
-                              value=float(min(10.0, max(0.25, round(
-                                  float(st.session_state.get("ea_m_risk", 1.0)) * 4
-                              ) / 4))),
-                              step=0.25, key="proj_risk",
-                              label_visibility="collapsed"))
-        win_rate_input = _slider_row(
-            "Winning trades", lambda v: f"{v}%",
-            lambda: st.slider("Winning trades", min_value=10, max_value=90,
-                              value=int(min(90, max(10, base_wr * 100))), step=1,
-                              key="proj_wr", label_visibility="collapsed"))
-        be_rate_input = _slider_row(
-            "Break-even trades", lambda v: f"{v}%",
-            lambda: st.slider("Break-even trades", min_value=0, max_value=60,
-                              value=int(min(60, max(0, round(base_be * 100)))), step=1,
-                              key="proj_be", label_visibility="collapsed"))
-        avg_win_rr = _slider_row(
-            "Average win", lambda v: f"{v:.1f}R",
-            lambda: st.slider("Average win", min_value=0.1, max_value=15.0,
-                              value=float(min(15.0, max(0.1, base_avg_win_rr))), step=0.1,
-                              key="proj_win_rr", label_visibility="collapsed"))
-        trades_per_month = _slider_row(
-            "Trades per month", lambda v: f"{v}",
-            lambda: st.slider("Trades per month", min_value=1, max_value=200,
-                              value=int(min(200, max(1, base_trades_per_month))), step=1,
-                              key="proj_tpm", label_visibility="collapsed"))
-        total_months = _slider_row(
-            "Months to project", lambda v: f"{v} mo",
-            lambda: st.slider("Months to project", min_value=1, max_value=120,
-                              value=24, step=1, key="proj_months",
-                              label_visibility="collapsed"))
-        if st.form_submit_button("Run projection", type="primary"):
-            st.session_state["proj_ran"] = True
+    # Exact inputs, applied live — no Run button to hunt with (his ask: setting
+    # an exact number took repeated runs). Type the number; the picture follows.
+    _bal_seed = int(min(200_000, max(1_000, round(
+        float(st.session_state.get("ea_m_bal", 10_000)) / 100.0) * 100)))
+    starting_balance = _slider_row(
+        "Starting balance", lambda v: f"${v:,.0f}",
+        lambda: st.number_input("Starting balance", min_value=1_000, max_value=200_000,
+                                value=_bal_seed, step=500, key="proj_balance",
+                                label_visibility="collapsed"))
+    risk_pct = _slider_row(
+        "Risk per trade", lambda v: f"{v:.2f}%",
+        lambda: st.number_input("Risk per trade", min_value=0.25, max_value=10.0,
+                                value=float(min(10.0, max(0.25, round(
+                                    float(st.session_state.get("ea_m_risk", 1.0)) * 4
+                                ) / 4))),
+                                step=0.25, format="%.2f", key="proj_risk",
+                                label_visibility="collapsed"))
+    win_rate_input = _slider_row(
+        "Winning trades", lambda v: f"{v}%",
+        lambda: st.number_input("Winning trades", min_value=10, max_value=90,
+                                value=int(min(90, max(10, base_wr * 100))), step=1,
+                                key="proj_wr", label_visibility="collapsed"))
+    be_rate_input = _slider_row(
+        "Break-even trades", lambda v: f"{v}%",
+        lambda: st.number_input("Break-even trades", min_value=0, max_value=60,
+                                value=int(min(60, max(0, round(base_be * 100)))), step=1,
+                                key="proj_be", label_visibility="collapsed"))
+    avg_win_rr = _slider_row(
+        "Average win", lambda v: f"{v:.1f}R",
+        lambda: st.number_input("Average win", min_value=0.1, max_value=15.0,
+                                value=float(min(15.0, max(0.1, base_avg_win_rr))),
+                                step=0.1, format="%.1f", key="proj_win_rr",
+                                label_visibility="collapsed"))
+    trades_per_month = _slider_row(
+        "Trades per month", lambda v: f"{v}",
+        lambda: st.number_input("Trades per month", min_value=1, max_value=200,
+                                value=int(min(200, max(1, base_trades_per_month))),
+                                step=1, key="proj_tpm", label_visibility="collapsed"))
+    total_months = _slider_row(
+        "Months to project", lambda v: f"{v} mo",
+        lambda: st.number_input("Months to project", min_value=1, max_value=120,
+                                value=24, step=1, key="proj_months",
+                                label_visibility="collapsed"))
+    st.session_state["proj_ran"] = True
 
     # ── Run simulation ────────────────────────────────────────────────────────
     N_PATHS      = 500

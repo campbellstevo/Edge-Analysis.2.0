@@ -2335,9 +2335,12 @@ def main() -> None:
         if _saved_density in ("Focus", "All"):
             st.session_state["ea_density_pref"] = _saved_density
     if "ea_privacy" not in st.session_state:
-        st.session_state["ea_privacy"] = bool((_prefs.get("pv") or "") == "1")
+        # Default: dollars HIDDEN (his ruling — the board is R and %; money is
+        # opt-in). Stored "0" means the user chose to show them.
+        _pv_raw = str(_prefs.get("pv") or "")
+        st.session_state["ea_privacy"] = (_pv_raw != "0")
     st.session_state.pop("ea_privacy_dirty", False)
-    _pvcur = "1" if st.session_state.get("ea_privacy") else ""
+    _pvcur = "1" if st.session_state.get("ea_privacy") else "0"
     _js_eval("localStorage.setItem('ea_privacy', " + json.dumps(_pvcur) + ")",
              key="ea_privacy_sync")
     st.session_state.pop("ea_density_dirty", False)

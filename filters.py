@@ -368,9 +368,9 @@ def render_filters(
             st.session_state["ea_privacy"] = not st.session_state.get("ea_privacy")
             st.session_state["ea_privacy_dirty"] = True
 
-        _pv_lab = ("✓  Dollars hidden \u00b7 show them"
+        _pv_lab = ("Show dollar amounts"
                    if st.session_state.get("ea_privacy")
-                   else "Hide dollar amounts")
+                   else "✓  Dollars shown \u00b7 hide them")
         st.button(_pv_lab, key="mm_privacy", use_container_width=True,
                   on_click=_flip_privacy)
         st.markdown(_eyebrow_div.format("ACTIONS"), unsafe_allow_html=True)
