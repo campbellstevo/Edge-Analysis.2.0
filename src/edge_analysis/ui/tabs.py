@@ -2874,29 +2874,6 @@ def _parse_rr_value(v):
     return None
 
 
-def _slider_row(label: str, make_widget, unit: str = ""):
-    """One settings row: label left, compact input right, unit after it.
-
-    Number inputs print their own value, so there is NO separate value column
-    (that duplicate is what made the projections card look like a form from
-    2003). `unit` is the trailing hint — %, R, mo — not a second readout."""
-    if st.session_state.get("layout_mode") == "mobile":
-        st.markdown(f"<div style='font-size:13px;color:#64748b;margin-bottom:-6px;'>"
-                    f"{label}</div>", unsafe_allow_html=True)
-        return make_widget()
-    c1, c2, c3 = st.columns([3.2, 1.5, 4.3], vertical_alignment="center")
-    with c1:
-        st.markdown(f"<div style='font-size:13.5px;color:#334155;font-weight:600;'>"
-                    f"{label}</div>", unsafe_allow_html=True)
-    with c2:
-        val = make_widget()
-    with c3:
-        if unit:
-            st.markdown(f"<div style='font-size:13px;color:#64748b;'>{unit}</div>",
-                        unsafe_allow_html=True)
-    return val
-
-
 def _div_vs_sweep(f: pd.DataFrame) -> None:
     """Head-to-head: Divergence vs Sweep, the two entry criteria."""
     if f is None or f.empty:
@@ -4173,67 +4150,56 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
             pass
 
     # ── Header (card title comes from the card) ──────────────────────────────
-    _tiny_note = (" — tiny sample, expect the picture to move a lot"
+    # The fields below already carry the auto-filled figures, so the caption
+    # only names the source and the one number that is NOT a field (average
+    # loss, always from real data) — nothing printed twice.
+    _tiny_note = (" — a tiny sample, so expect the picture to move a lot"
                   if total_incl_be < 20 else "")
     st.caption(
-        f"Auto-filled from **{total_incl_be} completed trades**{_tiny_note} — "
-        f"Win rate: **{base_wr:.1%}** · Break-even: **{base_be:.1%}** · "
-        f"Avg win RR: **{base_avg_win_rr}** · Avg loss RR: **{base_avg_loss_rr}** · "
-        f"Est. trades/month: **{base_trades_per_month}**"
+        f"Pre-filled from your **{total_incl_be} completed trades**{_tiny_note}. "
+        f"Average loss **{base_avg_loss_rr:.1f}R** comes from your data and stays fixed; "
+        f"change any field and the picture follows."
     )
 
-    # ── Inputs (applied when you press Run) ──────────────────────────────────
-    # Exact inputs, applied live — no Run button to hunt with (his ask: setting
-    # an exact number took repeated runs). Type the number; the picture follows.
+    # ── Inputs: one compact band, applied live (no Run button) ───────────────
+    # Exact numbers, typed or stepped; each field's label carries its unit.
+    # The .ea-projrows marker scopes the CSS that turns the seven number
+    # inputs into a wrapping band (2-up on phones) with eyebrow labels.
     st.markdown('<div class="ea-projrows"></div>', unsafe_allow_html=True)
     _bal_seed = int(min(200_000, max(1_000, round(
         float(st.session_state.get("ea_m_bal", 10_000)) / 100.0) * 100)))
-    starting_balance = _slider_row(
-        "Starting balance",
-        lambda: st.number_input("Starting balance", min_value=1_000, max_value=200_000,
-                                value=_bal_seed, step=500, key="proj_balance",
-                                label_visibility="collapsed"),
-        unit="the account this run compounds")
-    risk_pct = _slider_row(
-        "Risk per trade",
-        lambda: st.number_input("Risk per trade", min_value=0.25, max_value=10.0,
-                                value=float(min(10.0, max(0.25, round(
-                                    float(st.session_state.get("ea_m_risk", 1.0)) * 4
-                                ) / 4))),
-                                step=0.25, format="%.2f", key="proj_risk",
-                                label_visibility="collapsed"),
-        unit="% of balance, per trade")
-    win_rate_input = _slider_row(
-        "Winning trades",
-        lambda: st.number_input("Winning trades", min_value=10, max_value=90,
-                                value=int(min(90, max(10, base_wr * 100))), step=1,
-                                key="proj_wr", label_visibility="collapsed"),
-        unit="% of trades")
-    be_rate_input = _slider_row(
-        "Break-even trades",
-        lambda: st.number_input("Break-even trades", min_value=0, max_value=60,
-                                value=int(min(60, max(0, round(base_be * 100)))), step=1,
-                                key="proj_be", label_visibility="collapsed"),
-        unit="% of trades")
-    avg_win_rr = _slider_row(
-        "Average win",
-        lambda: st.number_input("Average win", min_value=0.1, max_value=15.0,
-                                value=float(min(15.0, max(0.1, base_avg_win_rr))),
-                                step=0.1, format="%.1f", key="proj_win_rr",
-                                label_visibility="collapsed"),
-        unit="R per winning trade")
-    trades_per_month = _slider_row(
-        "Trades per month",
-        lambda: st.number_input("Trades per month", min_value=1, max_value=200,
-                                value=int(min(200, max(1, base_trades_per_month))),
-                                step=1, key="proj_tpm", label_visibility="collapsed"),
-        unit="how often you trade")
-    total_months = _slider_row(
-        "Months to project",
-        lambda: st.number_input("Months to project", min_value=1, max_value=120,
-                                value=24, step=1, key="proj_months",
-                                label_visibility="collapsed"),
-        unit="months ahead")
+    _f = st.columns(7)
+    with _f[0]:
+        starting_balance = st.number_input(
+            "Starting balance ($)", min_value=1_000, max_value=200_000,
+            value=_bal_seed, step=500, key="proj_balance")
+    with _f[1]:
+        risk_pct = st.number_input(
+            "Risk per trade (%)", min_value=0.25, max_value=10.0,
+            value=float(min(10.0, max(0.25, round(
+                float(st.session_state.get("ea_m_risk", 1.0)) * 4) / 4))),
+            step=0.25, format="%.2f", key="proj_risk")
+    with _f[2]:
+        win_rate_input = st.number_input(
+            "Winning trades (%)", min_value=10, max_value=90,
+            value=int(min(90, max(10, base_wr * 100))), step=1, key="proj_wr")
+    with _f[3]:
+        be_rate_input = st.number_input(
+            "Break-even trades (%)", min_value=0, max_value=60,
+            value=int(min(60, max(0, round(base_be * 100)))), step=1, key="proj_be")
+    with _f[4]:
+        avg_win_rr = st.number_input(
+            "Average win (R)", min_value=0.1, max_value=15.0,
+            value=float(min(15.0, max(0.1, base_avg_win_rr))),
+            step=0.1, format="%.1f", key="proj_win_rr")
+    with _f[5]:
+        trades_per_month = st.number_input(
+            "Trades per month", min_value=1, max_value=200,
+            value=int(min(200, max(1, base_trades_per_month))), step=1, key="proj_tpm")
+    with _f[6]:
+        total_months = st.number_input(
+            "Months ahead", min_value=1, max_value=120, value=24, step=1,
+            key="proj_months")
     st.session_state["proj_ran"] = True
 
     # ── Run simulation ────────────────────────────────────────────────────────
@@ -4392,8 +4358,8 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
     st.markdown(f"""
     <div class="proj-stat-grid">
         <div class="proj-stat-cell">
-            <div class="proj-stat-label">Initial Balance</div>
-            <div class="proj-stat-value">${starting_balance:,.0f}</div>
+            <div class="proj-stat-label">Trades simulated</div>
+            <div class="proj-stat-value">{total_trades:,}</div>
         </div>
         <div class="proj-stat-cell">
             <div class="proj-stat-label">Result Balance</div>
@@ -5367,7 +5333,7 @@ def _monthly_report_pdf(monthly, need_r, target_pct, risk_pct, records_rows) -> 
     for ts, row in monthly.iterrows():
         hit = "YES" if row["r"] >= need_r else "-"
         usd = row.get("usd")
-        usd_s = "-" if usd is None or usd != usd else f"${usd:,.0f}"
+        usd_s = "-" if usd is None or usd != usd else _money(f"${usd:,.0f}")
         pdf.cell(40, 7, ts.strftime("%b %Y"), border=1)
         pdf.cell(30, 7, f"{row['r']:+.1f}R", border=1)
         pdf.cell(35, 7, usd_s, border=1)

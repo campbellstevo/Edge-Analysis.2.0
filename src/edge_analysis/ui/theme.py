@@ -995,6 +995,9 @@ def inject_theme():
         margin: 0 !important; padding: 7px 10px !important; min-width: 62px;
         display: flex; align-items: center; justify-content: center;
         border-radius: 999px; cursor: pointer;
+        /* halves sit flat inside the pill, like the theme toggle — the
+           generic radio-pill border made the inactive half a pill-in-a-pill */
+        border: none !important; box-shadow: none !important; background: transparent !important;
     }}
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-setupseg) [role="radiogroup"] > label {{
         min-width: 118px;
@@ -1010,7 +1013,7 @@ def inject_theme():
     }}
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"] > label:has(input:checked),
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-setupseg) [role="radiogroup"] > label:has(input:checked) {{
-        background: #4800ff;
+        background: #4800ff !important;
     }}
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"] > label:has(input:checked) p,
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-setupseg) [role="radiogroup"] > label:has(input:checked) p {{
@@ -1056,15 +1059,51 @@ def inject_theme():
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-card-anchor)
         .table-wrap:has(td) {{ max-height: 460px; overflow-y: auto; }}
 
-    /* Projections rows: compact number inputs, tidy steppers */
+    /* Projections: the seven inputs are one wrapping band of compact fields —
+       eyebrow label over a bare input, no card box per input (that box plus
+       a three-column row made each field ~75px tall and the label sat 200px
+       from its input). 2-up on phones, 7-up on a wide desktop. */
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-projrows)
-        [data-testid="stNumberInput"] {{ max-width: 168px; }}
+        [data-testid="stHorizontalBlock"]:has([data-testid="stNumberInput"]) {{
+        flex-wrap: wrap !important; gap: 8px 14px !important;
+        align-items: flex-end !important; margin: 0 0 4px;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-projrows)
+        [data-testid="stHorizontalBlock"]:has([data-testid="stNumberInput"]) > div {{
+        flex: 1 1 138px !important; min-width: 138px !important; max-width: 220px !important;
+        width: auto !important;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-projrows)
+        [data-testid="stNumberInput"] {{
+        background: transparent !important; border: 0 !important; border-radius: 0 !important;
+        padding: 0 !important; margin: 0 !important; box-shadow: none !important;
+        overflow: visible !important;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-projrows)
+        [data-testid="stNumberInput"] [data-testid="stWidgetLabel"] p {{
+        font-size: 11px !important; font-weight: 700 !important; letter-spacing: 0.06em !important;
+        text-transform: uppercase !important; color: #64748b !important; white-space: nowrap !important;
+        line-height: 1.2 !important; margin: 0 !important;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-projrows)
+        [data-testid="stNumberInput"] [data-testid="stWidgetLabel"] {{
+        margin-bottom: 4px !important; min-height: 0 !important;
+    }}
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-projrows)
         [data-testid="stNumberInput"] input {{
         font-size: 15px !important; font-weight: 700 !important; padding: 7px 10px !important;
     }}
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-projrows)
-        [data-testid="stHorizontalBlock"] {{ margin-bottom: -6px; }}
+        [data-testid="stNumberInput"] [data-baseweb="input"] {{
+        border-radius: 10px !important;
+    }}
+    @media (max-width: 640px) {{
+        div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-projrows)
+            [data-testid="stHorizontalBlock"]:has([data-testid="stNumberInput"]) > div {{
+            flex: 1 1 calc(50% - 7px) !important; min-width: calc(50% - 7px) !important;
+            max-width: calc(50% - 7px) !important;
+        }}
+    }}
 
     /* Journals page: candidate rows read left-to-right like menu rows */
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-jlist) [data-testid="stButton"] > button {{
@@ -1545,15 +1584,40 @@ def inject_theme():
         [data-testid="stPopoverBody"] button, [data-testid="stPopoverBody"] button p {{
             white-space: normal !important; word-break: break-word;
         }}
-        /* Header stays one row on a phone instead of stacking three deep */
+        /* Phone header = two deliberate rows. Row 1: Filters chip left, theme
+           toggle + ⋯ right. Row 2: Focus/Everything stretched full width as a
+           thumb-sized segment. One nowrap row squeezed the Filters chip into a
+           letter-stack ("F i l t e r s") on any phone narrower than ~430px. */
         div[data-testid="stHorizontalBlock"]:has(.ea-themeseg) {{
-            flex-wrap: nowrap !important; gap: 6px !important;
+            flex-wrap: wrap !important; gap: 10px 6px !important; align-items: center !important;
         }}
         div[data-testid="stHorizontalBlock"]:has(.ea-themeseg) > div {{
             width: auto !important; min-width: 0 !important; flex: 0 0 auto !important;
         }}
         div[data-testid="stHorizontalBlock"]:has(.ea-themeseg) > div:first-child {{
-            flex: 1 1 auto !important;
+            flex: 1 1 auto !important; order: 1;
+        }}
+        div[data-testid="stHorizontalBlock"]:has(.ea-themeseg) > div:first-child button {{
+            white-space: nowrap !important;
+        }}
+        div[data-testid="stHorizontalBlock"]:has(.ea-themeseg) > div:nth-child(2) {{
+            order: 4; flex: 1 0 100% !important; width: 100% !important;
+            justify-content: stretch !important;
+        }}
+        div[data-testid="stHorizontalBlock"]:has(.ea-themeseg) > div:nth-child(3) {{ order: 2; }}
+        div[data-testid="stHorizontalBlock"]:has(.ea-themeseg) > div:nth-child(4) {{ order: 3; }}
+        div[data-testid="stHorizontalBlock"]:has(.ea-themeseg) > div:nth-child(2) > div,
+        div[data-testid="stHorizontalBlock"]:has(.ea-themeseg) > div:nth-child(2) [data-testid="stElementContainer"],
+        div[data-testid="stHorizontalBlock"]:has(.ea-themeseg) > div:nth-child(2) [data-testid="stRadio"],
+        div[data-testid="stHorizontalBlock"]:has(.ea-themeseg) > div:nth-child(2) [data-testid="stRadio"] > div {{
+            width: 100% !important; flex: 1 1 100% !important;
+        }}
+        div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"] {{
+            width: 100% !important; max-width: none !important; display: flex !important;
+        }}
+        /* The Filters sheet: the desktop 400px floor must not win on a phone */
+        [data-testid="stPopoverBody"]:not(:has(.ea-moremenu)) {{
+            min-width: 0 !important; width: 94vw !important; max-width: 94vw !important;
         }}
         div[data-testid="stPopoverBody"]:has(.ea-chat-body) div[style*="margin:4px 0 4px 48px"],
         div[data-testid="stPopoverBody"]:has(.ea-chat-body) div[style*="margin:4px 48px 4px 0"] {{
@@ -1802,6 +1866,22 @@ def inject_dark_overlay():
         background: #161b27 !important;
         border-color: rgba(255,255,255,0.09) !important;
     }
+    /* the field and its steppers: the light sheet paints them white with
+       !important, so the dark rule must match that selector exactly */
+    div[data-testid="stNumberInput"] input {
+        background: #1d2331 !important;
+        color: #e8ebf1 !important;
+    }
+    div[data-testid="stNumberInput"] button {
+        background: #1d2331 !important;
+        color: #e8ebf1 !important;
+        border-color: rgba(255,255,255,0.12) !important;
+    }
+    div[data-testid="stNumberInput"] [data-baseweb="input"],
+    div[data-testid="stNumberInput"] [data-baseweb="base-input"] {
+        background: #1d2331 !important;
+        border-color: rgba(255,255,255,0.12) !important;
+    }
     div[data-testid="stNumberInput"] label, div[data-testid="stSlider"] label,
     [data-testid="stSelectbox"] label, [data-testid="stDateInput"] label,
     [data-testid="stWidgetLabel"] p {
@@ -2010,6 +2090,19 @@ div[style*="background: rgb(251, 252, 254)"] {
         background: #2b1616 !important;
         color: #f09a9a !important;
     }
+    /* template-card chips: live / waiting / needs-column (spans, not divs) */
+    span[style*="background: rgb(233, 247, 239)"] {
+        background: #132a1d !important;
+        color: #8fd6ab !important;
+    }
+    span[style*="background: rgb(253, 246, 232)"] {
+        background: #2b2214 !important;
+        color: #e6b566 !important;
+    }
+    span[style*="background: rgb(241, 243, 249)"] {
+        background: #232a3a !important;
+        color: #9aa4b4 !important;
+    }
     .ea-pb-lab { color: #e5e7eb !important; }
     .ea-pb-n { color: #6b7280 !important; }
     .ea-pb-track { background: #1a1f2b !important; }
@@ -2168,7 +2261,9 @@ def get_chart_styler():
                 .configure_view(fill="#161b27", stroke=None)
                 .configure_axis(domainColor="#2c3242", gridColor="#232937",
                                 labelColor="#8b94a3", titleColor="#8b94a3",
-                                tickColor="#2c3242"))
+                                tickColor="#2c3242")
+                # legends were the one text element left in the light ink
+                .configure_legend(labelColor="#c9d0dc", titleColor="#9aa4b4"))
     return _styler
 
 # ---------------------------------------------------------------------------

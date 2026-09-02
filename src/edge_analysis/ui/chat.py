@@ -706,6 +706,9 @@ def _builtin_answer(q: str, df: pd.DataFrame):
             return "No MFE (R) column — give-back needs it (the MT5 sync fills it)."
 
         if has("dollar", "money", "$", "usd", "cash"):
+            if st.session_state.get("ea_privacy"):
+                return ("Dollar amounts are hidden right now (privacy mode) — "
+                        "R and % stay honest. Show them again from the ⋯ menu.")
             pcol = next((c for c in ["PnL (USD)", "PnL"] if c in df.columns), None)
             if pcol:
                 p = pd.to_numeric(df[pcol], errors="coerce").dropna()

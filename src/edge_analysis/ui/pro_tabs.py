@@ -383,11 +383,13 @@ def _cost_drag(df, styler) -> None:
     gross = net - costs  # PnL is typically net of costs; gross = net minus (negative) costs
     drag_pct = abs(costs) / abs(gross) * 100 if gross else 0.0
     c1, c2, c3 = st.columns(3)
-    with c1: _kpi("Net P&L", f"${net:,.0f}", "after costs", "#16a34a" if net >= 0 else "#ef4444")
-    with c2: _kpi("Total costs", f"${abs(costs):,.0f}", "commission + swap")
+    # privacy mode masks the dollar figures; the drag % is the point anyway
+    with c1: _kpi("Net P&L", t._money(f"${net:,.0f}"), "after costs", "#16a34a" if net >= 0 else "#ef4444")
+    with c2: _kpi("Total costs", t._money(f"${abs(costs):,.0f}"), "commission + swap")
     with c3: _kpi("Cost drag", f"{drag_pct:.1f}%", "of gross profit")
     if drag_pct > 8:
-        t._insight_box(f"Costs are eating <b>{drag_pct:.1f}%</b> of your gross profit (${abs(costs):,.0f}). "
+        _cost_s = "" if t._dollars_hidden() else f" (${abs(costs):,.0f})"
+        t._insight_box(f"Costs are eating <b>{drag_pct:.1f}%</b> of your gross profit{_cost_s}. "
                        f"Worth checking your spread/commission tier or holding fewer trades overnight (swap).", "warn")
 
 

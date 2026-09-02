@@ -582,7 +582,7 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
         sess = str(r.get("Session", "") or "")[:18]
         dirn = str(r.get("Direction", "") or "")
         pnl = pd.to_numeric(pd.Series([r.get("PnL")]), errors="coerce").iloc[0]
-        pnl_s = "—" if pd.isna(pnl) else f"{'-' if pnl < 0 else '+'}${abs(pnl):,.2f}"
+        pnl_s = "—" if pd.isna(pnl) else _t()._money(f"{'-' if pnl < 0 else '+'}${abs(pnl):,.2f}")
         mfe_v = pd.to_numeric(pd.Series([r.get("MFE (R)")]), errors="coerce").iloc[0]
         mfe_s = "—" if pd.isna(mfe_v) else f"+{mfe_v:.2f}R"
         lots = pd.to_numeric(pd.Series([r.get("Lot Size")]), errors="coerce").iloc[0]
