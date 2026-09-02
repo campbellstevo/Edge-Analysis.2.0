@@ -1056,6 +1056,16 @@ def inject_theme():
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-card-anchor)
         .table-wrap:has(td) {{ max-height: 460px; overflow-y: auto; }}
 
+    /* Projections rows: compact number inputs, tidy steppers */
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-projrows)
+        [data-testid="stNumberInput"] {{ max-width: 168px; }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-projrows)
+        [data-testid="stNumberInput"] input {{
+        font-size: 15px !important; font-weight: 700 !important; padding: 7px 10px !important;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-projrows)
+        [data-testid="stHorizontalBlock"] {{ margin-bottom: -6px; }}
+
     /* Journals page: candidate rows read left-to-right like menu rows */
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-jlist) [data-testid="stButton"] > button {{
         justify-content: flex-start !important; text-align: left !important;

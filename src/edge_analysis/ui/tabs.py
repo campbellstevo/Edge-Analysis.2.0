@@ -2874,27 +2874,26 @@ def _parse_rr_value(v):
     return None
 
 
-def _slider_row(label: str, fmt, make_widget):
-    """One clean settings row: label left, bare slider middle, bold value right.
-    On phones: stacked single-column so nothing overlaps."""
+def _slider_row(label: str, make_widget, unit: str = ""):
+    """One settings row: label left, compact input right, unit after it.
+
+    Number inputs print their own value, so there is NO separate value column
+    (that duplicate is what made the projections card look like a form from
+    2003). `unit` is the trailing hint — %, R, mo — not a second readout."""
     if st.session_state.get("layout_mode") == "mobile":
-        st.markdown(f"<div style='font-size:13px;color:#64748b;'>{label}</div>",
-                    unsafe_allow_html=True)
-        val = make_widget()
-        st.markdown(f"<div style='text-align:right;font-size:13px;font-weight:700;"
-                    f"color:#4800ff;margin-top:-8px;'>{fmt(val)}</div>",
-                    unsafe_allow_html=True)
-        return val
-    c1, c2, c3 = st.columns([2.6, 5.4, 1.6], vertical_alignment="center")
+        st.markdown(f"<div style='font-size:13px;color:#64748b;margin-bottom:-6px;'>"
+                    f"{label}</div>", unsafe_allow_html=True)
+        return make_widget()
+    c1, c2, c3 = st.columns([3.2, 1.5, 4.3], vertical_alignment="center")
     with c1:
-        st.markdown(f"<div style='font-size:13px;color:#64748b;'>{label}</div>",
-                    unsafe_allow_html=True)
+        st.markdown(f"<div style='font-size:13.5px;color:#334155;font-weight:600;'>"
+                    f"{label}</div>", unsafe_allow_html=True)
     with c2:
         val = make_widget()
     with c3:
-        st.markdown(f"<div style='font-size:14px;font-weight:700;color:#4800ff;"
-                    f"text-align:right;white-space:nowrap;'>{fmt(val)}</div>",
-                    unsafe_allow_html=True)
+        if unit:
+            st.markdown(f"<div style='font-size:13px;color:#64748b;'>{unit}</div>",
+                        unsafe_allow_html=True)
     return val
 
 
@@ -4186,47 +4185,55 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
     # ── Inputs (applied when you press Run) ──────────────────────────────────
     # Exact inputs, applied live — no Run button to hunt with (his ask: setting
     # an exact number took repeated runs). Type the number; the picture follows.
+    st.markdown('<div class="ea-projrows"></div>', unsafe_allow_html=True)
     _bal_seed = int(min(200_000, max(1_000, round(
         float(st.session_state.get("ea_m_bal", 10_000)) / 100.0) * 100)))
     starting_balance = _slider_row(
-        "Starting balance", lambda v: f"${v:,.0f}",
+        "Starting balance",
         lambda: st.number_input("Starting balance", min_value=1_000, max_value=200_000,
                                 value=_bal_seed, step=500, key="proj_balance",
-                                label_visibility="collapsed"))
+                                label_visibility="collapsed"),
+        unit="the account this run compounds")
     risk_pct = _slider_row(
-        "Risk per trade", lambda v: f"{v:.2f}%",
+        "Risk per trade",
         lambda: st.number_input("Risk per trade", min_value=0.25, max_value=10.0,
                                 value=float(min(10.0, max(0.25, round(
                                     float(st.session_state.get("ea_m_risk", 1.0)) * 4
                                 ) / 4))),
                                 step=0.25, format="%.2f", key="proj_risk",
-                                label_visibility="collapsed"))
+                                label_visibility="collapsed"),
+        unit="% of balance, per trade")
     win_rate_input = _slider_row(
-        "Winning trades", lambda v: f"{v}%",
+        "Winning trades",
         lambda: st.number_input("Winning trades", min_value=10, max_value=90,
                                 value=int(min(90, max(10, base_wr * 100))), step=1,
-                                key="proj_wr", label_visibility="collapsed"))
+                                key="proj_wr", label_visibility="collapsed"),
+        unit="% of trades")
     be_rate_input = _slider_row(
-        "Break-even trades", lambda v: f"{v}%",
+        "Break-even trades",
         lambda: st.number_input("Break-even trades", min_value=0, max_value=60,
                                 value=int(min(60, max(0, round(base_be * 100)))), step=1,
-                                key="proj_be", label_visibility="collapsed"))
+                                key="proj_be", label_visibility="collapsed"),
+        unit="% of trades")
     avg_win_rr = _slider_row(
-        "Average win", lambda v: f"{v:.1f}R",
+        "Average win",
         lambda: st.number_input("Average win", min_value=0.1, max_value=15.0,
                                 value=float(min(15.0, max(0.1, base_avg_win_rr))),
                                 step=0.1, format="%.1f", key="proj_win_rr",
-                                label_visibility="collapsed"))
+                                label_visibility="collapsed"),
+        unit="R per winning trade")
     trades_per_month = _slider_row(
-        "Trades per month", lambda v: f"{v}",
+        "Trades per month",
         lambda: st.number_input("Trades per month", min_value=1, max_value=200,
                                 value=int(min(200, max(1, base_trades_per_month))),
-                                step=1, key="proj_tpm", label_visibility="collapsed"))
+                                step=1, key="proj_tpm", label_visibility="collapsed"),
+        unit="how often you trade")
     total_months = _slider_row(
-        "Months to project", lambda v: f"{v} mo",
+        "Months to project",
         lambda: st.number_input("Months to project", min_value=1, max_value=120,
                                 value=24, step=1, key="proj_months",
-                                label_visibility="collapsed"))
+                                label_visibility="collapsed"),
+        unit="months ahead")
     st.session_state["proj_ran"] = True
 
     # ── Run simulation ────────────────────────────────────────────────────────
