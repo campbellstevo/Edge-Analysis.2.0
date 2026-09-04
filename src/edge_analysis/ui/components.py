@@ -52,16 +52,18 @@ def _small_note(hidden: int):
     return None
 
 
-# One column spec per known metric: header label, formatter, sign colouring.
+# One column spec per known metric: header label, formatter, sign colouring,
+# and a short label the phone stylesheet swaps in (a 64px column can't hold
+# "Expectancy" without breaking it mid-word).
 _COL_SPECS = {
-    "Trades":         ("Trades",          lambda v: _fmt_int(v),       False),
-    "Win %":          ("Win %",           lambda v: _fmt_num(v, 1),    False),
-    "BE %":           ("BE %",            lambda v: _fmt_num(v, 1),    False),
-    "Loss %":         ("Loss %",          lambda v: _fmt_num(v, 1),    False),
-    "Net PnL (R)":    ("Net R",           lambda v: _fmt_signed(v, 1), True),
-    "Expectancy (R)": ("Expectancy (R)",  lambda v: _fmt_signed(v, 2), True),
-    "Avg RR":         ("Avg R",           lambda v: _fmt_signed(v, 2), True),
-    "Profit Factor":  ("Profit factor",   lambda v: _fmt_num(v, 2),    False),
+    "Trades":         ("Trades",          lambda v: _fmt_int(v),       False, "Trades"),
+    "Win %":          ("Win %",           lambda v: _fmt_num(v, 1),    False, "Win %"),
+    "BE %":           ("BE %",            lambda v: _fmt_num(v, 1),    False, "BE %"),
+    "Loss %":         ("Loss %",          lambda v: _fmt_num(v, 1),    False, "Loss %"),
+    "Net PnL (R)":    ("Net R",           lambda v: _fmt_signed(v, 1), True,  "Net R"),
+    "Expectancy (R)": ("Expectancy (R)",  lambda v: _fmt_signed(v, 2), True,  "Exp (R)"),
+    "Avg RR":         ("Avg R",           lambda v: _fmt_signed(v, 2), True,  "Avg R"),
+    "Profit Factor":  ("Profit factor",   lambda v: _fmt_num(v, 2),    False, "PF"),
 }
 
 
@@ -80,12 +82,17 @@ def _render_perf_table(df: pd.DataFrame, key_col: str, first_label: str,
     present = [c for c in _COL_SPECS if c in df.columns]
     headers = [f'<th class="text">{_h.escape(first_label)}</th>']
     for c in present:
-        headers.append(f'<th class="num">{_h.escape(_COL_SPECS[c][0])}</th>')
+        _full, _short = _COL_SPECS[c][0], _COL_SPECS[c][3]
+        if _short == _full:
+            headers.append(f'<th class="num">{_h.escape(_full)}</th>')
+        else:
+            headers.append(f'<th class="num"><span class="lab-full">{_h.escape(_full)}</span>'
+                           f'<span class="lab-short">{_h.escape(_short)}</span></th>')
     rows = []
     for _, r in df.iterrows():
         cells = [f'<td class="text">{_h.escape(str(r.get(key_col, "")))}</td>']
         for c in present:
-            _lab, _fmt, _signed = _COL_SPECS[c]
+            _lab, _fmt, _signed, _sh = _COL_SPECS[c]
             v = r.get(c)
             cls = "num"
             if _signed and not pd.isna(v):

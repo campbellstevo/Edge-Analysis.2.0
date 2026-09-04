@@ -1061,6 +1061,7 @@ def inject_theme():
     .entry-model-table th.text, .entry-model-table td.text {{ width: 30%; }}
     .entry-model-table td.pos {{ color: #16a34a; font-weight: 600; }}
     .entry-model-table td.neg {{ color: #ef4444; font-weight: 600; }}
+    .entry-model-table th .lab-short {{ display: none; }}
     .ea-tbl-title {{ font-size: 19px !important; font-weight: 800 !important; letter-spacing: -0.01em;
         color: #0f172a; margin: 0 0 8px !important; padding: 0 !important; }}
 
@@ -1463,6 +1464,9 @@ def inject_theme():
             font-size: 13px !important;
             padding: 8px 10px !important;
         }}
+        /* phone headers use the short labels ("Exp (R)") instead of breaking mid-word */
+        .entry-model-table th .lab-full {{ display: none; }}
+        .entry-model-table th .lab-short {{ display: inline; }}
     }}
 
     /* While rerunning, fully remove the stale previous render so duplicate
