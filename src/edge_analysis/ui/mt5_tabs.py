@@ -334,7 +334,7 @@ def _winrate_table(g: pd.DataFrame, by: str):
 
 def _timing_section(df: pd.DataFrame, styler) -> None:
     t = _t()
-    st.markdown("### Timing & Duration")
+    st.markdown("### Timing & duration")
     st.caption("Win rate and average R by hour of day and by how long trades were held — from MT5 timestamps.")
     rr = _num(df, "Closed RR")
     if rr is None:
@@ -370,7 +370,7 @@ def _timing_section(df: pd.DataFrame, styler) -> None:
 # ── 4. Execution quality ──────────────────────────────────────────────────────
 def _execution_section(df: pd.DataFrame, styler) -> None:
     t = _t()
-    st.markdown("### Execution Quality")
+    st.markdown("### Execution quality")
     st.caption("How cleanly you execute the plan: entry deviation, planned vs realised R, and price-delivery grade.")
     dev = _num(df, "Deviation Score")
     planned = _num(df, "Planned R:R")
@@ -532,7 +532,7 @@ def _cat_stats(df: pd.DataFrame, col: str, multi: bool = False, min_n: int = 1):
 
 def _mistake_section(df: pd.DataFrame, styler) -> None:
     t = _t()
-    st.markdown("### Mistake Leak Report")
+    st.markdown("### Mistake leak report")
     st.caption("Each behaviour you've tagged, how often it recurs, and its total bill. "
                "No comparison to clean trades — a mistake tag exists because the trade "
                "went wrong, so that comparison would prove nothing.")
@@ -554,7 +554,7 @@ def _mistake_section(df: pd.DataFrame, styler) -> None:
                      "Total R while doing it": round(bill, 1)})
     rdf = pd.DataFrame(rows).sort_values("Total R while doing it")
     bars = rdf[["Category", "Total R while doing it", "Trades"]]
-    t._rank_dots(bars, "Category", "Total R while doing it", fmt="+.1f")
+    t._rank_dots(bars, "Category", "Total R while doing it", fmt="+.1f", ascending=True)
     st.caption("Bar = total R banked on trades carrying that tag \u00b7 count = how often "
                "it recurred. Repetition is the leak: you named it yourself and it keeps happening.")
     worst = rdf.iloc[0]
@@ -572,7 +572,7 @@ def _conviction_section(df: pd.DataFrame, styler) -> None:
     if rows is not None:
         rows = rows[rows["Category"].isin(order)]
         rows = rows.assign(__o=rows["Category"].map(lambda v: order.index(v) if v in order else 9)).sort_values("__o").drop(columns="__o")
-    _line_metric(rows, "Conviction Calibration", styler, value="Avg R", x_order=order,
+    _line_metric(rows, "Conviction calibration", styler, value="Avg R", x_order=order,
                  x_title="Conviction (1 = low, 5 = high)",
                  caption="Average R by your 1–5 conviction. A rising line = your read is calibrated.")
     if rows is not None and len(rows) >= 2:
@@ -587,7 +587,7 @@ def _conviction_section(df: pd.DataFrame, styler) -> None:
 
 def _discipline_section(df: pd.DataFrame, styler) -> None:
     t = _t()
-    st.markdown("### Discipline Scorecard")
+    st.markdown("### Discipline scorecard")
     st.caption("What following your rules and taking only A+ setups is actually worth in R.")
     g = df.copy()
     g["__rr"] = _num(g, "Closed RR") if _num(g, "Closed RR") is not None else pd.to_numeric(g.get("Closed RR"), errors="coerce")
@@ -610,7 +610,7 @@ def _discipline_section(df: pd.DataFrame, styler) -> None:
         rf = g["Rules Followed?"].astype(str).str.strip().str.lower().isin(["true", "yes", "__yes__", "1"])
         rows = _two(rf, "Rules followed", "Rules broken")
         if rows is not None:
-            st.markdown("#### Rules Followed vs Broken")
+            st.markdown("#### Rules followed vs broken")
             _tiles(rows); did = True
     if "A+ Setup?" in g.columns:
         ap = g["A+ Setup?"].astype(str).str.strip().str.lower().eq("yes")
@@ -618,7 +618,7 @@ def _discipline_section(df: pd.DataFrame, styler) -> None:
         if rows is not None:
             if did:
                 st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
-            st.markdown("#### A+ Setups vs The Rest")
+            st.markdown("#### A+ setups vs the rest")
             _tiles(rows); did = True
     if not did:
         t._unavailable("Discipline Scorecard")
@@ -639,7 +639,7 @@ def _discipline_section(df: pd.DataFrame, styler) -> None:
 
 def _direction_section(df: pd.DataFrame, styler) -> None:
     t = _t()
-    st.markdown("### Long vs Short")
+    st.markdown("### Long vs short")
     st.caption("Expectancy, win rate and net R by trade direction.")
     rows = _cat_stats(df, "Direction")
     if rows is None or len(rows) == 0:
@@ -664,7 +664,7 @@ def _holdtime_section(df: pd.DataFrame, styler) -> None:
     rows = _cat_stats(g, "__cat", min_n=3)
     if rows is not None:
         rows = rows.assign(__o=rows["Category"].map(lambda v: labels.index(v) if v in labels else 9)).sort_values("__o").drop(columns="__o")
-    _line_metric(rows, "Hold-Time Window", styler, value="Avg R", x_order=labels,
+    _line_metric(rows, "Hold-time window", styler, value="Avg R", x_order=labels,
                  x_title="Hold time",
                  caption="Average R by how long trades were held. Read as description, not advice: "
                          "hold time is decided by the exit, so winners naturally sit in longer windows.")
@@ -680,7 +680,7 @@ def _spread_section(df: pd.DataFrame, styler) -> None:
     g = g[pd.notna(g["Spread"]) & pd.notna(g["R"])]
     if len(g) < 5 or g["Spread"].nunique() < 2:
         return
-    st.markdown("### Spread vs Outcome")
+    st.markdown("### Spread vs outcome")
     st.caption("Each dot is a trade: entry spread vs realised R. The purple trend line shows whether "
                "wide spreads (news / Asia) are eating your edge.")
     g["OutcomeC"] = _outcome(g, "R")
@@ -716,7 +716,7 @@ def _spread_section(df: pd.DataFrame, styler) -> None:
 
 def _missed_runner_section(df: pd.DataFrame, styler) -> None:
     t = _t()
-    st.markdown("### Missed Runners")
+    st.markdown("### Missed runners")
     st.caption("Trades where you exited and price then hit full TP without you — and the R it left behind.")
     if "Hit Full TP Without You" not in df.columns:
         t._unavailable("Missed Runners"); return

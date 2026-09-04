@@ -24,7 +24,7 @@ CONFLUENCE_OPTIONS = ["DIV", "Sweep", "DIV & Sweep"]
 # Psychology thresholds
 OVERTRADE_LIMIT = 3          # max trades per day before flagged
 REVENGE_WINDOW_MINS = 120    # minutes after a loss before next entry = revenge
-ASIA_WARN_THRESHOLD = 45.0   # % of trades in Asia before session alert fires
+ASIA_WARN_THRESHOLD = 45.0   # % of trades in the weakest session before the balance alert fires
 
 # ── Schema helpers ────────────────────────────────────────────────────────────
 def _get_schema() -> str:
@@ -1237,9 +1237,16 @@ def _alltime_card(f: pd.DataFrame, styler) -> None:
                                 scale=alt.Scale(domain=["good", "bad"],
                                                 range=["#16a34a", "#ef4444"])),
                 tooltip=[alt.Tooltip("Month:N"), alt.Tooltip("Net:Q", format="+.2f")])
+            _yl = alt.Y("Net:Q", scale=alt.Scale(domain=dom))
+            # labels sit ON TOP of the target/stop rules, with a canvas-coloured
+            # halo so a bar near the target line stays readable (the dashed
+            # rule used to run straight through "+4.8R")
+            halo = base.mark_text(dy=-12, fontSize=12, fontWeight="bold", color="#ffffff",
+                                  stroke="#ffffff", strokeWidth=5).encode(
+                x=xenc, y=_yl, text="Lab:N")
             txt = base.mark_text(dy=-12, fontSize=12, fontWeight="bold", color="#334155").encode(
-                x=xenc, y=alt.Y("Net:Q", scale=alt.Scale(domain=dom)), text="Lab:N")
-            lays = [bars, txt,
+                x=xenc, y=_yl, text="Lab:N")
+            lays = [bars,
                     alt.Chart(alt.Data(values=[{"y": 0}]))
                     .mark_rule(color="#cbd5e1", strokeWidth=1.5).encode(y=alt.Y("y:Q", title=None))]
             _rp_a = _risk_pct(g)
@@ -1252,6 +1259,7 @@ def _alltime_card(f: pd.DataFrame, styler) -> None:
                 lays.append(alt.Chart(alt.Data(values=[{"y": _stop_line}]))
                             .mark_rule(color="#ef4444", strokeDash=[6, 5], strokeWidth=2)
                             .encode(y=alt.Y("y:Q", title=None)))
+            lays += [halo, txt]
             st.altair_chart(styler(alt.layer(*lays).properties(height=300)),
                             use_container_width=True)
             if unit == "R":
@@ -1329,7 +1337,7 @@ def _account_comparison_tab(f: pd.DataFrame, styler):
             if _vals.nunique() <= 1:
                 return
     st.markdown('<div class="section">', unsafe_allow_html=True)
-    st.markdown("### Account Comparison")
+    st.markdown("### Account comparison")
 
     if f is None or f.empty:
         _empty_note("Nothing matches these filters — widen them to see trades here.")
@@ -1459,7 +1467,7 @@ def _early_close_tab(df: pd.DataFrame, styler):
     net_impact    = be_net + win_left
     efficiency    = (win_captured / win_target * 100) if win_target > 0 else 0.0
 
-    st.markdown("### Early Close Profitability")
+    st.markdown("### Early close profitability")
     st.caption(
         "How much R your early close decisions saved vs. BE trades, "
         "and how much you left on the table vs. win trades."
@@ -1627,7 +1635,11 @@ def _early_close_tab(df: pd.DataFrame, styler):
 # ── Psychology helpers ───────────────────────────────────────────────────────
 
 def _psych_session_alert(df: pd.DataFrame, styler) -> None:
-    st.markdown("### Session Redistribution")
+    """Share of trades per session, with the overweight alarm on WHICHEVER
+    session is the weakest — not a hard-coded Asia rule, so any template's
+    session vocabulary works."""
+    import html as _hh
+    st.markdown("### Session balance")
     sess_col = next((c for c in ["Session Norm", "Session"] if c in df.columns), None)
     if sess_col is None:
         _unavailable("Sessions")
@@ -1640,49 +1652,44 @@ def _psych_session_alert(df: pd.DataFrame, styler) -> None:
         return
     total = len(g)
     counts = g["__sess"].value_counts()
-    asia_n, london_n, ny_n = int(counts.get("Asia",0)), int(counts.get("London",0)), int(counts.get("New York",0))
-    asia_pct = round(asia_n/max(1,total)*100,1)
-    lon_pct  = round(london_n/max(1,total)*100,1)
-    ny_pct   = round(ny_n/max(1,total)*100,1)
+    sessions = list(counts.index[:4])
 
     def _swr(name):
-        sub = g[(g["__sess"]==name) & g["Outcome"].isin(["Win","BE","Loss"])]
-        return round(sub["Outcome"].eq("Win").sum()/max(1,len(sub))*100,1) if not sub.empty else None
+        sub = g[(g["__sess"] == name) & g["Outcome"].isin(["Win", "BE", "Loss"])]
+        if len(sub) < 8:
+            return None
+        return round(sub["Outcome"].eq("Win").sum() / max(1, len(sub)) * 100, 1)
 
-    asia_wr, london_wr, ny_wr = _swr("Asia"), _swr("London"), _swr("New York")
+    stats = {name: (int(counts[name]), round(int(counts[name]) / max(1, total) * 100, 1), _swr(name))
+             for name in sessions}
+    rated = {k: v for k, v in stats.items() if v[2] is not None}
+    weakest = min(rated, key=lambda k: rated[k][2]) if len(rated) >= 2 else None
+    strongest = max(rated, key=lambda k: rated[k][2]) if len(rated) >= 2 else None
+    overweight = weakest if (weakest and stats[weakest][1] > ASIA_WARN_THRESHOLD) else None
 
-    k1, k2, k3 = st.columns(3)
-    with k1:
-        col = "#ef4444" if asia_pct > ASIA_WARN_THRESHOLD else "#4800ff"
-        wr_s = f" · {asia_wr}% WR" if asia_wr is not None else ""
-        st.markdown(f"<div class='kpi'><div class='label'>Asia</div>"
-                    f"<div class='value' style='color:{col}'>{asia_pct}%</div>"
-                    f"<div class='muted'>{asia_n} trades{wr_s}</div></div>", unsafe_allow_html=True)
-    with k2:
-        wr_s = f" · {london_wr}% WR" if london_wr is not None else ""
-        st.markdown(f"<div class='kpi'><div class='label'>London</div>"
-                    f"<div class='value' style='color:#4800ff'>{lon_pct}%</div>"
-                    f"<div class='muted'>{london_n} trades{wr_s}</div></div>", unsafe_allow_html=True)
-    with k3:
-        wr_s = f" · {ny_wr}% WR" if ny_wr is not None else ""
-        st.markdown(f"<div class='kpi'><div class='label'>New York</div>"
-                    f"<div class='value' style='color:#4800ff'>{ny_pct}%</div>"
-                    f"<div class='muted'>{ny_n} trades{wr_s}</div></div>", unsafe_allow_html=True)
+    if overweight:
+        _n, _pct, _wr = stats[overweight]
+        _swr_best = stats[strongest][2]
+        extra = round(_n * ((_swr_best - _wr) / 100), 1)
+        _insight_box(f"<b>{overweight} is overweight</b> — {_pct}% of your trades sit in your "
+                     f"weakest session ({_wr}% win vs {_swr_best}% in {strongest}). Moving those "
+                     f"entries to {strongest} would have meant roughly <b>+{extra} wins</b> this period.", "bad")
+    elif weakest:
+        _insight_box(f"Session balance healthy — your weakest session ({weakest}) holds "
+                     f"{stats[weakest][1]}% of trades, under the {ASIA_WARN_THRESHOLD:.0f}% line.", "good")
 
-    if asia_pct > ASIA_WARN_THRESHOLD and london_wr and asia_wr:
-        extra = round(asia_n*((london_wr-asia_wr)/100),1)
-        _insight_box(f"<b>Asia overweight</b> — {asia_pct}% of trades (threshold {ASIA_WARN_THRESHOLD}%). "
-                     f"London win rate <b>{london_wr}%</b> vs Asia <b>{asia_wr}%</b>. "
-                     f"Redistributing Asia trades to London = approx <b>+{extra} wins</b> this period.", "bad")
-    elif asia_pct > ASIA_WARN_THRESHOLD:
-        _insight_box(f"<b>Asia overweight</b> — {asia_pct}% of trades. Shift toward London open.", "warn")
-    else:
-        _insight_box(f"Session balance healthy — Asia at {asia_pct}%, within {ASIA_WARN_THRESHOLD}% threshold.", "good")
-
-    # The three chips above already carry these percentages; a bar chart of the
-    # same numbers is the same stat twice. The threshold lives in the caption.
-    st.markdown(f"<div class='muted'>Asia stays under {ASIA_WARN_THRESHOLD}% of trades \u2014 "
-                "red means over.</div>", unsafe_allow_html=True)
+    cols = st.columns(max(1, len(sessions)))
+    for col_, name in zip(cols, sessions):
+        _n, _pct, _wr = stats[name]
+        with col_:
+            colr = "#ef4444" if name == overweight else "#4800ff"
+            wr_s = f" · {_wr}% WR" if _wr is not None else ""
+            st.markdown(f"<div class='kpi'><div class='label'>{_hh.escape(str(name))}</div>"
+                        f"<div class='value' style='color:{colr}'>{_pct}%</div>"
+                        f"<div class='muted'>{_n} trades{wr_s}</div></div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='muted'>Share of trades per session · red = more than "
+                f"{ASIA_WARN_THRESHOLD:.0f}% of your trades in your weakest session.</div>",
+                unsafe_allow_html=True)
 
 
 def _psych_mental_state_gate(df: pd.DataFrame, styler) -> None:
@@ -1705,8 +1712,8 @@ def _psych_mental_state_gate(df: pd.DataFrame, styler) -> None:
         rows.append({"State":state,"Trades":len(sub),"Win Rate":wr,"Wrong Bias %":wb})
     if not rows:
         return  # states logged but none with 3+ trades yet — stay silent
-    st.divider()
-    st.markdown("### Mental State Gate")
+    _gap(14)
+    st.markdown("### Mental state gate")
     for col, row in zip(st.columns(len(rows)), rows):
         c = "#f59e0b" if row["State"]=="Okay" else "#16a34a" if row["State"]=="Good" else "#6b7280"
         badge = " ⚠" if row["State"]=="Okay" else ""
@@ -1751,8 +1758,8 @@ def _psych_bad_beat_tracker(df: pd.DataFrame) -> None:
     n_bb, total = len(bbs), len(g)
     if n_bb == 0:
         return  # nothing to track — stay silent instead of a zero wall
-    st.divider()
-    st.markdown("### Bad Beat Tracker")
+    _gap(14)
+    st.markdown("### Bad beat tracker")
     bb_pct = round(n_bb/max(1,total)*100,1)
     recent = "—"
     dcol = next((c for c in ["Date & Time","Day/Time/Date of Trade","Date","Datetime"] if c in g.columns), None)
@@ -1794,8 +1801,10 @@ def _psych_bad_beat_tracker(df: pd.DataFrame) -> None:
 
 
 def _psych_3sl_compliance(df: pd.DataFrame, styler) -> None:
-    st.markdown("### 3SL Compliance")
-    st.caption("Two rules: trades must be inside the 2h session window, and only one trade per session per day.")
+    _gap(14)
+    st.markdown("### Session rules (3SL)")
+    st.caption("Two rules: trades inside the 2h session window, and one trade per session per day "
+               "— read from your journal's session-window field.")
 
     wcol     = next((c for c in ["2h session window","2h Session Window","Session Window"] if c in df.columns), None)
     sess_col = next((c for c in ["Session Norm","Session"] if c in df.columns), None)
@@ -2088,7 +2097,6 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
     _cap = int(st.session_state.get("ea_m_cap", 12))
     _month_n = int((g["__local_ts"].dt.to_period("M") == pd.Timestamp.now().to_period("M")).sum())
 
-    st.markdown("### Discipline")
     k1, k2, k3, k4 = st.columns(4)
     with k1:
         st.markdown(f"""
@@ -2129,7 +2137,7 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
               <div class='muted'>{round(n_flagged / max(1, n_total) * 100, 1)}% of all trades</div>
             </div>""", unsafe_allow_html=True)
 
-    st.divider()
+    _gap(10)
 
     _all_clear = (int(n_overtrade_days) == 0 and int(n_revenge) == 0
                   and float(discipline_score) >= 100)
@@ -2145,7 +2153,7 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
             f"0 overtrading days \u00b7 0 revenge trades \u00b7 {clean_days} of {total_days} clean days"
             "</div></div></div>", unsafe_allow_html=True)
     else:
-        st.markdown("### Discipline Score Over Time")
+        st.markdown("### Discipline score over time")
 
         day_flags["__date"] = pd.to_datetime(day_flags["__date"])
         day_flags_indexed = day_flags.set_index("__date").sort_index()
@@ -2184,19 +2192,14 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
             else:
                 _insight_box(f"Discipline score is <b>{discipline_score}%</b> — needs attention. "
                              f"{total_days - clean_days} of {total_days} days had rule violations. "
-                             f"The 3SL system exists specifically to eliminate these mechanically — "
-                             f"review the compliance section below.", "bad")
+                             f"Fix the mechanics first — one trade per session, and the session "
+                             f"is over after a loss.", "bad")
         else:
             _empty_note("The rolling view appears once a few trades are logged.")
-
-    st.divider()
 
     raw = df_raw if df_raw is not None and not df_raw.empty else g
     _psych_mental_state_gate(raw, styler)
     _psych_bad_beat_tracker(raw)
-
-    st.divider()
-
     _psych_3sl_compliance(raw, styler)
 
     st.markdown("</div>", unsafe_allow_html=True)
@@ -2249,15 +2252,15 @@ def _two_model_sections(counted: pd.DataFrame) -> bool:
     both = (m1 != "") & (m2 != "")
     pair_labels = m1.where(both, "") + " \u2192 " + m2.where(both, "")
     pair_df = _label_stats(counted[both], pair_labels[both])
-    render_entry_model_table(pair_df.rename(columns={"Entry_Model": "Entry_Model"}),
-                             title="Pairs — Model 1 \u2192 Model 2")
+    render_entry_model_table(pair_df, title="Pairs \u2014 model 1 \u2192 model 2",
+                             first_col_label="Pair")
     c1, c2 = st.columns(2)
     with c1:
         render_entry_model_table(_label_stats(counted, m1),
-                                 title="Model 1 \u2014 structure")
+                                 title="Model 1 \u2014 structure", first_col_label="Model")
     with c2:
         render_entry_model_table(_label_stats(counted, m2),
-                                 title="Model 2 \u2014 trigger")
+                                 title="Model 2 \u2014 trigger", first_col_label="Model")
     return True
 
 
@@ -2302,11 +2305,9 @@ def _entry_models_tab(f: pd.DataFrame, show_table):
                              "Net PnL (R)": net_rr, "Expectancy (R)": ex_rr}))
     if rates:
         df_em = pd.DataFrame(rates).sort_values("Win %", ascending=False)
-        st.markdown("### Entry Model Expectancy")
+        st.markdown("### Entry model expectancy")
         st.caption("Average R per trade by entry model — ranked best → worst.")
-        _flip("em_flip",
-              lambda: _edge_tiles(df_em, "Entry_Model", "Expectancy (R)"),
-              lambda: render_entry_model_table(df_em, title="Entry Model Performance"))
+        # verdict first, evidence under it (the card standard's order)
         df_em3 = df_em[pd.to_numeric(df_em["Trades"], errors="coerce") >= 3]
         if len(df_em3) >= 2 and int(pd.to_numeric(df_em3["Trades"], errors="coerce").max() or 0) >= 8:
             best_em = df_em3.iloc[0]
@@ -2317,6 +2318,9 @@ def _entry_models_tab(f: pd.DataFrame, show_table):
                     f"across {int(best_em['Trades'])} trades. "
                     f"<b>{worst_em['Entry_Model']}</b> is your weakest model at "
                     f"<b>{worst_em['Win %']:.1f}%</b> — consider filtering it out or reviewing entry criteria.", "info")
+        _flip("em_flip",
+              lambda: _edge_tiles(df_em, "Entry_Model", "Expectancy (R)"),
+              lambda: render_entry_model_table(df_em, title=None))
     else:
         _empty_note("Appears once trades have a Win/Loss/BE result.")
     st.markdown("</div>", unsafe_allow_html=True)
@@ -2406,14 +2410,15 @@ def _confluences_tab(f: pd.DataFrame, show_table):
         if conf_df.empty:
             st.markdown("</div>", unsafe_allow_html=True)
             return
-        render_entry_model_table(conf_df.rename(columns={"Confluence": "Entry_Model"}),
-                                 title="Confluence Performance")
+        st.markdown("### Confluences")
         if not conf_df.empty and "Win %" in conf_df.columns:
             best_conf = conf_df.iloc[0]
             _insight_box(
                 f"<b>{best_conf['Confluence']}</b> is your highest-probability confluence at "
                 f"<b>{best_conf['Win %']:.1f}%</b> win rate across {int(best_conf['Trades'])} trades. "
                 f"Prioritise setups where this confluence is present.")
+        render_entry_model_table(conf_df.rename(columns={"Confluence": "Entry_Model"}),
+                                 title=None, first_col_label="Confluence")
     else:
         _empty_note("Appears once trades carry confluence tags.")
     st.markdown("</div>", unsafe_allow_html=True)
@@ -2663,7 +2668,7 @@ def _sessions_tab(f: pd.DataFrame, show_table):
                               **{"Win %": r["win_rate"], "BE %": r["be_rate"], "Loss %": r["loss_rate"],
                                  "Net PnL (R)": net_rr, "Expectancy (R)": ex_rr}))
         df_rates = pd.DataFrame(rates).sort_values("Win %", ascending=False)
-        st.markdown("### Session Expectancy")
+        st.markdown("### Session expectancy")
         st.caption("Average R per trade by session.")
         if not df_rates.empty:
             best = df_rates.iloc[0]
@@ -2675,7 +2680,7 @@ def _sessions_tab(f: pd.DataFrame, show_table):
                     f"Concentrate trade frequency in {best['Session']} and reduce exposure in {worst['Session']}.", "info")
         _flip("sess_flip",
               lambda: _rank_dots(df_rates, "Session", "Expectancy (R)"),
-              lambda: render_session_performance_table(df_rates, title="Session Performance"))
+              lambda: render_session_performance_table(df_rates, title=None))
     st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -2715,7 +2720,7 @@ def _instruments_tab(f: pd.DataFrame, show_table):
                             "Net PnL (R)": net_rr, "Expectancy (R)": ex_rr}))
     if rows:
         inst_df = pd.DataFrame(rows).sort_values("Win %", ascending=False).reset_index(drop=True)
-        render_entry_model_table(inst_df, title="Asset Performance")
+        st.markdown("### Assets")
         if not inst_df.empty:
             best_inst = inst_df.iloc[0]
             worst_inst = inst_df.iloc[-1]
@@ -2724,8 +2729,9 @@ def _instruments_tab(f: pd.DataFrame, show_table):
                     f"<b>{best_inst['Instrument']}</b> is your best-performing asset at "
                     f"<b>{best_inst['Win %']:.1f}%</b> win rate. "
                     f"<b>{worst_inst['Instrument']}</b> trails at <b>{worst_inst['Win %']:.1f}%</b>. "
-                    f"Focus on assets where your system has trending HTF conditions — "
-                    f"the playbook principle of switching pairs when conditions don't suit your edge.")
+                    f"Focus on the assets where your system behaves — and switch when "
+                    f"conditions stop suiting your edge.")
+        render_entry_model_table(inst_df, title=None)
     else:
         _empty_note("No instrument stats available.")
     st.markdown("</div>", unsafe_allow_html=True)
@@ -2755,17 +2761,12 @@ def _time_days_tab(f: pd.DataFrame, show_table):
 
     perf = (df_days.groupby("__Day").apply(_agg_day).reset_index()
             .rename(columns={"__Day": "Day"}))
-    st.markdown("### Day-of-Week Expectancy")
+    st.markdown("### Day of week")
     from edge_analysis.ui.mt5_tabs import _line_metric
     from edge_analysis.ui.theme import get_chart_styler
     _line_rows = perf.copy()
     _line_rows["Avg R"] = pd.to_numeric(_line_rows.get("Expectancy (R)"), errors="coerce")
     _line_rows["Category"] = _line_rows["Day"].astype(str).str[:3]
-    _flip("days_flip",
-          lambda: _line_metric(_line_rows, "", get_chart_styler(), value="Avg R",
-                               x_order=["Mon", "Tue", "Wed", "Thu", "Fri"], x_title=""),
-          lambda: render_day_performance_table(perf.sort_values("Day"),
-                                               title="Day Performance (Mon\u2013Fri)"))
     if not perf.empty and "Win %" in perf.columns:
         best_day = perf.loc[perf["Win %"].idxmax()]
         worst_day = perf.loc[perf["Win %"].idxmin()]
@@ -2775,6 +2776,10 @@ def _time_days_tab(f: pd.DataFrame, show_table):
                 f"win rate ({int(best_day['Trades'])} trades). "
                 f"<b>{worst_day['Day']}</b> is your weakest at <b>{worst_day['Win %']:.1f}%</b>. "
                 f"Consider reducing trade frequency on {worst_day['Day']}.")
+    _flip("days_flip",
+          lambda: _line_metric(_line_rows, "", get_chart_styler(), value="Avg R",
+                               x_order=["Mon", "Tue", "Wed", "Thu", "Fri"], x_title=""),
+          lambda: render_day_performance_table(perf.sort_values("Day"), title=None))
     st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -2801,7 +2806,7 @@ def _gap_alignment_tab(f: pd.DataFrame, show_table):
                             "Net PnL (R)": net_rr, "Expectancy (R)": ex_rr}))
     if rows:
         render_entry_model_table(pd.DataFrame(rows).sort_values("Entry_Model").reset_index(drop=True),
-                                 title="GAP Alignment")
+                                 title="GAP alignment", first_col_label="GAP alignment")
     else:
         _empty_note("No GAP Alignment stats available.")
     st.markdown("</div>", unsafe_allow_html=True)
@@ -2852,7 +2857,7 @@ def _target_rr_tab(f: pd.DataFrame, show_table):
         df_rr = (df_rr.sort_values(["_sort_num", "Target_RR"], na_position="last")
                  .drop(columns=["_sort_num"]).reset_index(drop=True)
                  .rename(columns={"Target_RR": "Entry_Model"}))
-        render_entry_model_table(df_rr, title="Risk to Reward")
+        render_entry_model_table(df_rr, title="Target R:R", first_col_label="Target R:R")
     else:
         _empty_note("No Target RR stats available.")
     st.markdown("</div>", unsafe_allow_html=True)
@@ -3126,7 +3131,7 @@ def _entry_criteria(f: pd.DataFrame) -> None:
     if not rows:
         return
     st.markdown("### Entry criteria")
-    st.caption("Each criterion you log, measured when it was present \u00b7 min 3 trades.")
+    st.caption("Each criterion you log, measured when it was present \u00b7 under 3 trades show dimmed.")
     if len(rows) >= 2:
         best = max(rows, key=lambda r: r["Avg R"])
         worst = min(rows, key=lambda r: r["Avg R"])
@@ -3137,8 +3142,8 @@ def _entry_criteria(f: pd.DataFrame) -> None:
                 f"<b>{worst['Category']}</b> trails at {worst['Avg R']:+.2f}R.")
     _flip("crit_flip",
           lambda: _edge_tiles(rows, "Category", "Avg R"),
-          lambda: render_entry_model_table(pd.DataFrame(trows),
-                                           title="Entry criteria \u2014 full numbers"))
+          lambda: render_entry_model_table(pd.DataFrame(trows), title=None,
+                                           first_col_label="Criterion"))
 
 
 def _breaker_strip(df_raw: pd.DataFrame, terse: bool = False) -> None:
@@ -3349,13 +3354,13 @@ def _confluence_board(f: pd.DataFrame, scope: str = "entry") -> None:
     if not rows:
         return
     if scope == "entry":
-        st.markdown("### Confluence Board")
+        st.markdown("### Confluence board")
         st.caption("Your entry criteria, ranked by what each is actually worth per trade "
-                   "(min 3 trades). Green = stack these. Red = these cost you.")
+                   "(3+ trades each). Green = stack these. Red = these cost you.")
     else:
-        st.markdown("### External Factors Board")
+        st.markdown("### External factors board")
         st.caption("Market conditions around your trades — volatility, news and gaps — "
-                   "ranked by average R (min 3 trades).")
+                   "ranked by average R (3+ trades each).")
     d = pd.DataFrame(rows).sort_values("Avg R", ascending=False)
     if len(d) > 18:
         d = pd.concat([d.head(9), d.tail(9)])
@@ -3406,7 +3411,7 @@ def _loss_postmortem(f: pd.DataFrame) -> None:
     losses = losses[~losses["__why"].str.lower().isin(["", "nan", "none", "na"])]
     if losses.empty:
         return
-    st.markdown("### Loss Post-Mortem")
+    st.markdown("### Loss post-mortem")
     prose = bool(losses["__why"].str.len().median() > 24)
     if prose:
         st.caption("Your written loss notes, grouped into themes \u2014 ranked by the R they cost. "
@@ -3421,7 +3426,7 @@ def _loss_postmortem(f: pd.DataFrame) -> None:
         rows.append({"Category": str(why), "Avg R": round(float(sub["__rr"].mean()), 2),
                      "Trades": len(sub), "Net R": round(float(sub["__rr"].sum()), 1)})
     d = pd.DataFrame(rows).sort_values("Net R")
-    _rank_dots(d, "Category", "Net R", fmt="+.1f")
+    _rank_dots(d, "Category", "Net R", fmt="+.1f", ascending=True)
     worst = d.iloc[0]
     _wn = int(worst["Trades"])
     if prose:
@@ -3444,7 +3449,7 @@ _EA_GREEN, _EA_RED, _EA_GREY = "#16a34a", "#ef4444", "#9ca3af"
 
 _EA_VIZ_CSS = """<style>
 .ea-pb{display:flex;flex-direction:column;gap:7px;margin:6px 0 10px;}
-.ea-pb-row{display:flex;align-items:center;gap:10px;}
+.ea-pb-row.ea-dim{opacity:.45;}.ea-pb-row{display:flex;align-items:center;gap:10px;}
 .ea-pb-lab{flex:0 0 34%;max-width:230px;min-width:0;text-align:right;font-size:13px;font-weight:600;
   color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .ea-pb-n{color:#64748b;font-weight:500;font-size:11px;margin-left:6px;}
@@ -3479,16 +3484,17 @@ def _edge_color(v: float) -> str:
     return _EA_GREY
 
 
-def _rank_frame(rows, cat_col, val_col):
+def _rank_frame(rows, cat_col, val_col, ascending: bool = False):
     d = pd.DataFrame(rows).copy()
     d["__v"] = pd.to_numeric(d[val_col], errors="coerce")
-    return d[d["__v"].notna()].sort_values("__v", ascending=False).reset_index(drop=True)
+    return d[d["__v"].notna()].sort_values("__v", ascending=ascending).reset_index(drop=True)
 
 
-def _rank_dots(rows, cat_col, val_col, fmt="+.2f", suffix="R") -> None:
-    """House power bars: diverging from a dashed zero line, green right / red left."""
+def _rank_dots(rows, cat_col, val_col, fmt="+.2f", suffix="R", ascending: bool = False) -> None:
+    """House power bars: diverging from a dashed zero line, green right / red left.
+    `ascending=True` puts the biggest bill first (cost rankings)."""
     import html as _h
-    d = _rank_frame(rows, cat_col, val_col)
+    d = _rank_frame(rows, cat_col, val_col, ascending=ascending)
     if d.empty:
         return
     mx = max(abs(float(d["__v"].max())), abs(float(d["__v"].min())), 1e-9)
@@ -3500,6 +3506,9 @@ def _rank_dots(rows, cat_col, val_col, fmt="+.2f", suffix="R") -> None:
         if "Trades" in d.columns and pd.notna(r.get("Trades")):
             chip = f'<span class="ea-pb-n">{int(r["Trades"])}</span>'
         name = _h.escape(str(r[cat_col]))
+        # under-3 samples show but sit back (show-all ruling, same as tables)
+        _small = ("Trades" in d.columns and pd.notna(r.get("Trades"))
+                  and int(r["Trades"]) < 3)
         if v >= 0:
             bar = (f'<div class="ea-pb-bar" style="margin-left:50%;width:{w:.1f}%;'
                    f'background:{c};border-radius:0 7px 7px 0;"></div>')
@@ -3507,7 +3516,8 @@ def _rank_dots(rows, cat_col, val_col, fmt="+.2f", suffix="R") -> None:
             bar = (f'<div class="ea-pb-bar" style="margin-left:{50 - w:.1f}%;width:{w:.1f}%;'
                    f'background:{c};border-radius:7px 0 0 7px;"></div>')
         out.append(
-            f'<div class="ea-pb-row"><div class="ea-pb-lab" title="{name}">{name}{chip}</div>'
+            f'<div class="ea-pb-row{" ea-dim" if _small else ""}">'
+            f'<div class="ea-pb-lab" title="{name}">{name}{chip}</div>'
             f'<div class="ea-pb-track">{bar}<div class="ea-pb-zero"></div></div>'
             f'<div class="ea-pb-val" style="color:{c};">{v:{fmt}}{suffix}</div></div>')
     out.append("</div>")
@@ -3646,9 +3656,9 @@ def _liquidity_windows(f: pd.DataFrame) -> None:
                      "Trades": len(sub)})
     if len(rows) < 2:
         return
-    st.markdown("### Liquidity Windows")
-    st.caption("Your average R by market-volume tier (approximate gold/FX volume in your local "
-               "time) \u00b7 min 3 trades per window.")
+    st.markdown("### Liquidity windows")
+    st.caption("Your average R by market-volume tier (approximate session volume in your local "
+               "time) \u00b7 windows with 3+ trades.")
     _rank_dots(pd.DataFrame(rows), "Window", "Avg R")
     d_ = {r["Window"]: r for r in rows}
     pk = next((v for k, v in d_.items() if k.startswith("Peak")), None)
@@ -3730,28 +3740,21 @@ def _conditions_tab(f: pd.DataFrame, show_table):
                 cells[state] = ("\u2014", "#c3c9d4")
         grid.append((tf_titles.get(col, col), cells))
     bar_rows = []
-    hidden = 0
     for col in present_cols:
         col_data = counted[counted[col].notna()].copy()
         for state in ("Trending", "Ranging"):
             grp = col_data[col_data[col].astype(str).str.contains(state, case=False, na=False)]
             rr = grp["__rr"].dropna()
-            if len(grp) >= 3 and len(rr) > 0:
+            if len(rr) > 0:
                 avg = float(rr.mean())
+                # every state shows; under 3 trades the bar renders dimmed
                 bar_rows.append({"Category": f"{tf_titles.get(col, col)} \u00b7 {state}",
                                  "Avg R": round(avg, 2), "Trades": len(grp)})
-                all_rows.append({"Condition": f"{tf_titles.get(col, col)} \u00b7 {state}",
-                                 "Expectancy": avg, "N": len(grp)})
-            elif len(grp) > 0:
-                hidden += 1
-    if not bar_rows:
-        st.caption("Not enough logged conditions yet \u2014 rows appear at 3+ trades per state.")
-    else:
-        _rank_dots(bar_rows, "Category", "Avg R")
-        if hidden:
-            st.caption(f"+{hidden} more state{'s' if hidden != 1 else ''} with under 3 trades "
-                       "\u2014 shown once they have a sample.")
+                if len(grp) >= 3:
+                    all_rows.append({"Condition": f"{tf_titles.get(col, col)} \u00b7 {state}",
+                                     "Expectancy": avg, "N": len(grp)})
 
+    # verdict first (8+ trades a side), then the evidence
     all_rows = [r for r in all_rows if r.get("N", 0) >= 8]
     if all_rows:
         best_ind = max(all_rows, key=lambda x: x["Expectancy"])
@@ -3762,6 +3765,10 @@ def _conditions_tab(f: pd.DataFrame, show_table):
             f"Worst: <b>{worst_ind['Condition']}</b> "
             f"(<b>{worst_ind['Expectancy']:+.2f}R</b>)."
         )
+    if not bar_rows:
+        _empty_note("No market states logged with a result yet.")
+    else:
+        _rank_dots(bar_rows, "Category", "Avg R")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -3830,18 +3837,19 @@ def _timeframes_tab(f: pd.DataFrame, show_table):
             _tfp = _label_stats(counted[_bothtf],
                                 (_t1 + " \u2192 " + _t2)[_bothtf])
             render_timeframe_table(_tfp, title="Timeframe pairing \u2014 "
-                                               "structure \u2192 trigger")
+                                               "structure \u2192 trigger",
+                                   first_col_label="Pairing")
             st.markdown("</div>", unsafe_allow_html=True)
             return
-    render_timeframe_table(tf_df, title="Timeframe Performance")
+    st.markdown("### Timeframes")
     if (not tf_df.empty and "Win %" in tf_df.columns
             and int(pd.to_numeric(tf_df["Trades"], errors="coerce").max() or 0) >= 8):
         best_tf = tf_df.loc[tf_df["Win %"].idxmax()]
         _insight_box(
             f"<b>{best_tf['Entry_Model']}</b> is your highest-performing timeframe at "
             f"<b>{best_tf['Win %']:.1f}%</b> win rate across {int(best_tf['Trades'])} trades. "
-            f"Concentrating executions on your best timeframe reduces noise and "
-            f"aligns with the 5M-only refinement from your playbook.")
+            f"Concentrating executions on your best timeframe cuts the noise.")
+    render_timeframe_table(tf_df, title=None)
     st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -3854,7 +3862,7 @@ def _coach_tab(f: pd.DataFrame):
 
 # ── Coverage tab ──────────────────────────────────────────────────────────────
 def _render_data_completeness_by_instrument(f_all: pd.DataFrame):
-    st.markdown("### Data Completeness by Instrument")
+    st.markdown("### Data completeness by instrument")
     if f_all is None or f_all.empty:
         _empty_note("No rows for the current filters.")
         return
@@ -3961,7 +3969,7 @@ def render_connect_notion_templates_ui():
     st.markdown("## Connect Notion / Templates")
     c1, c2 = st.columns(2)
     with c1:
-        st.markdown("### My Template")
+        st.markdown("### My template")
         p1 = Path("assets/templates/my_template.csv")
         if p1.exists():
             st.download_button("⬇️ Download My Template (CSV)", data=p1.read_bytes(),
@@ -3969,7 +3977,7 @@ def render_connect_notion_templates_ui():
         else:
             st.warning("Missing: assets/templates/my_template.csv")
     with c2:
-        st.markdown("### TradingPools Template")
+        st.markdown("### TradingPools template")
         p2 = Path("assets/templates/tradingpools_template.csv")
         if p2.exists():
             st.download_button("⬇️ Download TradingPools Template (CSV)", data=p2.read_bytes(),
@@ -4393,7 +4401,7 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
     """, unsafe_allow_html=True)
 
     # ── Monthly breakdown ─────────────────────────────────────────────────────
-    st.markdown("#### Monthly Breakdown")
+    st.markdown("#### Monthly breakdown")
     monthly = monthly_breakdown(active_idx)
 
     years_dict: dict = {}
@@ -4442,7 +4450,7 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
 
     # ── Win rate CI ───────────────────────────────────────────────────────────
     st.markdown("---")
-    st.markdown("#### Win Rate — Confidence vs Sample Size")
+    st.markdown("#### Win rate — confidence vs sample size")
 
     _z = scipy_stats.norm.ppf(0.95)  # 90% two-sided Wilson CI
     sample_sizes = np.arange(10, max(total + 100, 300), 5)
@@ -4931,7 +4939,7 @@ def _refinements_tab(f_perf: pd.DataFrame, df_all_safe: pd.DataFrame, styler):
 def _salty_execution_quality_tab(f: pd.DataFrame) -> None:
     """Show deviation score analysis — available in Salty schema only."""
     st.markdown('<div class="section">', unsafe_allow_html=True)
-    st.markdown("### Execution Quality (Deviation Score)")
+    st.markdown("### Execution quality (deviation score)")
     st.caption("How far your actual entry deviated from your planned entry.")
 
     dev_col = "Deviation Score" if "Deviation Score" in f.columns else None
@@ -4969,7 +4977,7 @@ def _salty_execution_quality_tab(f: pd.DataFrame) -> None:
 
     if rows:
         from edge_analysis.ui.components import render_entry_model_table as _ret
-        _ret(pd.DataFrame(rows), title="Win Rate by Deviation Score")
+        _ret(pd.DataFrame(rows), title="Win rate by deviation score", first_col_label="Deviation")
         if rows[0]["Win %"] > rows[-1]["Win %"]:
             _insight_box(
                 f"Lower deviation scores correlate with higher win rates — "
@@ -4985,7 +4993,7 @@ def _salty_execution_quality_tab(f: pd.DataFrame) -> None:
 def _early_close_tab_salty(df: pd.DataFrame, styler):
     """Simplified early close section for Salty schema (no Targeted RR column)."""
     st.markdown('<div class="section">', unsafe_allow_html=True)
-    st.markdown("### Early Close Profitability")
+    st.markdown("### Early close profitability")
 
     if df is None or df.empty:
         _unavailable("Early Close Analysis")
@@ -5150,7 +5158,7 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
                     # the % headline above already states the return, on the
                     # month's opening balance — no second, differently-based copy
                 cards.append(
-                    f"<div style='flex:1;min-width:200px;max-width:290px;background:#fbfcfe;"
+                    f"<div style='flex:1;min-width:168px;max-width:300px;background:#fbfcfe;"
                     f"border:1px solid #eef0f4;border-left:5px solid {c};"
                     f"border-radius:0 12px 12px 0;padding:13px 16px;'>"
                     f"<div style='font-size:12px;font-weight:700;letter-spacing:0.08em;"

@@ -27,7 +27,7 @@ def _oc(g: pd.DataFrame, rr="__rr") -> pd.Series:
 # ── 1. Exit Optimization Simulator ────────────────────────────────────────────
 def _exit_optimizer(df, styler) -> None:
     t = _t()
-    st.markdown("### Exit Optimization Simulator")
+    st.markdown("### Exit optimisation simulator")
     st.caption("Replays every trade under different fixed R-targets using how far it actually ran (MFE) "
                "and how far it dipped (MAE), to find the target that maximises expectancy. A model, not a "
                "guarantee \u2014 and MFE stops counting at your exit, so on early-closed trades the "
@@ -55,9 +55,11 @@ def _exit_optimizer(df, styler) -> None:
             .encode(x=alt.X("Target:Q", title="Fixed R target"),
                     y=alt.Y("Expectancy:Q", title="Expectancy (R / trade)"),
                     tooltip=["Target:Q", "Expectancy:Q", "Total R:Q"]).properties(height=280))
-    cur = alt.Chart(alt.Data(values=[{"y": actual_exp}])).mark_rule(color="#64748b", strokeDash=[4, 4]).encode(y=alt.Y("y:Q", title=None))
+    # every layer names the axes identically — a layer with title=None used
+    # to win the merge and the chart shipped with no axis titles at all
+    cur = alt.Chart(alt.Data(values=[{"y": actual_exp}])).mark_rule(color="#64748b", strokeDash=[4, 4]).encode(y=alt.Y("y:Q", title="Expectancy (R / trade)"))
     best_data = alt.Chart(alt.Data(values=[{"bx": float(best["Target"]), "by": float(best["Expectancy"])}]))
-    best_pt = best_data.mark_point(filled=True, size=220, color="#16a34a", stroke="#fff", strokeWidth=2.5).encode(x=alt.X("bx:Q", title=None), y=alt.Y("by:Q", title=None))
+    best_pt = best_data.mark_point(filled=True, size=220, color="#16a34a", stroke="#fff", strokeWidth=2.5).encode(x=alt.X("bx:Q", title="Fixed R target"), y=alt.Y("by:Q", title="Expectancy (R / trade)"))
     st.altair_chart(styler(alt.layer(line, cur, best_pt)), use_container_width=True)
     c1, c2, c3 = st.columns(3)
     with c1: _kpi("Your actual expectancy", f"{actual_exp:+.2f}R", f"{actual_total:+.0f}R total")
@@ -71,13 +73,14 @@ def _exit_optimizer(df, styler) -> None:
                        f"Your discretionary exits may be leaving money on the table.", "warn")
     else:
         t._insight_box(f"Your exits (<b>{actual_exp:+.2f}R</b>) are already near the optimal fixed target — management is holding up.", "good")
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
     st.caption("Dashed line = your actual expectancy. Model assumes a target is banked if MFE reached it and a −1R stop otherwise.")
 
 
 # ── 2. Stop-Loss Optimizer (MAE) ──────────────────────────────────────────────
 def _mae_stop_optimizer(df, styler) -> None:
     t = _t()
-    st.markdown("### Stop-Loss Optimizer (MAE)")
+    st.markdown("### Stop-loss optimiser (MAE)")
     st.caption("How far your winners actually dipped before working. A tighter stop that still survives most winners "
                "improves your R:R.")
     mae = _num(df, "MAE (R)"); rr = _num(df, "Closed RR")
@@ -96,13 +99,16 @@ def _mae_stop_optimizer(df, styler) -> None:
     rec = float(keep.iloc[0]["Stop (R)"]) if not keep.empty else float(rdf["Stop (R)"].max())
     vals = t._to_alt_values(rdf)
     area = (alt.Chart(alt.Data(values=vals)).mark_area(opacity=0.12, color=PURPLE)
-            .encode(x=alt.X("Stop (R):Q", title="Stop distance (R)"), y=alt.Y("Winners surviving %:Q")))
+            .encode(x=alt.X("Stop (R):Q", title="Stop distance (R)"),
+                    y=alt.Y("Winners surviving %:Q", title="Winners surviving (%)")))
     line = (alt.Chart(alt.Data(values=vals)).mark_line(color=PURPLE, strokeWidth=2)
-            .encode(x="Stop (R):Q", y=alt.Y("Winners surviving %:Q", scale=alt.Scale(domain=[0, 100])),
+            .encode(x=alt.X("Stop (R):Q", title="Stop distance (R)"),
+                    y=alt.Y("Winners surviving %:Q", title="Winners surviving (%)",
+                            scale=alt.Scale(domain=[0, 100])),
                     tooltip=["Stop (R):Q", "Winners surviving %:Q"]))
     rec_surv = float(rdf.loc[rdf["Stop (R)"] == rec, "Winners surviving %"].iloc[0]) if (rdf["Stop (R)"] == rec).any() else 100.0
     rec_data = alt.Chart(alt.Data(values=[{"bx": rec, "by": rec_surv}]))
-    rec_pt = rec_data.mark_point(filled=True, size=220, color="#16a34a", stroke="#fff", strokeWidth=2.5).encode(x=alt.X("bx:Q", title=None), y=alt.Y("by:Q", title=None))
+    rec_pt = rec_data.mark_point(filled=True, size=220, color="#16a34a", stroke="#fff", strokeWidth=2.5).encode(x=alt.X("bx:Q", title="Stop distance (R)"), y=alt.Y("by:Q", title="Winners surviving (%)"))
     st.altair_chart(styler(alt.layer(area, line, rec_pt).properties(height=260)), use_container_width=True)
     med = float(mag.median()); p90 = float(mag.quantile(0.9))
     c1, c2, c3 = st.columns(3)
@@ -116,7 +122,7 @@ def _mae_stop_optimizer(df, styler) -> None:
 # ── 3. Monte Carlo on your real R distribution ────────────────────────────────
 def _monte_carlo(df, styler) -> None:
     t = _t()
-    st.markdown("### Monte Carlo — Your Real R Distribution")
+    st.markdown("### Monte Carlo — your real R distribution")
     st.caption("Resamples your actual trade outcomes thousands of times to project equity, risk of ruin, and optimal risk.")
     rr = _num(df, "Closed RR")
     if rr is None:
@@ -255,7 +261,7 @@ def _tilt(df, styler) -> None:
 # ── 5. A-Game vs Everything ───────────────────────────────────────────────────
 def _a_game(df, styler) -> None:
     t = _t()
-    st.markdown("### A-Game vs Everything")
+    st.markdown("### A-game vs everything")
     st.caption("What your stats look like when you trade your best — and what the off-plan trades cost you.")
     g = df.copy()
     g["__rr"] = _num(g, "Closed RR") if _num(g, "Closed RR") is not None else pd.to_numeric(g.get("Closed RR"), errors="coerce")
@@ -308,8 +314,9 @@ def _a_game(df, styler) -> None:
 # ── 6. Hour × Day expectancy heatmap ──────────────────────────────────────────
 def _heatmap_hour_day(df, styler) -> None:
     t = _t()
-    st.markdown("### When You Trade Best")
-    st.caption("Your best and worst trading windows — average R per trade by weekday and hour (Melbourne time), minimum 3 trades.")
+    st.markdown("### When you trade best")
+    st.caption("Your best and worst trading windows — average R per trade by weekday and hour "
+               "(your journal's local time), windows with 3+ trades.")
     g = df.copy()
     g["__rr"] = _num(g, "Closed RR") if _num(g, "Closed RR") is not None else pd.to_numeric(g.get("Closed RR"), errors="coerce")
     hour = _num(df, "Hour (Melb)")
@@ -340,8 +347,9 @@ def _heatmap_hour_day(df, styler) -> None:
 # ── 7. Symbol × Session edge matrix ───────────────────────────────────────────
 def _symbol_session_matrix(df, styler) -> None:
     t = _t()
-    st.markdown("### Where Your Edge Lives")
-    st.caption("Average R per trade by instrument and session — your strongest and weakest combinations, minimum 3 trades.")
+    st.markdown("### Where your edge lives")
+    st.caption("Average R per trade by instrument and session — your strongest and weakest "
+               "combinations, 3+ trades each.")
     g = df.copy()
     g["__rr"] = _num(g, "Closed RR") if _num(g, "Closed RR") is not None else pd.to_numeric(g.get("Closed RR"), errors="coerce")
     sym = next((c for c in ["Instrument", "Pair", "Symbol"] if c in g.columns), None)
@@ -369,7 +377,7 @@ def _symbol_session_matrix(df, styler) -> None:
 # ── 8. Cost drag ──────────────────────────────────────────────────────────────
 def _cost_drag(df, styler) -> None:
     t = _t()
-    st.markdown("### Cost Drag")
+    # the Costs card header already names the section; no second title
     st.caption("How much commission and swap eat into your gross P&L.")
     pnl = _num(df, "PnL"); comm = _num(df, "Commission"); swap = _num(df, "Swap")
     if pnl is None or (comm is None and swap is None):

@@ -1054,6 +1054,15 @@ def inject_theme():
     /* Small-sample rows show but sit back */
     .entry-model-table tr.dim td, .table-wrap tr.dim td {{ opacity: 0.45; }}
     .entry-model-table th {{ white-space: nowrap; }}
+    /* Performance tables: denser, first column gets the room, R by sign */
+    .entry-model-table {{ font-size: 14.5px !important; min-width: 0 !important; }}
+    .entry-model-table thead th {{ padding: 9px 10px !important; font-size: 13px; }}
+    .entry-model-table tbody td {{ padding: 9px 10px !important; }}
+    .entry-model-table th.text, .entry-model-table td.text {{ width: 30%; }}
+    .entry-model-table td.pos {{ color: #16a34a; font-weight: 600; }}
+    .entry-model-table td.neg {{ color: #ef4444; font-weight: 600; }}
+    .ea-tbl-title {{ font-size: 19px !important; font-weight: 800 !important; letter-spacing: -0.01em;
+        color: #0f172a; margin: 0 0 8px !important; padding: 0 !important; }}
 
     /* Live field checklist: cap the tall table, scroll the rest */
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-card-anchor)
@@ -2103,6 +2112,9 @@ div[style*="background: rgb(251, 252, 254)"] {
         background: #232a3a !important;
         color: #9aa4b4 !important;
     }
+    .entry-model-table td.pos { color: #4ade80 !important; }
+    .entry-model-table td.neg { color: #f87171 !important; }
+    .ea-tbl-title { color: #eef1f6 !important; }
     .ea-pb-lab { color: #e5e7eb !important; }
     .ea-pb-n { color: #6b7280 !important; }
     .ea-pb-track { background: #1a1f2b !important; }

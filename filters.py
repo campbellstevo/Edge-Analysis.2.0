@@ -75,12 +75,21 @@ def _render_density_seg():
               else "Everything")
     if st.session_state.get("ea_density_seg") not in ("Focus", "Everything"):
         st.session_state["ea_density_seg"] = _dwant
-    # NO re-sync lock here: it reverted the user's click before the widget
-    # rendered (the r155 restructure changed callback ordering and the lock
-    # started eating every toggle). Value-compare below is the single truth.
+    # Boot guard (r169): until the prefs blob has been read once, the widget
+    # FOLLOWS the stored pref. During the boot reruns the frontend can replay
+    # the radio's default (index 0 = "Focus") into the widget state, and the
+    # value-compare below then flipped a fresh session into Focus mode about
+    # one boot in six (reproduced locally). After boot, the widget is the truth
+    # — no permanent re-sync lock, that one ate every click (r162).
+    if not st.session_state.get("ea_density_booted"):
+        st.session_state["ea_density_seg"] = _dwant
+        if ("ea_prefs" in st.session_state
+                or int(st.session_state.get("ea_prefs_tries", 0) or 0) >= 6):
+            st.session_state["ea_density_booted"] = True
 
     st.markdown('<div class="ea-densityseg"></div>', unsafe_allow_html=True)
     _seg_val = st.radio("Density", ["Focus", "Everything"], key="ea_density_seg",
+                        index=(0 if _dwant == "Focus" else 1),
                         horizontal=True, label_visibility="collapsed",
                         help="Focus shows your track record and what needs work. "
                              "Everything shows all six tabs.")

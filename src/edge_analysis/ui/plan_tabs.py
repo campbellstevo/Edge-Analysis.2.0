@@ -134,7 +134,7 @@ def _yes(g, col):
 def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
     t = _t()
     g = _prep(df_raw)
-    st.markdown("### Trading Plan")
+    # (the card header already says "Trading plan" — no second title)
     if g is None or len(g) < 10:
         t._unavailable("Trading Plan")
         return
@@ -163,6 +163,41 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
     is_ldn = sess.str.contains("London", case=False, na=False) & ~sess.str.contains("Overlap", case=False, na=False)
     is_ny = sess.str.contains("NY|New York", case=False, na=False)
 
+    # Data-derived gates so the checklist reads any journal, not one playbook:
+    # a group "proves" itself with 5+ trades and positive average R. When a
+    # journal is too young to prove anything, the legacy rule stands in.
+    def _proven_groups(series, min_n=5):
+        _st = g.assign(__k=series.astype(str).str.strip()).groupby("__k")["__rr"].agg(["mean", "size"])
+        _st = _st[~_st.index.isin(["", "nan", "None"])]
+        return set(_st[(_st["size"] >= min_n) & (_st["mean"] > 0)].index)
+
+    def _names(items, cap=3):
+        items = sorted(items)
+        return ", ".join(items[:cap]) + (f" +{len(items) - cap}" if len(items) > cap else "")
+
+    _good_sess = _proven_groups(sess)
+    if _good_sess:
+        ok_sess = sess.str.strip().isin(_good_sess)
+        sess_rule = (f"Your proven sessions — {_names(_good_sess)} (from your data)",
+                     ok_sess, "proven", "other")
+    else:
+        sess_rule = ("London or New York — never Asia", (is_ldn | is_ny), "LDN/NY", "other")
+    _tf_series = g.get("Entry Timeframe", g.get("Timeframe", pd.Series("", index=g.index)))
+    _good_tf = _proven_groups(_tf_series)
+    if _good_tf:
+        tf_rule = (f"Your proven timeframes — {_names(_good_tf)} (from your data)",
+                   _tf_series.astype(str).str.strip().isin(_good_tf), "proven TF", "other TF")
+    else:
+        tf_rule = ("5M entries only", _col_contains(g, "Entry Timeframe", "5"), "5M", "other TF")
+    _em_series = g.get("Entry Model", pd.Series("", index=g.index))
+    _good_em = _proven_groups(_em_series)
+    if _good_em:
+        model_rule = (f"Your proven entry models — {_names(_good_em)} (from your data)",
+                      _em_series.astype(str).str.strip().isin(_good_em), "proven", "other")
+    else:
+        model_rule = ("Protected Structure or FBoS", _col_contains(g, "Entry Model", "Protected|FBOS|FBoS"),
+                      "PS/FBoS", "other")
+
     ok_head = _col_contains(g, "Mental State", "Clear|Good")
     ok_aplus = _yes(g, "A+ Setup?")
     exec_col = g.get("Execution/Bias", pd.Series("", index=g.index)).astype(str)
@@ -190,11 +225,11 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
         # fact and would make this gate circular
         ("Bias written down, prepared before entry",
          _yes(g, "Clear Bias/Prepared"), "prepared", "unprepared"),
-        ("London or New York — never Asia", (is_ldn | is_ny), "LDN/NY", "other"),
+        sess_rule,
         ("Inside your profitable hours (from your data)", in_window, "in window", "outside"),
         ("Single entry, structure stop set", ok_single, "single", "multi"),
-        ("5M entries only", ok_5m, "5M", "other TF"),
-        ("Protected Structure or FBoS", ok_model, "PS/FBoS", "other"),
+        tf_rule,
+        model_rule,
         ("True break confirmed", ok_break, "confirmed", "No/NA"),
         (f"Minimum {_min_rr:g}R of room to target"
          + (" (from your data)" if _min_rr_derived else ""),
@@ -208,7 +243,7 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
             f'<div class="ea-verdict ea-verdict-info">'
             f'<span class="ea-verdict-tick">\u25CF</span>'
             f'<span class="ea-verdict-body"><b>Your minimum target: {_min_rr:g}R</b> '
-            f'\u2014 {_min_rr_ev}.</span></div>', unsafe_allow_html=True)
+            f'— {_min_rr_ev}.</span></div>', unsafe_allow_html=True)
     all_pass = pd.Series(True, index=g.index)
     entries = []
     for rule, mask, lab_y, lab_n in gates:
@@ -275,7 +310,8 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
     pf = float(wins / losses) if losses else float("nan")
     st.markdown("#### Where you stand")
     cards = [("PER TRADE", _fmt_r(exp_all), "#0f172a"),
-             ("WHEN TEXTBOOK", _fmt_r(exp_book) + f" · {int(all_pass.sum())} trades",
+             ("WHEN TEXTBOOK", _fmt_r(exp_book) + f" · {int(all_pass.sum())} trades"
+              + (" (tiny sample)" if int(all_pass.sum()) < 8 else ""),
               GREEN if (exp_book == exp_book and exp_book >= 0) else RED),
              ("PROFIT FACTOR", "—" if pf != pf else f"{pf:.2f}", PURPLE)]
     st.markdown("<div style='display:flex;gap:12px;flex-wrap:wrap;margin:6px 0 10px;'>" + "".join(
@@ -402,9 +438,11 @@ def _rules_section(good, bad, need_weekly_cap: float) -> None:
     # recommendations derived from the ranked edge
     recs = []
     for name, v, n in bad[:4]:
-        recs.append((f"avoid:{name}", f"Avoid {name} — costing {v:+.2f}R per trade ({n} trades)"))
+        _nm = name[0].lower() + name[1:] if name[:5] == "Your " else name
+        recs.append((f"avoid:{name}", f"Avoid {_nm} — costing {v:+.2f}R per trade ({n} trades)"))
     for name, v, n in good[:3]:
-        recs.append((f"keep:{name}", f"Stick to {name} — worth {v:+.2f}R per trade ({n} trades)"))
+        _nm = name[0].lower() + name[1:] if name[:5] == "Your " else name
+        recs.append((f"keep:{name}", f"Stick to {_nm} — worth {v:+.2f}R per trade ({n} trades)"))
     recs.append(("cap:week", f"Stop for the week at −{need_weekly_cap:.0f}R"))
 
     active = list(state["custom"]) + [txt for rid, txt in recs if rid in state["accepted"]]
@@ -558,7 +596,7 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
     if grade:
         cards.append(card("WEEK GRADE", grade, "process, not profit", PURPLE))
     elif comps:
-        cards.append(card("WEEK GRADE", "\u2014", f"{n} trade{'s' if n != 1 else ''} — too few to grade",
+        cards.append(card("WEEK GRADE", "—", f"{n} trade{'s' if n != 1 else ''} — too few to grade",
                           "#64748b"))
     if not cards:
         cards = [card("TRADES", f"{n}", f"{n_w}W · {n_be}BE · {n_l}L", "#0f172a"),
