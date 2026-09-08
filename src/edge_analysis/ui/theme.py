@@ -68,6 +68,8 @@ def inject_theme():
     _PROW = _PR + ' [data-testid="stHorizontalBlock"]:has(.ea-prow)'
     _PNI = _PR + ' [data-testid="stNumberInput"]'
     _PNC = _PNI + ' [data-testid="stNumberInputContainer"]'
+    _PRUN = ('div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] '
+             '.ea-projrun)')
 
     # ALL CSS IN ONE PLACE
     st.markdown(f"""
@@ -1179,12 +1181,38 @@ def inject_theme():
     {_PNC} button::before {{ font-size: 19px; font-weight: 500; line-height: 1; }}
     {_PNC} [data-testid="stNumberInputStepDown"]::before {{ content: "\\2212"; }}
     {_PNC} [data-testid="stNumberInputStepUp"]::before {{ content: "+"; }}
+    /* Run row: a quiet note left, the Run button right. Outline until
+       something changes (the page script adds .ea-dirty), then filled. */
+    {_PRUN} {{ margin-top: -8px; }}
+    {_PRUN} .ea-projrun-note {{ font-size: 13px; color: #94a3b8; }}
+    {_PRUN} [data-testid="stFormSubmitButton"] {{ display: flex; justify-content: flex-end; }}
+    {_PRUN} [data-testid="stFormSubmitButton"] > button {{
+        min-height: 38px !important; height: 38px !important; padding: 0 22px !important;
+        border-radius: 10px !important; font-size: 14px !important; font-weight: 700 !important;
+        background: #ffffff !important; color: #4800ff !important;
+        border: 1.5px solid #4800ff !important; box-shadow: none !important;
+        transition: background .15s, color .15s, box-shadow .15s;
+    }}
+    {_PRUN} [data-testid="stFormSubmitButton"] > button:hover {{ background: #f6f4ff !important; }}
+    {_PRUN} [data-testid="stFormSubmitButton"] > button.ea-dirty {{
+        background: #4800ff !important; color: #ffffff !important;
+        box-shadow: 0 0 0 4px rgba(72,0,255,0.16) !important;
+    }}
+    {_PRUN} [data-testid="stFormSubmitButton"] > button.ea-dirty:hover {{ background: #3a00d6 !important; }}
+    {_PRUN} [data-testid="stFormSubmitButton"] > button p {{ color: inherit !important; font-weight: 700 !important; }}
+    /* the zero-height frame that carries the page script */
+    [data-testid="stElementContainer"]:has(> iframe[data-testid="stIFrame"][height="0"]),
+    [data-testid="stElementContainer"]:has(> [data-testid="stIFrame"] > iframe[height="0"]) {{
+        display: none !important;
+    }}
     @media (max-width: 640px) {{
         /* phone: label + value on one line, slider full-width beneath */
         {_PROW} {{ min-height: 34px; margin-top: 4px; }}
         {_PROW} > div:first-child {{ flex: 1 1 auto !important; width: auto !important; }}
         {_PROW} > div:last-child {{ flex: 0 0 176px !important; width: 176px !important; }}
         {_PR} [data-testid="stSlider"] [data-baseweb="slider"] {{ padding: 4px 8px 10px !important; }}
+        {_PRUN} [data-testid="stFormSubmitButton"] > button {{ width: 100% !important; }}
+        {_PRUN} .ea-projrun-note {{ margin-bottom: 6px; }}
     }}
 
     /* Journals page: candidate rows read left-to-right like menu rows */
@@ -2239,6 +2267,15 @@ div[style*="background: rgb(251, 252, 254)"] {
     {_PNC} button {{ background: transparent !important; color: #7d879a !important; }}
     {_PNC} button:hover {{ background: #232a3a !important; color: #e8ebf1 !important; }}
     {_PNC} button:active {{ background: #2a2650 !important; color: #b3a7ff !important; }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-projrun) .ea-projrun-note {{ color: #6b7488 !important; }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-projrun) [data-testid="stFormSubmitButton"] > button {{
+        background: #161b27 !important; color: #b3a7ff !important; border-color: #6d5cff !important;
+    }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-projrun) [data-testid="stFormSubmitButton"] > button:hover {{ background: #1d2331 !important; }}
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-projrun) [data-testid="stFormSubmitButton"] > button.ea-dirty {{
+        background: #4800ff !important; color: #ffffff !important; border-color: #4800ff !important;
+        box-shadow: 0 0 0 4px rgba(120,100,255,0.22) !important;
+    }}
     </style>
     """, unsafe_allow_html=True)
 

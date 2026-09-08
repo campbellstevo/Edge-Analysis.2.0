@@ -2879,68 +2879,167 @@ def _parse_rr_value(v):
     return None
 
 
-def _proj_sync(src: str, dst: str, lo, hi, cast) -> None:
-    """Slider ⇄ number input: copy the widget that just changed onto its twin
-    (runs as an on_change callback, before the script reruns)."""
-    v = st.session_state.get(src)
-    if v is None:
-        return
-    try:
-        v = cast(v)
-    except (TypeError, ValueError):
-        return
-    st.session_state[dst] = min(hi, max(lo, v))
+# Projections inputs: key → (min, max, cast). The slider twin is key + "_s".
+_PROJ_FIELDS = {
+    "proj_balance": (1_000, 200_000, int),
+    "proj_risk":    (0.25, 10.0, float),
+    "proj_wr":      (10, 90, int),
+    "proj_be":      (0, 60, int),
+    "proj_win_rr":  (0.1, 15.0, float),
+    "proj_tpm":     (1, 200, int),
+    "proj_months":  (1, 120, int),
+}
+
+
+def _proj_apply() -> None:
+    """Run button (form submit) callback: settle each row's value and store the
+    applied set the simulation reads. The typed number wins when it changed;
+    otherwise a moved slider; otherwise the last applied value. Both widgets
+    are then written so they agree on the rerun."""
+    applied = dict(st.session_state.get("proj_applied") or {})
+    for key, (lo, hi, cast) in _PROJ_FIELDS.items():
+        skey = key + "_s"
+        old = applied.get(key)
+        num = st.session_state.get(key)
+        sl = st.session_state.get(skey)
+
+        def _changed(v):
+            if v is None:
+                return False
+            if old is None:
+                return True
+            return abs(float(v) - float(old)) > 1e-9
+
+        if _changed(num):
+            cand = num
+        elif _changed(sl):
+            cand = sl
+        else:
+            cand = num if num is not None else (sl if sl is not None else old)
+        if cand is None:
+            continue
+        cand = cast(min(hi, max(lo, cast(cand))))
+        st.session_state[key] = cand
+        st.session_state[skey] = cand
+        applied[key] = cand
+    st.session_state["proj_applied"] = applied
+    st.session_state["proj_ran"] = True
+
+
+# Runs in the page (via a zero-height component frame): while the rows sit
+# inside the form nothing reruns, so the number chip would go stale as the
+# slider moves. This mirrors slider → number live (native value setter +
+# input event so React sees it, then a focusout so Streamlit commits it to
+# the pending form state — never Enter, which would submit), and flags the
+# Run button dirty on any edit. Number → slider settles on Run.
+_PROJ_SYNC_JS = """
+<script>
+(function () {
+  var W = window.parent, D = W.document;
+  // Each rerun mounts a fresh frame; observers/listeners from a torn-down
+  // frame stop delivering, so always replace them rather than reuse them.
+  var prev = W.__eaProjSync;
+  if (prev) { try { prev.mo.disconnect(); prev.mo2.disconnect(); D.removeEventListener('input', prev.onInput, true); } catch (e) {} }
+  var setVal = Object.getOwnPropertyDescriptor(W.HTMLInputElement.prototype, 'value').set;
+  function isRow(n) { return n && n.nodeType === 1 && n.querySelector && !!n.querySelector('.ea-prow'); }
+  function rowOf(th) {
+    var r = th.closest('[data-testid="stHorizontalBlock"]');
+    if (r && isRow(r)) return r;
+    var n = th.closest('[data-testid="stElementContainer"]') || th.closest('[data-testid="stSlider"]');
+    var hops = 0;
+    while (n && hops++ < 6) {
+      n = n.previousElementSibling;
+      if (isRow(n)) return n.matches('[data-testid="stHorizontalBlock"]') ? n : n.querySelector('[data-testid="stHorizontalBlock"]');
+    }
+    return null;
+  }
+  function runButton() {
+    var f = D.querySelector('[data-testid="stForm"]:has(.ea-prow)');
+    return f ? f.querySelector('[data-testid="stFormSubmitButton"] button, [data-testid="stBaseButton-primaryFormSubmit"]') : null;
+  }
+  function markDirty() { var b = runButton(); if (b) b.classList.add('ea-dirty'); }
+  function decimals(inp) {
+    var v = String(inp.value || ''), i = v.indexOf('.');
+    if (i >= 0) return v.length - i - 1;
+    var st = inp.getAttribute('step') || '1', j = st.indexOf('.');
+    return j >= 0 ? st.length - j - 1 : 0;
+  }
+  function setInput(inp, val) {
+    var cur = parseFloat(inp.value);
+    if (!isNaN(cur) && Math.abs(cur - val) < 1e-9) return;
+    setVal.call(inp, val.toFixed(decimals(inp)));
+    inp.dispatchEvent(new W.Event('input', { bubbles: true }));
+    inp.dispatchEvent(new W.FocusEvent('focusout', { bubbles: true }));
+    markDirty();
+  }
+  var mo = new W.MutationObserver(function (muts) {
+    for (var k = 0; k < muts.length; k++) {
+      var m = muts[k];
+      if (m.attributeName !== 'aria-valuenow') continue;
+      var row = rowOf(m.target);
+      if (!row) continue;
+      var inp = row.querySelector('[data-testid="stNumberInputContainer"] input');
+      if (inp && D.activeElement !== inp) setInput(inp, parseFloat(m.target.getAttribute('aria-valuenow')));
+    }
+  });
+  function onInput(e) {
+    var t = e.target;
+    if (t && t.matches && t.matches('[data-testid="stNumberInputContainer"] input')) {
+      var r = t.closest('[data-testid="stHorizontalBlock"]');
+      if (isRow(r)) markDirty();
+    }
+  }
+  D.addEventListener('input', onInput, true);
+  mo.observe(D.body, { subtree: true, attributes: true, attributeFilter: ['aria-valuenow'] });
+  // a finished rerun means the form was applied (or the page redrew): clean
+  var app = D.querySelector('.stApp');
+  var mo2 = new W.MutationObserver(function () {
+    if (app.getAttribute('data-test-script-state') !== 'running') {
+      var b = runButton(); if (b) b.classList.remove('ea-dirty');
+    }
+  });
+  if (app) mo2.observe(app, { attributes: true, attributeFilter: ['data-test-script-state'] });
+  var b0 = runButton(); if (b0) b0.classList.remove('ea-dirty');
+  W.__eaProjSync = { mo: mo, mo2: mo2, onInput: onInput };
+})();
+</script>
+"""
 
 
 def _proj_row(label: str, unit: str, key: str, seed, lo, hi, step, slide_step,
-              fmt, mobile: bool):
+              fmt, mobile: bool) -> None:
     """One projections row: label · slider · exact value with − / +.
 
-    `key` holds the number the simulation uses (the number input); `key_s`
-    mirrors it for the slider, and each widget's on_change copies its value
-    onto the other. A changed seed — a new filter, an edited plan balance —
-    resets the row, as any changed widget default does. `unit` picks
-    the CSS class that paints $ / % / R / mo beside the number. Phones stack:
-    label and value on one line, the slider full-width beneath."""
+    `key` is the number input, `key_s` its slider twin; both sit inside the
+    Run form, so moving either changes nothing until Run (the page script
+    keeps the number chip following the slider meanwhile). Both carry the
+    seed as their default — a changed seed (new filter, edited plan balance)
+    changes the widget id and resets the row. `unit` picks the CSS class that
+    paints $ / % / R / mo beside the number. Phones stack: label and value on
+    one line, the slider full-width beneath."""
     cast = float if isinstance(step, float) else int
     skey = key + "_s"
     seed = cast(min(hi, max(lo, cast(seed))))
-    # Both widgets carry the seed as their default (a changed seed changes the
-    # widget id, so the row resets the way it always did), and only the
-    # on_change callbacks write session state — writing it before the first
-    # render let the frontend's boot reruns replay the default over it.
     lab_html = f"<div class='ea-prow ea-u-{unit}'>{label}</div>"
     kw = dict(min_value=cast(lo), max_value=cast(hi), value=seed,
               label_visibility="collapsed")
     if fmt:
         kw["format"] = fmt
-
-    def _num():
-        return st.number_input(label, step=cast(step), key=key, on_change=_proj_sync,
-                               args=(key, skey, cast(lo), cast(hi), cast), **kw)
-
-    def _sl():
-        return st.slider(label, step=cast(slide_step), key=skey, on_change=_proj_sync,
-                         args=(skey, key, cast(lo), cast(hi), cast), **kw)
-
     if mobile:
         c1, c2 = st.columns([1.35, 1], vertical_alignment="center")
         with c1:
             st.markdown(lab_html, unsafe_allow_html=True)
         with c2:
-            val = _num()
-        _sl()
+            st.number_input(label, step=cast(step), key=key, **kw)
+        st.slider(label, step=cast(slide_step), key=skey, **kw)
     else:
         c1, c2, c3 = st.columns([2.0, 5.6, 1.9], vertical_alignment="center")
         with c1:
             st.markdown(lab_html, unsafe_allow_html=True)
         with c2:
-            _sl()
+            st.slider(label, step=cast(slide_step), key=skey, **kw)
         with c3:
-            val = _num()
-    if val is None:
-        val = st.session_state.get(key, seed)
-    return cast(min(hi, max(lo, cast(val))))
+            st.number_input(label, step=cast(step), key=key, **kw)
 
 
 def _div_vs_sweep(f: pd.DataFrame) -> None:
@@ -4230,39 +4329,69 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
     st.caption(
         f"Pre-filled from your **{total_incl_be} completed trades**{_tiny_note}. "
         f"Average loss **{base_avg_loss_rr:.1f}R** comes from your data and stays fixed; "
-        f"change any field and the picture follows."
+        f"change anything, then press Run."
     )
 
-    # ── Inputs: slider rows you can type into, applied live (no Run button) ──
+    # ── Inputs: slider rows you can type into, applied on Run ─────────────
     # His pick from the r170 mockups: the old row (label · slider · bold
-    # purple value) with the value now an exact number input carrying − / +.
-    # Slider and number share one value — drag and the number follows, type
-    # or step and the thumb follows. The .ea-projrows marker scopes the CSS.
-    _bal_seed = int(min(200_000, max(1_000, round(
-        float(st.session_state.get("ea_m_bal", 10_000)) / 100.0) * 100)))
-    _risk_seed = float(min(10.0, max(0.25, round(
-        float(st.session_state.get("ea_m_risk", 1.0)) * 4) / 4)))
-    _wr_seed = int(min(90, max(10, base_wr * 100)))
-    _be_seed = int(min(60, max(0, round(base_be * 100))))
-    _win_seed = float(min(15.0, max(0.1, round(float(base_avg_win_rr), 1))))
-    _tpm_seed = int(min(200, max(1, base_trades_per_month)))
+    # purple value) with the value now an exact number input carrying − / +,
+    # and his Run button back so several edits (or a half-typed number)
+    # don't each redraw the picture. The rows live in a form: nothing reruns
+    # until Run (or Enter in a value). The .ea-projrows marker scopes the CSS.
+    _seeds = {
+        "proj_balance": int(min(200_000, max(1_000, round(
+            float(st.session_state.get("ea_m_bal", 10_000)) / 100.0) * 100))),
+        "proj_risk": float(min(10.0, max(0.25, round(
+            float(st.session_state.get("ea_m_risk", 1.0)) * 4) / 4))),
+        "proj_wr": int(min(90, max(10, base_wr * 100))),
+        "proj_be": int(min(60, max(0, round(base_be * 100)))),
+        "proj_win_rr": float(min(15.0, max(0.1, round(float(base_avg_win_rr), 1)))),
+        "proj_tpm": int(min(200, max(1, base_trades_per_month))),
+        "proj_months": 24,
+    }
+    # New seeds (filter change, edited plan balance) reset the widgets by
+    # changing their defaults; the applied set follows them.
+    _sig = tuple(_seeds.values())
+    if st.session_state.get("proj_seed_sig") != _sig or "proj_applied" not in st.session_state:
+        st.session_state["proj_seed_sig"] = _sig
+        st.session_state["proj_applied"] = dict(_seeds)
     _mobile = st.session_state.get("layout_mode") == "mobile"
-    with st.container():
-        st.markdown('<div class="ea-projrows"></div>', unsafe_allow_html=True)
-        starting_balance = _proj_row("Starting balance", "usd", "proj_balance", _bal_seed,
-                                     1_000, 200_000, 500, 100, None, _mobile)
-        risk_pct = _proj_row("Risk per trade", "pct", "proj_risk", _risk_seed,
-                             0.25, 10.0, 0.25, 0.05, "%.2f", _mobile)
-        win_rate_input = _proj_row("Winning trades", "pct", "proj_wr", _wr_seed,
-                                   10, 90, 1, 1, None, _mobile)
-        be_rate_input = _proj_row("Break-even trades", "pct", "proj_be", _be_seed,
-                                  0, 60, 1, 1, None, _mobile)
-        avg_win_rr = _proj_row("Average win", "r", "proj_win_rr", _win_seed,
-                               0.1, 15.0, 0.1, 0.1, "%.1f", _mobile)
-        trades_per_month = _proj_row("Trades per month", "none", "proj_tpm", _tpm_seed,
-                                     1, 200, 1, 1, None, _mobile)
-        total_months = _proj_row("Months ahead", "mo", "proj_months", 24,
-                                 1, 120, 1, 1, None, _mobile)
+    with st.form("proj_settings", border=False):
+        with st.container():
+            st.markdown('<div class="ea-projrows"></div>', unsafe_allow_html=True)
+            _proj_row("Starting balance", "usd", "proj_balance", _seeds["proj_balance"],
+                      1_000, 200_000, 500, 100, None, _mobile)
+            _proj_row("Risk per trade", "pct", "proj_risk", _seeds["proj_risk"],
+                      0.25, 10.0, 0.25, 0.05, "%.2f", _mobile)
+            _proj_row("Winning trades", "pct", "proj_wr", _seeds["proj_wr"],
+                      10, 90, 1, 1, None, _mobile)
+            _proj_row("Break-even trades", "pct", "proj_be", _seeds["proj_be"],
+                      0, 60, 1, 1, None, _mobile)
+            _proj_row("Average win", "r", "proj_win_rr", _seeds["proj_win_rr"],
+                      0.1, 15.0, 0.1, 0.1, "%.1f", _mobile)
+            _proj_row("Trades per month", "none", "proj_tpm", _seeds["proj_tpm"],
+                      1, 200, 1, 1, None, _mobile)
+            _proj_row("Months ahead", "mo", "proj_months", 24,
+                      1, 120, 1, 1, None, _mobile)
+        with st.container():
+            st.markdown('<div class="ea-projrun"></div>', unsafe_allow_html=True)
+            _rc1, _rc2 = st.columns([5, 1], vertical_alignment="center")
+            with _rc1:
+                st.markdown("<div class='ea-projrun-note'>Slide or type, then Run — "
+                            "nothing changes until you do.</div>", unsafe_allow_html=True)
+            with _rc2:
+                st.form_submit_button("Run", type="primary", use_container_width=True,
+                                      on_click=_proj_apply)
+    import streamlit.components.v1 as _components
+    _components.html(_PROJ_SYNC_JS, height=0)
+    _ap = st.session_state["proj_applied"]
+    starting_balance = int(_ap["proj_balance"])
+    risk_pct = float(_ap["proj_risk"])
+    win_rate_input = int(_ap["proj_wr"])
+    be_rate_input = int(_ap["proj_be"])
+    avg_win_rr = float(_ap["proj_win_rr"])
+    trades_per_month = int(_ap["proj_tpm"])
+    total_months = int(_ap["proj_months"])
     st.session_state["proj_ran"] = True
 
     # ── Run simulation ────────────────────────────────────────────────────────
