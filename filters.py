@@ -261,7 +261,7 @@ def render_filters(
                 key="filters_inst_select", on_change=_filters_dirty,
             )
             sel_em = st.selectbox(
-                "Entry Model",
+                "Entry model",
                 em_opts,
                 index=em_opts.index(st.session_state.get("filters_em_select", "All"))
                 if st.session_state.get("filters_em_select", "All") in em_opts
@@ -292,7 +292,7 @@ def render_filters(
                 if _cur_tot not in tot_opts:
                     _cur_tot = _tot_default
                 sel_tot = st.selectbox(
-                    "Trade Type",
+                    "Trade type",
                     tot_opts,
                     index=tot_opts.index(_cur_tot),
                     key="filters_tot_select", on_change=_filters_dirty,

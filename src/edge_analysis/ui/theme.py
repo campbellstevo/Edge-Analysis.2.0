@@ -1532,6 +1532,9 @@ def inject_theme():
         margin-bottom: 0.35rem !important;
     }}
 
+    /* No "Press Enter to submit form" hint floating over inputs */
+    [data-testid="InputInstructions"] {{ display: none !important; }}
+
     /* No copy-link icons on heading hover */
     [data-testid="stHeaderActionElements"] {{ display: none !important; }}
     h1 > a, h2 > a, h3 > a, h4 > a {{ display: none !important; }}
@@ -1879,6 +1882,14 @@ def inject_dark_overlay():
         background: #161b27 !important;
         border-color: rgba(255,255,255,0.09) !important;
     }
+    /* text inputs: Streamlit wraps the field in a root element with its own
+       light background (the "Write your own rule" box glowed on the Plan card) */
+    [data-testid="stTextInputRootElement"], [data-testid="stTextInput"] [data-baseweb="input"],
+    [data-testid="stTextArea"] [data-baseweb="textarea"] {
+        background: #161b27 !important;
+        border-color: rgba(255,255,255,0.12) !important;
+    }
+    [data-testid="stTextInputRootElement"] input::placeholder { color: #6b7488 !important; }
     /* the field and its steppers: the light sheet paints them white with
        !important, so the dark rule must match that selector exactly */
     div[data-testid="stNumberInput"] input {
