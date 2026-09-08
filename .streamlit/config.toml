@@ -5,3 +5,9 @@ backgroundColor = "#f6f7fb"
 secondaryBackgroundColor = "#eeeef5"
 textColor = "#0f172a"
 font = "sans serif"
+[global]
+# Projections rows: the slider and the typed value mirror each other through
+# on_change callbacks that write the twin widget's key. Streamlit warns once
+# per process when a keyed widget with a default also gets a session-state
+# write; that is the intended pattern here, so the warning is off.
+disableWidgetStateDuplicationWarning = true

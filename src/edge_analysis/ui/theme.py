@@ -61,6 +61,14 @@ def inject_theme():
         "</svg>"
     )
     
+    # Projections rows: every rule below is scoped to the block that carries
+    # the .ea-projrows marker (tabs._proj_row builds the rows).
+    _PR = ('div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] '
+           '.ea-projrows)')
+    _PROW = _PR + ' [data-testid="stHorizontalBlock"]:has(.ea-prow)'
+    _PNI = _PR + ' [data-testid="stNumberInput"]'
+    _PNC = _PNI + ' [data-testid="stNumberInputContainer"]'
+
     # ALL CSS IN ONE PLACE
     st.markdown(f"""
     <style>
@@ -1069,50 +1077,114 @@ def inject_theme():
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-card-anchor)
         .table-wrap:has(td) {{ max-height: 460px; overflow-y: auto; }}
 
-    /* Projections: the seven inputs are one wrapping band of compact fields —
-       eyebrow label over a bare input, no card box per input (that box plus
-       a three-column row made each field ~75px tall and the label sat 200px
-       from its input). 2-up on phones, 7-up on a wide desktop. */
-    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-projrows)
-        [data-testid="stHorizontalBlock"]:has([data-testid="stNumberInput"]) {{
-        flex-wrap: wrap !important; gap: 8px 14px !important;
-        align-items: flex-end !important; margin: 0 0 4px;
+    /* Projections: slider rows you can type into (his pick, r170) —
+       label · bare slider · bold purple value with quiet − / +. The value is
+       a real number input (type an exact figure) and the slider mirrors it.
+       Rows sit 42px tall with no card box per field. */
+    [data-testid="stMain"] {_PR} {{ gap: 0 !important; margin: 2px 0 8px; }}
+    {_PROW} {{
+        align-items: center !important; gap: 0 14px !important; min-height: 42px;
+        flex-wrap: nowrap !important;
     }}
-    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-projrows)
-        [data-testid="stHorizontalBlock"]:has([data-testid="stNumberInput"]) > div {{
-        flex: 1 1 138px !important; min-width: 138px !important; max-width: 220px !important;
-        width: auto !important;
+    {_PROW} > div {{ min-width: 0 !important; }}
+    {_PROW} > div:first-child {{ flex: 0 0 196px !important; width: 196px !important; }}
+    {_PROW} > div:last-child {{ flex: 0 0 200px !important; width: 200px !important; }}
+    {_PROW} > div:nth-child(2):not(:last-child) {{ flex: 1 1 auto !important; width: auto !important; }}
+    {_PR} .ea-prow {{
+        font-size: 13.5px; color: #64748b; line-height: 1.3; white-space: nowrap;
+        overflow: hidden; text-overflow: ellipsis;
     }}
-    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-projrows)
-        [data-testid="stNumberInput"] {{
+    {_PR} [data-testid="stElementContainer"]:has(> [data-testid="stMarkdownContainer"] > .ea-prow),
+    {_PR} [data-testid="stMarkdownContainer"]:has(> .ea-prow) {{ margin: 0 !important; padding: 0 !important; }}
+
+    /* slider: just the track, vertically centred in the row */
+    {_PR} [data-testid="stSlider"] {{ padding: 0 !important; margin: 0 !important; min-height: 0 !important; }}
+    {_PR} [data-testid="stSlider"] > div {{ padding: 0 !important; margin: 0 !important; }}
+    {_PR} [data-testid="stSlider"] [data-baseweb="slider"] {{ padding: 8px 8px !important; margin: 0 !important; }}
+    /* Streamlit reserves ~19px above the track for the (hidden) value bubble;
+       drop it so the track sits on the row's centre line with the label */
+    {_PR} [data-testid="stSlider"] [data-baseweb="slider"] > div {{ padding-top: 0 !important; }}
+    {_PR} [data-testid="stSlider"] [data-testid="stSliderTickBar"] {{ display: none !important; }}
+
+    /* number input: one quiet control, − value +, no box until you touch it */
+    {_PNI} {{
         background: transparent !important; border: 0 !important; border-radius: 0 !important;
         padding: 0 !important; margin: 0 !important; box-shadow: none !important;
-        overflow: visible !important;
+        overflow: visible !important; width: 100%;
     }}
-    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-projrows)
-        [data-testid="stNumberInput"] [data-testid="stWidgetLabel"] p {{
-        font-size: 11px !important; font-weight: 700 !important; letter-spacing: 0.06em !important;
-        text-transform: uppercase !important; color: #64748b !important; white-space: nowrap !important;
-        line-height: 1.2 !important; margin: 0 !important;
+    {_PNI} > div {{ margin: 0 !important; }}
+    {_PNC} {{
+        display: flex !important; align-items: center !important; justify-content: flex-end !important;
+        gap: 2px !important; background: transparent !important; border: 0 !important;
+        box-shadow: none !important; padding: 0 !important; margin: 0 !important; width: 100%;
     }}
-    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-projrows)
-        [data-testid="stNumberInput"] [data-testid="stWidgetLabel"] {{
-        margin-bottom: 4px !important; min-height: 0 !important;
+    {_PNC} > div:has(> button) {{ display: contents !important; }}
+    {_PNC} [data-testid="stNumberInputStepDown"] {{ order: 0; }}
+    {_PNC} > [data-baseweb="input"] {{ order: 1; }}
+    {_PNC} [data-testid="stNumberInputStepUp"] {{ order: 2; }}
+    {_PNC} > [data-baseweb="input"] {{
+        flex: 0 1 auto !important; min-width: 0 !important; width: auto !important;
+        background: transparent !important; border: 1.5px solid transparent !important;
+        border-radius: 8px !important; box-shadow: none !important; margin: 0 !important;
+        padding: 0 6px !important; transition: background .12s, border-color .12s;
+        display: inline-flex !important; align-items: center !important; justify-content: center !important;
+        min-width: 74px;
     }}
-    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-projrows)
-        [data-testid="stNumberInput"] input {{
-        font-size: 15px !important; font-weight: 700 !important; padding: 7px 10px !important;
+    {_PNC} > [data-baseweb="input"]:hover {{ background: #f6f4ff !important; border-color: #ddd6ff !important; }}
+    {_PNC} > [data-baseweb="input"]:focus-within {{
+        background: #faf8ff !important; border-color: #4800ff !important;
+        box-shadow: 0 0 0 3px rgba(72,0,255,0.12) !important;
     }}
-    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-projrows)
-        [data-testid="stNumberInput"] [data-baseweb="input"] {{
-        border-radius: 10px !important;
+    {_PNC} [data-baseweb="base-input"] {{
+        background: transparent !important; border: 0 !important; box-shadow: none !important;
+        padding: 0 !important; margin: 0 !important; width: auto !important;
     }}
+    {_PNC} input {{
+        background: transparent !important; border: 0 !important; box-shadow: none !important;
+        font-size: 15px !important; font-weight: 700 !important; color: #4800ff !important;
+        padding: 4px 0 !important; margin: 0 !important; line-height: 1.2 !important;
+        text-align: right !important; width: 4.6em !important; min-width: 0 !important;
+        -moz-appearance: textfield; caret-color: #4800ff;
+    }}
+    {_PNC} input::-webkit-outer-spin-button, {_PNC} input::-webkit-inner-spin-button {{
+        -webkit-appearance: none; margin: 0;
+    }}
+    /* a typed figure outside the field's range never applies (Streamlit
+       snaps back on blur) — say so in red while it sits there */
+    {_PNC} input:out-of-range {{ color: #ef4444 !important; }}
+    @supports (field-sizing: content) {{
+        {_PNC} input {{ field-sizing: content; width: auto !important; min-width: 1.2em !important; text-align: center !important; }}
+    }}
+    /* the unit rides inside the value chip: $ before, % / R / mo after */
+    {_PNC} > [data-baseweb="input"]::before, {_PNC} > [data-baseweb="input"]::after {{
+        font-size: 13px; font-weight: 600; color: #4800ff; opacity: .62; line-height: 1;
+        white-space: nowrap; pointer-events: none;
+    }}
+    {_PROW}:has(.ea-u-usd) [data-baseweb="input"]::before {{ content: "$"; margin-right: 1px; }}
+    {_PROW}:has(.ea-u-pct) [data-baseweb="input"]::after {{ content: "%"; margin-left: 1px; }}
+    {_PROW}:has(.ea-u-r) [data-baseweb="input"]::after {{ content: "R"; margin-left: 1px; }}
+    {_PROW}:has(.ea-u-mo) [data-baseweb="input"]::after {{ content: "mo"; margin-left: 3px; }}
+    /* − and + : ghost glyphs, no box */
+    {_PNC} button {{
+        width: 28px !important; height: 28px !important; min-width: 28px !important; min-height: 0 !important;
+        padding: 0 !important; margin: 0 !important; border: 0 !important; border-radius: 8px !important;
+        background: transparent !important; color: #94a3b8 !important; box-shadow: none !important;
+        display: inline-flex !important; align-items: center !important; justify-content: center !important;
+        transition: background .12s, color .12s;
+    }}
+    {_PNC} button:hover {{ background: #f1f5f9 !important; color: #0f172a !important; }}
+    {_PNC} button:active {{ background: #e8e4ff !important; color: #4800ff !important; }}
+    /* Material's thick ± icons shout; draw the glyphs in the text face instead */
+    {_PNC} button svg {{ display: none !important; }}
+    {_PNC} button::before {{ font-size: 19px; font-weight: 500; line-height: 1; }}
+    {_PNC} [data-testid="stNumberInputStepDown"]::before {{ content: "\\2212"; }}
+    {_PNC} [data-testid="stNumberInputStepUp"]::before {{ content: "+"; }}
     @media (max-width: 640px) {{
-        div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-projrows)
-            [data-testid="stHorizontalBlock"]:has([data-testid="stNumberInput"]) > div {{
-            flex: 1 1 calc(50% - 7px) !important; min-width: calc(50% - 7px) !important;
-            max-width: calc(50% - 7px) !important;
-        }}
+        /* phone: label + value on one line, slider full-width beneath */
+        {_PROW} {{ min-height: 34px; margin-top: 4px; }}
+        {_PROW} > div:first-child {{ flex: 1 1 auto !important; width: auto !important; }}
+        {_PROW} > div:last-child {{ flex: 0 0 176px !important; width: 176px !important; }}
+        {_PR} [data-testid="stSlider"] [data-baseweb="slider"] {{ padding: 4px 8px 10px !important; }}
     }}
 
     /* Journals page: candidate rows read left-to-right like menu rows */
@@ -2141,6 +2213,32 @@ div[style*="background: rgb(251, 252, 254)"] {
     .ea-ew-hub { fill: #1a1f2b !important; }
     .ea-ew-hublab { fill: #8b94a3 !important; }
     .ea-ew-name { fill: #8b94a3 !important; }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # Projections slider rows (scoped rules in the light sheet outrank the
+    # generic dark number-input rules above, so the dark chip is restated
+    # with the same selectors).
+    _PR = ('div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] '
+           '.ea-projrows)')
+    _PROW = _PR + ' [data-testid="stHorizontalBlock"]:has(.ea-prow)'
+    _PNC = _PR + ' [data-testid="stNumberInput"] [data-testid="stNumberInputContainer"]'
+    st.markdown(f"""
+    <style>
+    {_PR} .ea-prow {{ color: #9aa4b4 !important; }}
+    {_PNC} > [data-baseweb="input"] {{ background: transparent !important; border-color: transparent !important; }}
+    {_PNC} > [data-baseweb="input"]:hover {{ background: #1d2331 !important; border-color: rgba(255,255,255,0.12) !important; }}
+    {_PNC} > [data-baseweb="input"]:focus-within {{
+        background: #1a1f2e !important; border-color: #b3a7ff !important;
+        box-shadow: 0 0 0 3px rgba(179,167,255,0.18) !important;
+    }}
+    {_PNC} [data-baseweb="base-input"] {{ background: transparent !important; }}
+    {_PNC} input {{ background: transparent !important; color: #b3a7ff !important; caret-color: #b3a7ff; }}
+    {_PNC} input:out-of-range {{ color: #f87171 !important; }}
+    {_PNC} > [data-baseweb="input"]::before, {_PNC} > [data-baseweb="input"]::after {{ color: #b3a7ff; opacity: .7; }}
+    {_PNC} button {{ background: transparent !important; color: #7d879a !important; }}
+    {_PNC} button:hover {{ background: #232a3a !important; color: #e8ebf1 !important; }}
+    {_PNC} button:active {{ background: #2a2650 !important; color: #b3a7ff !important; }}
     </style>
     """, unsafe_allow_html=True)
 

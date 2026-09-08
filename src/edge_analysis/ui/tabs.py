@@ -2879,6 +2879,70 @@ def _parse_rr_value(v):
     return None
 
 
+def _proj_sync(src: str, dst: str, lo, hi, cast) -> None:
+    """Slider ⇄ number input: copy the widget that just changed onto its twin
+    (runs as an on_change callback, before the script reruns)."""
+    v = st.session_state.get(src)
+    if v is None:
+        return
+    try:
+        v = cast(v)
+    except (TypeError, ValueError):
+        return
+    st.session_state[dst] = min(hi, max(lo, v))
+
+
+def _proj_row(label: str, unit: str, key: str, seed, lo, hi, step, slide_step,
+              fmt, mobile: bool):
+    """One projections row: label · slider · exact value with − / +.
+
+    `key` holds the number the simulation uses (the number input); `key_s`
+    mirrors it for the slider, and each widget's on_change copies its value
+    onto the other. A changed seed — a new filter, an edited plan balance —
+    resets the row, as any changed widget default does. `unit` picks
+    the CSS class that paints $ / % / R / mo beside the number. Phones stack:
+    label and value on one line, the slider full-width beneath."""
+    cast = float if isinstance(step, float) else int
+    skey = key + "_s"
+    seed = cast(min(hi, max(lo, cast(seed))))
+    # Both widgets carry the seed as their default (a changed seed changes the
+    # widget id, so the row resets the way it always did), and only the
+    # on_change callbacks write session state — writing it before the first
+    # render let the frontend's boot reruns replay the default over it.
+    lab_html = f"<div class='ea-prow ea-u-{unit}'>{label}</div>"
+    kw = dict(min_value=cast(lo), max_value=cast(hi), value=seed,
+              label_visibility="collapsed")
+    if fmt:
+        kw["format"] = fmt
+
+    def _num():
+        return st.number_input(label, step=cast(step), key=key, on_change=_proj_sync,
+                               args=(key, skey, cast(lo), cast(hi), cast), **kw)
+
+    def _sl():
+        return st.slider(label, step=cast(slide_step), key=skey, on_change=_proj_sync,
+                         args=(skey, key, cast(lo), cast(hi), cast), **kw)
+
+    if mobile:
+        c1, c2 = st.columns([1.35, 1], vertical_alignment="center")
+        with c1:
+            st.markdown(lab_html, unsafe_allow_html=True)
+        with c2:
+            val = _num()
+        _sl()
+    else:
+        c1, c2, c3 = st.columns([2.0, 5.6, 1.9], vertical_alignment="center")
+        with c1:
+            st.markdown(lab_html, unsafe_allow_html=True)
+        with c2:
+            _sl()
+        with c3:
+            val = _num()
+    if val is None:
+        val = st.session_state.get(key, seed)
+    return cast(min(hi, max(lo, cast(val))))
+
+
 def _div_vs_sweep(f: pd.DataFrame) -> None:
     """Head-to-head: Divergence vs Sweep, the two entry criteria."""
     if f is None or f.empty:
@@ -4169,45 +4233,36 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
         f"change any field and the picture follows."
     )
 
-    # ── Inputs: one compact band, applied live (no Run button) ───────────────
-    # Exact numbers, typed or stepped; each field's label carries its unit.
-    # The .ea-projrows marker scopes the CSS that turns the seven number
-    # inputs into a wrapping band (2-up on phones) with eyebrow labels.
-    st.markdown('<div class="ea-projrows"></div>', unsafe_allow_html=True)
+    # ── Inputs: slider rows you can type into, applied live (no Run button) ──
+    # His pick from the r170 mockups: the old row (label · slider · bold
+    # purple value) with the value now an exact number input carrying − / +.
+    # Slider and number share one value — drag and the number follows, type
+    # or step and the thumb follows. The .ea-projrows marker scopes the CSS.
     _bal_seed = int(min(200_000, max(1_000, round(
         float(st.session_state.get("ea_m_bal", 10_000)) / 100.0) * 100)))
-    _f = st.columns(7)
-    with _f[0]:
-        starting_balance = st.number_input(
-            "Starting balance ($)", min_value=1_000, max_value=200_000,
-            value=_bal_seed, step=500, key="proj_balance")
-    with _f[1]:
-        risk_pct = st.number_input(
-            "Risk per trade (%)", min_value=0.25, max_value=10.0,
-            value=float(min(10.0, max(0.25, round(
-                float(st.session_state.get("ea_m_risk", 1.0)) * 4) / 4))),
-            step=0.25, format="%.2f", key="proj_risk")
-    with _f[2]:
-        win_rate_input = st.number_input(
-            "Winning trades (%)", min_value=10, max_value=90,
-            value=int(min(90, max(10, base_wr * 100))), step=1, key="proj_wr")
-    with _f[3]:
-        be_rate_input = st.number_input(
-            "Break-even trades (%)", min_value=0, max_value=60,
-            value=int(min(60, max(0, round(base_be * 100)))), step=1, key="proj_be")
-    with _f[4]:
-        avg_win_rr = st.number_input(
-            "Average win (R)", min_value=0.1, max_value=15.0,
-            value=float(min(15.0, max(0.1, base_avg_win_rr))),
-            step=0.1, format="%.1f", key="proj_win_rr")
-    with _f[5]:
-        trades_per_month = st.number_input(
-            "Trades per month", min_value=1, max_value=200,
-            value=int(min(200, max(1, base_trades_per_month))), step=1, key="proj_tpm")
-    with _f[6]:
-        total_months = st.number_input(
-            "Months ahead", min_value=1, max_value=120, value=24, step=1,
-            key="proj_months")
+    _risk_seed = float(min(10.0, max(0.25, round(
+        float(st.session_state.get("ea_m_risk", 1.0)) * 4) / 4)))
+    _wr_seed = int(min(90, max(10, base_wr * 100)))
+    _be_seed = int(min(60, max(0, round(base_be * 100))))
+    _win_seed = float(min(15.0, max(0.1, round(float(base_avg_win_rr), 1))))
+    _tpm_seed = int(min(200, max(1, base_trades_per_month)))
+    _mobile = st.session_state.get("layout_mode") == "mobile"
+    with st.container():
+        st.markdown('<div class="ea-projrows"></div>', unsafe_allow_html=True)
+        starting_balance = _proj_row("Starting balance", "usd", "proj_balance", _bal_seed,
+                                     1_000, 200_000, 500, 100, None, _mobile)
+        risk_pct = _proj_row("Risk per trade", "pct", "proj_risk", _risk_seed,
+                             0.25, 10.0, 0.25, 0.05, "%.2f", _mobile)
+        win_rate_input = _proj_row("Winning trades", "pct", "proj_wr", _wr_seed,
+                                   10, 90, 1, 1, None, _mobile)
+        be_rate_input = _proj_row("Break-even trades", "pct", "proj_be", _be_seed,
+                                  0, 60, 1, 1, None, _mobile)
+        avg_win_rr = _proj_row("Average win", "r", "proj_win_rr", _win_seed,
+                               0.1, 15.0, 0.1, 0.1, "%.1f", _mobile)
+        trades_per_month = _proj_row("Trades per month", "none", "proj_tpm", _tpm_seed,
+                                     1, 200, 1, 1, None, _mobile)
+        total_months = _proj_row("Months ahead", "mo", "proj_months", 24,
+                                 1, 120, 1, 1, None, _mobile)
     st.session_state["proj_ran"] = True
 
     # ── Run simulation ────────────────────────────────────────────────────────
