@@ -682,7 +682,7 @@ def _spread_section(df: pd.DataFrame, styler) -> None:
         return
     st.markdown("### Spread vs outcome")
     st.caption("Each dot is a trade: entry spread vs realised R. The purple trend line shows whether "
-               "wide spreads (news / Asia) are eating your edge.")
+               "wide spreads (news, thin hours) are eating your edge.")
     g["OutcomeC"] = _outcome(g, "R")
     slope, intercept = np.polyfit(g["Spread"].astype(float), g["R"].astype(float), 1)
     xs = [float(g["Spread"].min()), float(g["Spread"].max())]

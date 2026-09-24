@@ -557,10 +557,10 @@ def _builtin_answer(q: str, df: pd.DataFrame):
                 return "Not enough hour-stamped trades to split by volume tier yet."
             def _tier(h):
                 h = int(h)
-                if h >= 22 or h < 3: return "peak (NY+overlap)"
-                if 17 <= h < 22: return "rising (London)"
-                if 3 <= h < 7: return "fading (late NY)"
-                return "dead (Asia)"
+                if h >= 22 or h < 3: return "peak volume (22:00–03:00)"
+                if 17 <= h < 22: return "rising (17:00–22:00)"
+                if 3 <= h < 7: return "fading (03:00–07:00)"
+                return "quiet (07:00–17:00)"
             gg["t"] = gg["hr"].map(_tier)
             bits = []
             for name, sub in gg.groupby("t"):
@@ -570,7 +570,7 @@ def _builtin_answer(q: str, df: pd.DataFrame):
                 return "No volume window has 3+ trades yet."
             bits.sort(reverse=True)
             return ("Your edge by volume tier \u2014 " + " \u00b7 ".join(b for _, b in bits) +
-                    ". The Liquidity Windows bars on Externals keep this live.")
+                    ". The Market volume by hour bars on Externals keep this live.")
         if has("volatility", "volatile"):
             rows = _rank_by(pd.DataFrame({"c": _clean_cat(df["Volatility"])}).join(df.drop(columns=["Volatility"], errors="ignore")), rr, "c") if "Volatility" in df.columns else []
             if rows:

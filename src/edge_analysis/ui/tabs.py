@@ -24,7 +24,7 @@ CONFLUENCE_OPTIONS = ["DIV", "Sweep", "DIV & Sweep"]
 # Psychology thresholds
 OVERTRADE_LIMIT = 3          # max trades per day before flagged
 REVENGE_WINDOW_MINS = 120    # minutes after a loss before next entry = revenge
-ASIA_WARN_THRESHOLD = 45.0   # % of trades in the weakest session before the balance alert fires
+WEAKEST_SESSION_SHARE_ALERT = 45.0  # % of trades in the weakest session before the balance alert fires
 
 # ── Schema helpers ────────────────────────────────────────────────────────────
 def _get_schema() -> str:
@@ -1665,7 +1665,7 @@ def _psych_session_alert(df: pd.DataFrame, styler) -> None:
     rated = {k: v for k, v in stats.items() if v[2] is not None}
     weakest = min(rated, key=lambda k: rated[k][2]) if len(rated) >= 2 else None
     strongest = max(rated, key=lambda k: rated[k][2]) if len(rated) >= 2 else None
-    overweight = weakest if (weakest and stats[weakest][1] > ASIA_WARN_THRESHOLD) else None
+    overweight = weakest if (weakest and stats[weakest][1] > WEAKEST_SESSION_SHARE_ALERT) else None
 
     if overweight:
         _n, _pct, _wr = stats[overweight]
@@ -1676,7 +1676,7 @@ def _psych_session_alert(df: pd.DataFrame, styler) -> None:
                      f"entries to {strongest} would have meant roughly <b>+{extra} wins</b> this period.", "bad")
     elif weakest:
         _insight_box(f"Session balance healthy — your weakest session ({weakest}) holds "
-                     f"{stats[weakest][1]}% of trades, under the {ASIA_WARN_THRESHOLD:.0f}% line.", "good")
+                     f"{stats[weakest][1]}% of trades, under the {WEAKEST_SESSION_SHARE_ALERT:.0f}% line.", "good")
 
     cols = st.columns(max(1, len(sessions)))
     for col_, name in zip(cols, sessions):
@@ -1688,7 +1688,7 @@ def _psych_session_alert(df: pd.DataFrame, styler) -> None:
                         f"<div class='value' style='color:{colr}'>{_pct}%</div>"
                         f"<div class='muted'>{_n} trades{wr_s}</div></div>", unsafe_allow_html=True)
     st.markdown(f"<div class='muted'>Share of trades per session · red = more than "
-                f"{ASIA_WARN_THRESHOLD:.0f}% of your trades in your weakest session.</div>",
+                f"{WEAKEST_SESSION_SHARE_ALERT:.0f}% of your trades in your weakest session.</div>",
                 unsafe_allow_html=True)
 
 
@@ -1795,162 +1795,73 @@ def _psych_bad_beat_tracker(df: pd.DataFrame) -> None:
         "The chemicals that fire at this point will destroy your next trade.<br>"
         "<b>1.</b> Close the platform immediately. "
         "<b>2.</b> Walk, gym, or meditate. "
-        "<b>3.</b> Do not return until the next 3SL window.<br>"
+        "<b>3.</b> Do not return until the next session.<br>"
         "<span style='color:#6b7280;font-size:12px'>Breakevens are not bad beats. "
         "A bad beat is specifically: stopped out → price runs to TP.</span>", "info")
 
 
 def _psych_3sl_compliance(df: pd.DataFrame, styler) -> None:
+    """One trade per session per day — the 3 Session Lock's frequency half,
+    counted from the journal's session and date. The window half is not
+    scored: window rules are retired (COMP-01) and members set their own."""
     _gap(14)
-    st.markdown("### Session rules (3SL)")
-    st.caption("Two rules: trades inside the 2h session window, and one trade per session per day "
-               "— read from your journal's session-window field.")
+    st.markdown("### One trade per session")
+    st.caption("The 3 Session Lock: at most one entry per session per day — "
+               "counted from your journal's session and date.")
 
-    wcol     = next((c for c in ["2h session window","2h Session Window","Session Window"] if c in df.columns), None)
     sess_col = next((c for c in ["Session Norm","Session"] if c in df.columns), None)
     dcol     = next((c for c in ["Date & Time","Day/Time/Date of Trade","Date","Datetime"] if c in df.columns), None)
 
-    if wcol is None and (sess_col is None or dcol is None):
-        _empty_note("Add a '2h session window' Yes/No field in Notion and this tracks itself.")
+    if sess_col is None or dcol is None:
+        _empty_note("Log a session and a date on each trade and this counts itself.")
         return
 
     g = df.copy()
-
-    if dcol:
-        try:
-            g["__dp"] = pd.to_datetime(
-                g[dcol].astype(str).str.replace(r"\s*\(GMT.*\)$", "", regex=True),
-                errors="coerce")
-            g["__date"] = g["__dp"].dt.date
-        except Exception:
-            g["__dp"] = pd.NaT
-            g["__date"] = None
-
-    has_window = wcol is not None
-    ins_n = out_n = total_w = 0
-    comp_pct = ins_wr = out_wr = None
-
-    if has_window:
-        g["__w"] = g[wcol].astype(str).str.strip().str.lower().map(
-            lambda v: "yes" if v in ("yes","y","true","1") else ("no" if v in ("no","n","false","0") else None))
-        gw = g[g["__w"].notna()].copy()
-        total_w  = len(gw)
-        ins_n    = int((gw["__w"] == "yes").sum())
-        out_n    = int((gw["__w"] == "no").sum())
-        comp_pct = round(ins_n / max(1, total_w) * 100, 1)
-
-        def _wr(sub):
-            c = sub[sub["Outcome"].isin(["Win", "BE", "Loss"])]
-            return round(c["Outcome"].eq("Win").sum() / max(1, len(c)) * 100, 1) if not c.empty else None
-
-        ins_wr = _wr(gw[gw["__w"] == "yes"])
-        out_wr = _wr(gw[gw["__w"] == "no"])
+    try:
+        g["__dp"] = pd.to_datetime(
+            g[dcol].astype(str).str.replace(r"\s*\(GMT.*\)$", "", regex=True),
+            errors="coerce")
+        g["__date"] = g["__dp"].dt.date
+    except Exception:
+        g["__dp"] = pd.NaT
+        g["__date"] = None
 
     gs = pd.DataFrame()
     multi_session_days   = 0
     multi_session_breaks = 0
     session_counts       = pd.DataFrame()
-    has_session_rule     = sess_col is not None and dcol is not None
+    try:
+        # The overlap stays its own session here: folding it into London would
+        # turn a London entry plus an overlap entry into a "second trade"
+        # (COMP-11) — whether it counts separately is the trader's call.
+        g["__sess_clean"] = g[sess_col].apply(
+            lambda v: "London/NY Overlap" if "overlap" in str(v or "").lower()
+            else _clean_session_value(v))
+        gs = g.dropna(subset=["__dp", "__sess_clean"]).copy()
+        if not gs.empty:
+            session_counts = gs.groupby(["__date", "__sess_clean"]).size().reset_index(name="n")
+            breaks = session_counts[session_counts["n"] > 1]
+            multi_session_days   = int(breaks["__date"].nunique())
+            multi_session_breaks = int((breaks["n"] - 1).sum())
+    except Exception:
+        pass
 
-    if has_session_rule:
-        try:
-            g["__sess_clean"] = g[sess_col].apply(_clean_session_value)
-            gs = g.dropna(subset=["__dp", "__sess_clean"]).copy()
-            if not gs.empty:
-                session_counts = gs.groupby(["__date", "__sess_clean"]).size().reset_index(name="n")
-                breaks = session_counts[session_counts["n"] > 1]
-                multi_session_days   = int(breaks["__date"].nunique())
-                multi_session_breaks = int((breaks["n"] - 1).sum())
-        except Exception:
-            pass
-
-    _show_window = has_window and total_w > 0
-    _cols = st.columns(4 if _show_window else 1)
-    if _show_window:
-        with _cols[0]:
-            col_c = "#4800ff" if comp_pct >= 70 else "#f59e0b" if comp_pct >= 50 else "#ef4444"
-            st.markdown(f"<div class='kpi'><div class='label'>Window Compliance</div>"
-                        f"<div class='value' style='color:{col_c}'>{comp_pct}%</div>"
-                        f"<div class='muted'>{ins_n} inside · {out_n} outside</div></div>",
-                        unsafe_allow_html=True)
-        with _cols[1]:
-            v = f"{ins_wr}%" if ins_wr is not None else "—"
-            st.markdown(f"<div class='kpi'><div class='label'>Win Rate (Inside)</div>"
-                        f"<div class='value' style='color:#4800ff'>{v}</div>"
-                        f"<div class='muted'>{ins_n} trades in window</div></div>",
-                        unsafe_allow_html=True)
-        with _cols[2]:
-            v = f"{out_wr}%" if out_wr is not None else "—"
-            st.markdown(f"<div class='kpi'><div class='label'>Win Rate (Outside)</div>"
-                        f"<div class='value' style='color:#4800ff'>{v}</div>"
-                        f"<div class='muted'>{out_n} trades outside window</div></div>",
-                        unsafe_allow_html=True)
-    with _cols[-1]:
-        msb_color = "#ef4444" if multi_session_breaks > 0 else "#4800ff"
-        st.markdown(f"<div class='kpi'><div class='label'>One-Trade Rule Breaks</div>"
-                    f"<div class='value' style='color:{msb_color}'>{multi_session_breaks}</div>"
-                    f"<div class='muted'>{multi_session_days} sessions with 2+ trades</div></div>",
-                    unsafe_allow_html=True)
-
-    if has_window and total_w == 0:
-        _insight_box("The '2h session window' field exists but has no Yes/No values recorded yet. "
-                     "Tick it on each trade to start tracking window compliance.", "warn")
-    elif has_window and ins_wr is not None and out_wr is not None:
-        if ins_wr >= out_wr:
-            _insight_box(f"Window compliance is working — inside win rate <b>{ins_wr}%</b> "
-                         f"vs <b>{out_wr}%</b> outside. "
-                         f"{out_n} of {total_w} trades were outside the 2h window.")
-        else:
-            _insight_box(f"Outside-window win rate ({out_wr}%) currently exceeds inside ({ins_wr}%). "
-                         f"Sample may be small — keep logging. "
-                         f"The window rule protects drawdown control regardless of short-term rates.", "warn")
-    elif has_window and comp_pct is not None and comp_pct < 70:
-        _insight_box(f"Only <b>{comp_pct}%</b> of trades inside the 2h window ({ins_n} of {total_w}). "
-                     f"The 3SL system only protects you when you follow it.", "warn")
+    msb_color = "#ef4444" if multi_session_breaks > 0 else "#4800ff"
+    st.markdown(f"<div class='kpi'><div class='label'>Extra entries in a session</div>"
+                f"<div class='value' style='color:{msb_color}'>{multi_session_breaks}</div>"
+                f"<div class='muted'>on {multi_session_days} day{'s' if multi_session_days != 1 else ''}"
+                f" with a second entry in the same session</div></div>",
+                unsafe_allow_html=True)
 
     if multi_session_breaks > 0:
         _insight_box(
-            f"<b>{multi_session_breaks} extra trades</b> were taken in sessions where you already had an entry "
-            f"({multi_session_days} sessions affected). "
-            f"The 3SL rule is one trade per session — a second trade removes the protection entirely. "
-            f"After a loss the session is finished, even if another setup forms.", "warn")
-    elif has_session_rule and not gs.empty:
-        _insight_box("One-trade-per-session rule is clean — no sessions with multiple entries detected.")
+            f"<b>{multi_session_breaks} extra entr{'ies' if multi_session_breaks != 1 else 'y'}</b> "
+            f"went into a session that already had one, on {multi_session_days} "
+            f"day{'s' if multi_session_days != 1 else ''}.", "warn")
+    elif not gs.empty:
+        _insight_box("One entry per session throughout — no session with a second entry.")
 
-    if has_window and dcol and total_w > 0:
-        try:
-            gw_dated = gw.dropna(subset=["__dp"]).copy()
-            if not gw_dated.empty:
-                gw_dated["__wk"] = gw_dated["__dp"].dt.to_period("W").apply(lambda p: p.start_time)
-                wk = (gw_dated.groupby("__wk")
-                       .agg(total=("__w", "count"), inside=("__w", lambda s: (s == "yes").sum()))
-                       .reset_index())
-                wk["Compliance %"] = (wk["inside"] / wk["total"] * 100).round(1)
-                wk = wk.rename(columns={"__wk": "Week"})
-                cv = _to_alt_values(wk[["Week", "Compliance %"]])
-                if cv:
-                    st.markdown("#### Window compliance by week")
-                    bar = (alt.Chart(alt.Data(values=cv))
-                           .mark_bar(color="#4800ff", opacity=0.7,
-                                     cornerRadiusTopLeft=3, cornerRadiusTopRight=3)
-                           .encode(
-                               x=alt.X("Week:T", axis=alt.Axis(format="%b %d", labelAngle=-45,
-                                                                tickCount=8, labelOverlap=False, title=None)),
-                               y=alt.Y("Compliance %:Q", scale=alt.Scale(domain=[0, 100]),
-                                       axis=alt.Axis(title="% inside 2h window")),
-                               tooltip=[alt.Tooltip("Week:T", format="%d %b %Y"),
-                                        alt.Tooltip("Compliance %:Q", format=".1f")])
-                           .properties(height=200))
-                    rule = (alt.Chart(alt.Data(values=[{"y": 70}]))
-                            .mark_rule(color="#4800ff", strokeDash=[4, 4], strokeWidth=1.5)
-                            .encode(y="y:Q"))
-                    st.altair_chart(styler(alt.layer(bar, rule)), use_container_width=True)
-                    st.markdown("<div class='muted'>Dashed line = 70% target</div>",
-                                unsafe_allow_html=True)
-        except Exception:
-            pass
-
-    if has_session_rule and multi_session_breaks > 0 and not session_counts.empty:
+    if multi_session_breaks > 0 and not session_counts.empty:
         try:
             # Which SESSIONS repeat — the pattern is actionable; the dates aren't.
             brk = session_counts[session_counts["n"] > 1].copy()
@@ -2191,9 +2102,9 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
                              f"Each violation day is a compounding leak in your edge.", "warn")
             else:
                 _insight_box(f"Discipline score is <b>{discipline_score}%</b> — needs attention. "
-                             f"{total_days - clean_days} of {total_days} days had rule violations. "
-                             f"Fix the mechanics first — one trade per session, and the session "
-                             f"is over after a loss.", "bad")
+                             f"{total_days - clean_days} of {total_days} days had an overtrading "
+                             f"day ({n_overtrade_days}) or a quick re-entry after a loss "
+                             f"({n_revenge} trades).", "bad")
         else:
             _empty_note("The rolling view appears once a few trades are logged.")
 
@@ -3310,7 +3221,11 @@ def _entry_criteria(f: pd.DataFrame) -> None:
 
 
 def _breaker_strip(df_raw: pd.DataFrame, terse: bool = False) -> None:
-    """Circuit-breaker status: month MTD vs the max-loss line, week volume vs 3."""
+    """Circuit-breaker status: this month's R against the plan's max-loss line.
+
+    No trade counter: its weekly "cap" was the monthly cap divided by four —
+    a number nobody set, which printed "9 of 3" (COMP-16). The month's count
+    against the plan's own cap is on Performance."""
     if df_raw is None or df_raw.empty or "Date" not in df_raw.columns:
         return
     g = df_raw.copy()
@@ -3332,12 +3247,9 @@ def _breaker_strip(df_raw: pd.DataFrame, terse: bool = False) -> None:
         return
     stop_r = float(st.session_state.get("ea_m_stop", -6.0))
     _rp_b = _risk_pct(g.rename(columns={"__rr": "PnL_from_RR"}))
-    wk_cap = max(1, round(int(st.session_state.get("ea_m_cap", 12)) / 4))
     now = pd.Timestamp.now()
     cur = g[g["__dt"].dt.to_period("M") == now.to_period("M")]
     mtd = float(cur["__rr"].sum()) if not cur.empty else 0.0
-    mon = (now - pd.Timedelta(days=int(now.dayofweek))).normalize()
-    wk_n = int((g["__dt"] >= mon).sum())
     closed = mtd <= stop_r
     _hero_pct = st.session_state.get("ea_month_now_pct")
     def _mtd_txt():
@@ -3358,18 +3270,16 @@ def _breaker_strip(df_raw: pd.DataFrame, terse: bool = False) -> None:
                    "Flat until the 1st \u2014 that's the rule that keeps the account.")
     else:
         room = mtd - stop_r
-        warn = room < 2 or wk_n > wk_cap
+        warn = room < 2
         bg, bc = ("#fdf6e8", "#ecd4a2") if warn else ("#e9f7ef", "#bfe6cd")
         ic = "#7c4a03" if warn else "#14532d"
         icon = "\u26a0" if warn else "\u2713"
         head = "Circuit breaker \u2014 month open"
         if terse:
-            bits = [f"{room:.1f}R above the stop",
-                    f"{wk_n} of {wk_cap} trades this week"]
+            bits = [f"{room:.1f}R above the stop"]
         else:
             bits = [f"{_mtd_txt()} this month",
-                    f"{room:.1f}R above the {stop_r:+.1f}R stop",
-                    f"{wk_n} of {wk_cap} trades this week"]
+                    f"{room:.1f}R above the {stop_r:+.1f}R stop"]
         sub = " \u00b7 ".join(bits)
     st.markdown(
         f"<div style='display:flex;align-items:center;gap:14px;background:{bg};"
@@ -3800,15 +3710,17 @@ def _liquidity_windows(f: pd.DataFrame) -> None:
     if len(g) < 8:
         return
 
+    # Clock ranges named by market volume only — no session is called
+    # "dead" and no rule is implied (COMP-10, TZ-13).
     def _tier(h):
         h = int(h)
         if h >= 22 or h < 3:
-            return "Peak volume \u00b7 NY + overlap"
+            return "Peak volume \u00b7 22:00\u201303:00"
         if 17 <= h < 22:
-            return "Rising \u00b7 London"
+            return "Rising \u00b7 17:00\u201322:00"
         if 3 <= h < 7:
-            return "Fading \u00b7 late NY"
-        return "Dead \u00b7 Asia / pre-session"
+            return "Fading \u00b7 03:00\u201307:00"
+        return "Quiet \u00b7 07:00\u201317:00"
 
     g["__tier"] = g["__hr"].map(_tier)
     rows = []
@@ -3819,21 +3731,20 @@ def _liquidity_windows(f: pd.DataFrame) -> None:
                      "Trades": len(sub)})
     if len(rows) < 2:
         return
-    st.markdown("### Liquidity windows")
+    st.markdown("### Market volume by hour")
     st.caption("Your average R by market-volume tier (approximate session volume in your local "
                "time) \u00b7 windows with 3+ trades.")
     _rank_dots(pd.DataFrame(rows), "Window", "Avg R")
     d_ = {r["Window"]: r for r in rows}
     pk = next((v for k, v in d_.items() if k.startswith("Peak")), None)
-    dd = next((v for k, v in d_.items() if k.startswith("Dead")), None)
-    if pk and dd and pk["Trades"] >= 5 and dd["Trades"] >= 5:
+    dd = next((v for k, v in d_.items() if k.startswith("Quiet")), None)
+    if pk and dd and pk["Trades"] >= 8 and dd["Trades"] >= 8:
         gap = pk["Avg R"] - dd["Avg R"]
         if gap > 0.3:
             _insight_box(
-                f"Volume is paying you: peak-volume windows average <b>{pk['Avg R']:+.2f}R</b> "
-                f"({pk['Trades']} trades) vs <b>{dd['Avg R']:+.2f}R</b> in dead hours "
-                f"({dd['Trades']}). That's <b>{gap:+.2f}R per trade</b> for trading when "
-                "the market is actually moving \u2014 your session rule in one number.")
+                f"Peak-volume hours average <b>{pk['Avg R']:+.2f}R</b> "
+                f"({pk['Trades']} trades) vs <b>{dd['Avg R']:+.2f}R</b> in quiet hours "
+                f"({dd['Trades']}) \u2014 a gap of <b>{gap:+.2f}R per trade</b>.")
 
 def _conditions_tab(f: pd.DataFrame, show_table):
     st.markdown('<div class="section">', unsafe_allow_html=True)
@@ -4789,13 +4700,6 @@ def _build_refinements_stats(f_perf: pd.DataFrame, df_all_safe: pd.DataFrame) ->
                     }
             stats["mental_state"] = ms_stats
 
-    # ── Asia overweight ───────────────────────────────────────────────────────
-    if "by_session" in stats:
-        total_sess = sum(s["trades"] for s in stats["by_session"])
-        for s in stats["by_session"]:
-            if s["session"] == "Asia":
-                stats["asia_pct"] = round(s["trades"] / max(1, total_sess) * 100, 1)
-
     stats["flags"] = _flags
     return stats
 
@@ -4841,8 +4745,6 @@ def _build_ai_prompt(stats: dict) -> str:
             f"left {stats['early_close_win_left']:+.2f}R on win trades)"
         )
 
-    if "asia_pct" in stats:
-        lines.append(f"\nAsia session share: {stats['asia_pct']}% of all trades (alert threshold: 45%)")
 
     lines += [
         "",
@@ -4910,13 +4812,6 @@ def _compute_refinements(stats: dict) -> dict:
                         "detail": f"{w['net_rr']:+.1f}R over {w['trades']} trades ({w['win_rate']:.0f}% win rate)."})
         refine.append({"title": "Lean into your best model",
                        "action": f"Shift size from '{w['model']}' ({w['net_rr']:+.1f}R) toward your higher-expectancy models."})
-
-    asia = stats.get("asia_pct")
-    if asia is not None and asia > ASIA_WARN_THRESHOLD:
-        holding.append({"title": f"Asia is overweight ({asia:.0f}% of trades)",
-                        "detail": f"Above the {ASIA_WARN_THRESHOLD:.0f}% threshold \u2014 typically a lower-quality session for this system."})
-        refine.append({"title": "Rebalance toward London / NY",
-                       "action": f"Asia is {asia:.0f}% of your trades. Cap it and redirect focus to your stronger sessions."})
 
     ms = stats.get("mental_state", {})
     if "Good" in ms:

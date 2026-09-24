@@ -207,10 +207,6 @@ def normalise_salty_df(df: pd.DataFrame) -> pd.DataFrame:
     if "Account" not in out.columns:
         out["Account"] = "Salty"
 
-    # Salty has no "2h session window" — fill with NaN so 3SL tab degrades gracefully
-    if "2h session window" not in out.columns:
-        out["2h session window"] = None
-
     # Salty has no separate Mental State field after rename? Already mapped above.
     # Ensure Execution/Bias is absent so Mental State Gate doesn't crash
     # (Salty doesn't have the 4-way Execution/Bias split)

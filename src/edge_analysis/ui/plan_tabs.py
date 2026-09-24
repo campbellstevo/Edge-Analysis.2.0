@@ -4,6 +4,7 @@ journal. Modeled on Campbell's approved artifact layouts. Helpers from tabs.py
 are imported lazily to avoid circular imports.
 """
 from __future__ import annotations
+import html as _html
 import pandas as pd
 import streamlit as st
 
@@ -142,16 +143,10 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
     st.caption(f"Live + Challenge trades only · {n_all} trades · every number below is "
                "recomputed from your journal on each load.")
 
-    hr = pd.to_numeric(g["Hour (Melb)"], errors="coerce") if "Hour (Melb)" in g.columns else g["__dt"].dt.hour
-    # profitable trading window: derived from this journal, not hardcoded
-    _hr_stats = g.assign(__h=hr).groupby("__h")["__rr"].agg(["mean", "size"])
-    _good_hours = set(_hr_stats[(_hr_stats["size"] >= 2) & (_hr_stats["mean"] > 0)].index.astype(int))
-    if len(_good_hours) >= 3:
-        in_window = hr.isin(_good_hours)
-    else:
-        in_window = hr.isin([17, 18, 19, 20, 21, 22, 23, 0, 1, 2])
-    _bad_hours = set(_hr_stats[(_hr_stats["size"] >= 2) & (_hr_stats["mean"] < 0)].index.astype(int))
-    midday = hr.isin(_bad_hours) if _bad_hours else hr.isin([11, 12, 13, 14, 15, 16])
+    # No "profitable hours" gate: hours picked by their own average R and then
+    # scored on the same trades read as PROVEN on 197 of 200 pure-noise
+    # journals (STAT-03), and its fallback was a retired 17:00–02:00 window
+    # (COMP-03). Hour evidence lives on Entry → Timing, descriptively.
     # proven instruments: positive expectancy with a real sample
     _sym = g.get("Symbol", g.get("Instrument", pd.Series("", index=g.index))).astype(str)
     _sym_stats = g.assign(__s=_sym).groupby("__s")["__rr"].agg(["mean", "size"])
@@ -165,7 +160,8 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
 
     # Data-derived gates so the checklist reads any journal, not one playbook:
     # a group "proves" itself with 5+ trades and positive average R. When a
-    # journal is too young to prove anything, the legacy rule stands in.
+    # journal is too young to prove anything, the row says so — the app ships
+    # no rules of its own (COMP-03; the old stand-ins were retired rules).
     def _proven_groups(series, min_n=5):
         _st = g.assign(__k=series.astype(str).str.strip()).groupby("__k")["__rr"].agg(["mean", "size"])
         _st = _st[~_st.index.isin(["", "nan", "None"])]
@@ -181,22 +177,21 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
         sess_rule = (f"Your proven sessions — {_names(_good_sess)} (from your data)",
                      ok_sess, "proven", "other")
     else:
-        sess_rule = ("London or New York — never Asia", (is_ldn | is_ny), "LDN/NY", "other")
+        sess_rule = ("Your proven sessions", None, "", "")
     _tf_series = g.get("Entry Timeframe", g.get("Timeframe", pd.Series("", index=g.index)))
     _good_tf = _proven_groups(_tf_series)
     if _good_tf:
         tf_rule = (f"Your proven timeframes — {_names(_good_tf)} (from your data)",
                    _tf_series.astype(str).str.strip().isin(_good_tf), "proven TF", "other TF")
     else:
-        tf_rule = ("5M entries only", _col_contains(g, "Entry Timeframe", "5"), "5M", "other TF")
+        tf_rule = ("Your proven timeframes", None, "", "")
     _em_series = g.get("Entry Model", pd.Series("", index=g.index))
     _good_em = _proven_groups(_em_series)
     if _good_em:
         model_rule = (f"Your proven entry models — {_names(_good_em)} (from your data)",
                       _em_series.astype(str).str.strip().isin(_good_em), "proven", "other")
     else:
-        model_rule = ("Protected Structure or FBoS", _col_contains(g, "Entry Model", "Protected|FBOS|FBoS"),
-                      "PS/FBoS", "other")
+        model_rule = ("Your proven entry models", None, "", "")
 
     ok_head = _col_contains(g, "Mental State", "Clear|Good")
     ok_aplus = _yes(g, "A+ Setup?")
@@ -226,7 +221,6 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
         ("Bias written down, prepared before entry",
          _yes(g, "Clear Bias/Prepared"), "prepared", "unprepared"),
         sess_rule,
-        ("Inside your profitable hours (from your data)", in_window, "in window", "outside"),
         ("Single entry, structure stop set", ok_single, "single", "multi"),
         tf_rule,
         model_rule,
@@ -246,7 +240,13 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
             f'— {_min_rr_ev}.</span></div>', unsafe_allow_html=True)
     all_pass = pd.Series(True, index=g.index)
     entries = []
+    _young = set()
     for rule, mask, lab_y, lab_n in gates:
+        if mask is None:  # nothing proven yet for this gate
+            _young.add(rule)
+            entries.append((rule, float("nan"), False, False, float("nan"), float("nan"),
+                            0, 0, lab_y, lab_n))
+            continue
         mask = mask.fillna(False) if hasattr(mask, "fillna") else mask
         a, b, na, nb = seg(mask)
         logged = (na + nb) >= 5 and min(na, nb) >= 1
@@ -262,7 +262,11 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
 
     def _row(i, e, faded=False):
         rule, edge, logged, low, a, b, na, nb, lab_y, lab_n = e
-        if not logged:
+        if rule in _young:
+            stat = ("<span style='font-size:12px;color:#64748b;'>not enough trades yet — "
+                    "one needs 5+ trades at a positive average</span>")
+            small = ""
+        elif not logged:
             stat = ("<span style='font-size:12px;color:#64748b;'>not logged yet — "
                     "start tagging this in Notion</span>")
             small = ""
@@ -303,17 +307,20 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
     t._insight_box("Any box a <b>NO</b> → no trade. The gap between textbook and off-plan "
                    "below is what following this list is worth.", "info")
 
-    exp_all = _avg(g["__rr"])
+    # Textbook vs off-plan: what the checklist is worth. (Per-trade expectancy
+    # and profit factor live on Performance — not repeated here.)
+    n_book, n_off = int(all_pass.sum()), int((~all_pass).sum())
     exp_book = _avg(g.loc[all_pass, "__rr"])
-    wins = g.loc[g["__rr"] > 0, "__rr"].sum()
-    losses = abs(g.loc[g["__rr"] < 0, "__rr"].sum())
-    pf = float(wins / losses) if losses else float("nan")
+    exp_off = _avg(g.loc[~all_pass, "__rr"])
+
+    def _side(v, n):
+        if n < 8:  # no reading from under 8 trades
+            return (f"{n} trade{'s' if n != 1 else ''} — too few to read", "#64748b")
+        return (_fmt_r(v) + f" · {n} trades", GREEN if (v == v and v >= 0) else RED)
+
     st.markdown("#### Where you stand")
-    cards = [("PER TRADE", _fmt_r(exp_all), "#0f172a"),
-             ("WHEN TEXTBOOK", _fmt_r(exp_book) + f" · {int(all_pass.sum())} trades"
-              + (" (tiny sample)" if int(all_pass.sum()) < 8 else ""),
-              GREEN if (exp_book == exp_book and exp_book >= 0) else RED),
-             ("PROFIT FACTOR", "—" if pf != pf else f"{pf:.2f}", PURPLE)]
+    cards = [("EVERY BOX YES — PER TRADE", *_side(exp_book, n_book)),
+             ("ANY BOX NO — PER TRADE", *_side(exp_off, n_off))]
     st.markdown("<div style='display:flex;gap:12px;flex-wrap:wrap;margin:6px 0 10px;'>" + "".join(
         f"<div style='flex:1;min-width:150px;background:#fff;border:1px solid rgba(0,0,0,0.06);"
         f"border-radius:12px;padding:12px 14px;box-shadow:0 2px 10px rgba(0,0,0,0.04);'>"
@@ -325,7 +332,6 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
     named = [("New York session", is_ny), ("London session", is_ldn), ("Asia session", is_asia),
              ("Right bias + right execution", ok_exec), ("A+ setups", ok_aplus),
              ("Non-A+ setups", ~ok_aplus & g["A+ Setup?"].notna() if "A+ Setup?" in g.columns else None),
-             ("Your profitable hours", in_window), ("Your losing hours", midday),
              ("Good headspace", ok_head), ("Single entry", ok_single),
              ("Multi-entry", ~ok_single), ("OB/OS extremes", ok_obos),
              ("True break confirmed", ok_break), ("No-Close entries", bad_model)]
@@ -356,11 +362,11 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
 
     st.markdown("#### The edge, ranked")
     st.markdown("<div style='display:flex;gap:14px;flex-wrap:wrap;margin:4px 0 10px;'>"
-                + _ranklist("DO MORE OF — PROVEN EDGE", good, True)
-                + _ranklist("STRICT DON'TS — THESE BLEED", bad, False)
+                + _ranklist("EARNING R — AVERAGE PER TRADE", good, True)
+                + _ranklist("COSTING R — AVERAGE PER TRADE", bad, False)
                 + "</div>", unsafe_allow_html=True)
 
-    _rules_section(good, bad, max(1.0, round((5.0 / 1.0) / 4.0)))
+    _rules_section(good, bad)
 
     if planned is not None and planned.notna().sum() >= 10:
         st.markdown("#### For reference — targeted RR")
@@ -428,7 +434,7 @@ def _rules_save() -> None:
               key=f"ea_rules_save_{abs(hash(payload)) % 100000}")
 
 
-def _rules_section(good, bad, need_weekly_cap: float) -> None:
+def _rules_section(good, bad) -> None:
     t = _t()
     st.markdown("#### My rules")
     st.caption("Your own rules plus ones recommended from your data. "
@@ -443,7 +449,8 @@ def _rules_section(good, bad, need_weekly_cap: float) -> None:
     for name, v, n in good[:3]:
         _nm = name[0].lower() + name[1:] if name[:5] == "Your " else name
         recs.append((f"keep:{name}", f"Stick to {_nm} — worth {v:+.2f}R per trade ({n} trades)"))
-    recs.append(("cap:week", f"Stop for the week at −{need_weekly_cap:.0f}R"))
+    # (No weekly-stop proposal: it was a constant −1R whatever the data said,
+    # COMP-17.)
 
     active = list(state["custom"]) + [txt for rid, txt in recs if rid in state["accepted"]]
     if active:
@@ -453,7 +460,7 @@ def _rules_section(good, bad, need_weekly_cap: float) -> None:
                 st.markdown(
                     f"<div style='background:#fff;border:1px solid rgba(0,0,0,0.06);"
                     f"border-radius:10px;padding:9px 14px;font-size:14px;color:#334155;"
-                    f"margin:2px 0;'>{rule}</div>", unsafe_allow_html=True)
+                    f"margin:2px 0;'>{_html.escape(str(rule))}</div>", unsafe_allow_html=True)
             with c2:
                 if st.button("✕", key=f"rule_del_{k}", help="Remove this rule"):
                     if rule in state["custom"]:
