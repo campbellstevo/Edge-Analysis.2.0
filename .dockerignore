@@ -3,3 +3,9 @@ __pycache__
 *.pyc
 .streamlit/secrets.toml
 src/edge_analysis/user_store.json
+.env
+*.env
+mt5_sync/config.ini
+_to_delete/
+tests/
+.pytest_cache/

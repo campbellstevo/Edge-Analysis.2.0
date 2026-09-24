@@ -19,3 +19,12 @@ venv/
 # Runtime user data
 user_store.json
 src/edge_analysis/user_store.json
+
+# Secrets and generated sync configs (GIT-01, SEC-12)
+.env
+*.env
+mt5_sync/config.ini
+_to_delete/
+
+# Test caches
+.pytest_cache/
