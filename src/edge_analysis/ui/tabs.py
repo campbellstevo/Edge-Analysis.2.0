@@ -56,6 +56,22 @@ def _dollars_hidden() -> bool:
     return bool(st.session_state.get("ea_privacy"))
 
 
+def _verdicts_on() -> bool:
+    """The prescriptive surfaces that fire on pure noise — the digest's leaks
+    and edges, "Recommended from your data", the week's prescriptive fix,
+    Prob. of Profit — are shown to the owner only until each passes its null
+    test (roadmap 1.12 / 5.3, D4). Members and demo visitors see the
+    descriptive stats. EA_VERDICTS = "all" shows them to everyone."""
+    try:
+        v = str(st.secrets.get("EA_VERDICTS") or "")
+    except Exception:
+        v = ""
+    v = (v or os.environ.get("EA_VERDICTS", "")).strip().lower()
+    if v == "all":
+        return True
+    return bool(st.session_state.get("ea_is_owner")) and not st.session_state.get("ea_demo")
+
+
 def _money(txt: str) -> str:
     """Wrap a fully-formatted $ string; returns a mask when privacy is on."""
     return "•••" if _dollars_hidden() else txt
@@ -4507,6 +4523,11 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
     s = active_stats
     ret_sign = "+" if s["total_return"] >= 0 else ""
     prob_profit = float(np.mean(final_balances > starting_balance))
+    # "Prob. of Profit" read 100.0% because the simulation never samples the
+    # uncertainty in its own win rate (PROJ-01): owner-only until it does.
+    _prob_cell = (f'<div class="proj-stat-cell"><div class="proj-stat-label">Prob. of Profit</div>'
+                  f'<div class="proj-stat-value">{prob_profit:.1%}</div></div>'
+                  if _verdicts_on() else "")
 
     st.markdown(f"""
     <div class="proj-stat-grid">
@@ -4538,10 +4559,7 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
             <div class="proj-stat-label">Simulated Win Rate</div>
             <div class="proj-stat-value">{s['actual_wr']:.1%}</div>
         </div>
-        <div class="proj-stat-cell">
-            <div class="proj-stat-label">Prob. of Profit</div>
-            <div class="proj-stat-value">{prob_profit:.1%}</div>
-        </div>
+        {_prob_cell}
     </div>
     """, unsafe_allow_html=True)
 
@@ -5564,8 +5582,9 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
         _f_track, _track_label, _track_others = _track_only(f_perf)
         _month_card(_f_track, styler)
         _breaker_strip(_track_only(df_all_safe)[0], terse=True)
-        _strengths_card(df_all_safe)
-        _digest_card(df_all_safe)
+        if _verdicts_on():
+            _strengths_card(df_all_safe)
+            _digest_card(df_all_safe)
         return
 
     # Speed: render ONLY the active tab. st.tabs runs all six server-side on
@@ -5746,7 +5765,8 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
         # The review question is "what do I work on?" — so the answer leads.
         # Leaks are habits: judged on the full executed history, not the date
         # slice currently in view (a one-week window would blind it).
-        _digest_card(df_all_safe)
+        if _verdicts_on():
+            _digest_card(df_all_safe)
         with st.container(border=True):
             st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
             _card_header("Weekly debrief", "Process over P&L \u2014 did you trade your system this week? Money lives on Performance.")

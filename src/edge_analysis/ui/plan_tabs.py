@@ -488,8 +488,13 @@ def _rules_section(good, bad) -> None:
                 _rules_save()
                 st.rerun()
 
+    # Recommendations come from an uncorrected many-way search that proposes a
+    # rule on pure noise (STAT-05): owner-only until each passes its null
+    # test (roadmap 1.12, D4). Members keep their own rules.
     pending = [(rid, txt) for rid, txt in recs
                if rid not in state["accepted"] and rid not in state["declined"]]
+    if not t._verdicts_on():
+        pending = []
     if pending:
         st.markdown("#### Recommended from your data")
         for rid, txt in pending:
@@ -700,7 +705,7 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
                 f"<span style='color:#64748b;'>{lab}</span> "
                 f"<span style='color:{RED};font-weight:800;'>gave back {gv:.2f}R</span></div>"
                 for lab, gv in leaks[:6]) + "</div>", unsafe_allow_html=True)
-            if give == give and net == net:
+            if give == give and net == net and t._verdicts_on():
                 wk_fixes.append((float(give), "Define the +1R action before entry",
                                  f"{give:.2f}R given back vs {_fmt_r(net)} banked — "
                                  "partial or trail, executed mechanically"))
