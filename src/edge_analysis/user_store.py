@@ -155,7 +155,15 @@ def _write_disk(store: Dict[str, Any]) -> None:
         pass  # read-only env: mirror still gets the write
 
 
+# Kept once, read by nothing (SEC-09): purged from every record on each save.
+_DROPPED_FIELDS = ("name", "email")
+
+
 def _save_raw_store(store: Dict[str, Any]) -> None:
+    for rec in store.get("users", {}).values():
+        if isinstance(rec, dict):
+            for k in _DROPPED_FIELDS:
+                rec.pop(k, None)
     _write_disk(store)
     _mirror_push(store)
 

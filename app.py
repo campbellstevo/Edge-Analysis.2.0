@@ -16,6 +16,7 @@ import requests
 import hashlib
 import time
 import re
+import html
 from urllib.parse import urlencode, urlparse
 from typing import Optional, Union, Tuple
 from datetime import date as DateType
@@ -193,6 +194,7 @@ from edge_analysis.ui.components import show_light_table
 from edge_analysis.ui.tabs import render_all_tabs, generate_overall_stats
 from edge_analysis.user_store import get_user, upsert_user, set_user_db
 from edge_analysis.data import whoop
+from edge_analysis import access
 
 
 # --------------------------- UI helpers ---------------------------------------
@@ -378,25 +380,36 @@ def _complete_login_with_token(access_token: str, workspace_name: Optional[str] 
         access_token: Notion OAuth access token
         workspace_name: Optional workspace name
     """
-    st.session_state[SessionKeys.OAUTH_TOKEN] = access_token
-    st.session_state[SessionKeys.USER_TOKEN] = access_token
     # a different key sees a different Notion — never show the old list
     st.session_state.pop("ea_db_cands", None)
 
     user_info = _get_notion_me(access_token) or {}
     user_id = user_info.get("id")
-    name = user_info.get("name")
-    email = None
-    person = user_info.get("person")
-    if isinstance(person, dict):
-        email = person.get("email")
+    ids, email = access.notion_identity(user_info)
 
-    st.session_state["ea_user_email"] = (email or "")
+    # The access switch decides BEFORE anything about this visitor is kept:
+    # not admitted means no session token, no user record, no journal link.
+    admitted, why = access.check(ids, email)
+    if not admitted:
+        if not user_info and why != "paused":
+            why = "unverified"
+        for _k in (SessionKeys.OAUTH_TOKEN, SessionKeys.USER_TOKEN,
+                   SessionKeys.USER_ID, SessionKeys.DB_ID):
+            st.session_state.pop(_k, None)
+        st.session_state["ea_denied"] = {"why": why, "email": email}
+        return
+    st.session_state.pop("ea_denied", None)
+
+    st.session_state[SessionKeys.OAUTH_TOKEN] = access_token
+    st.session_state[SessionKeys.USER_TOKEN] = access_token
+    st.session_state["ea_user_email"] = email
     st.session_state["ea_user_id"] = str(user_id or "")
+    st.session_state["ea_user_ids"] = sorted(ids)
 
     if user_id:
         st.session_state[SessionKeys.USER_ID] = user_id
-        upsert_user(user_id, name=name, email=email, workspace=workspace_name)
+        # No name or email: nothing reads them back (SEC-09).
+        upsert_user(user_id, workspace=workspace_name)
         rec = get_user(user_id) or {}
         dbid = rec.get("db_id")
         if dbid:
@@ -1187,6 +1200,61 @@ def _render_login_page():
         )
 
 
+# ------------------------------ Access switch ---------------------------------
+_ACCESS_COPY = {
+    "paused": ("Edge Analysis is paused for a moment",
+               "Your journal is untouched — it lives in your own Notion. "
+               "Please try again a little later."),
+    "not_open": ("Edge Analysis isn't open yet",
+                 "It's in a closed beta for the TradingPool community. "
+                 "Nothing about your account was saved."),
+    "no_owner": ("Edge Analysis isn't open yet",
+                 "Access is owner-only and no owner is set. Owner: add EA_OWNER "
+                 "(your Notion sign-in email) to the app's secrets."),
+    "unverified": ("We couldn't confirm your Notion account",
+                   "Notion didn't answer in time. Nothing was saved — please sign in again."),
+}
+
+
+def _use_other_account() -> None:
+    st.session_state.pop("ea_denied", None)
+    st.session_state["ea_skip_device"] = True
+
+
+def _render_access_page(denied: dict) -> None:
+    """Shown instead of the app to anyone the access switch does not admit."""
+    _inject_signin_css()
+    why = (denied or {}).get("why") or "not_open"
+    title, body = _ACCESS_COPY.get(why, _ACCESS_COPY["not_open"])
+    who = html.escape(str((denied or {}).get("email") or ""))
+    who_html = (f'<p style="font-size:12.5px;color:#64748b;margin:0 0 16px;">'
+                f'Signed in to Notion as {who}</p>' if who else "")
+    with st.container():
+        st.markdown(
+            f'''<div class="ea-wallcard"></div>
+            <h3 style="margin:0 0 8px;">{title}</h3>
+            <p style="margin:0 0 14px;">{body}</p>{who_html}''',
+            unsafe_allow_html=True)
+        st.button("▶ View the live demo", key="ea_demo_enter_denied",
+                  use_container_width=True, on_click=_enter_demo)
+        if why != "paused":
+            st.button("Use a different Notion account", key="ea_other_account",
+                      use_container_width=True, on_click=_use_other_account)
+
+
+def _enforce_access() -> None:
+    """Re-check a signed-in session against the live switch on every run."""
+    ids = set(st.session_state.get("ea_user_ids") or [])
+    for _k in ("ea_user_id", SessionKeys.USER_ID):
+        if st.session_state.get(_k):
+            ids.add(str(st.session_state[_k]).lower())
+    email = str(st.session_state.get("ea_user_email") or "")
+    admitted, why = access.check(ids, email)
+    if not admitted:
+        _render_access_page({"why": why, "email": email})
+        st.stop()
+
+
 # ----------------------- Device-persistent login ------------------------------
 _DEVICE_AUTH_KEY = "ea_auth"
 
@@ -1327,6 +1395,10 @@ def _require_notion_login():
         _handle_oauth_callback()
         return
 
+    if st.session_state.get("ea_denied"):
+        _render_access_page(st.session_state["ea_denied"])
+        st.stop()
+
     token = (
         st.session_state.get(SessionKeys.USER_TOKEN)
         or st.session_state.get(SessionKeys.OAUTH_TOKEN)
@@ -1345,7 +1417,7 @@ def _require_notion_login():
         return
 
     # Login saved on this device (set after any previous successful login).
-    _restored = _restore_device_auth()
+    _restored = False if st.session_state.get("ea_skip_device") else _restore_device_auth()
     if _restored:
         _st_rerun()
         return
@@ -2255,9 +2327,11 @@ def main() -> None:
         _enter_demo()
     _demo = bool(st.session_state.get("ea_demo"))
 
-    # Require login (the demo skips it by design)
+    # Require login (the demo skips it by design), then the access switch —
+    # re-read every run, so "paused" takes effect on the next click
     if not _demo:
         _require_notion_login()
+        _enforce_access()
 
     # Theme preference: restore from this device, persist changes, apply overlay
     _prefs = _prefs_blob()

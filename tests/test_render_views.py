@@ -87,6 +87,7 @@ def salty_member(monkeypatch):
     at.session_state["user_notion_token"] = "test-" + uuid.uuid4().hex
     at.session_state["override_DATABASE_ID"] = uuid.uuid4().hex
     at.session_state["user_id"] = "member-" + uuid.uuid4().hex[:8]
+    at.secrets["EA_ACCESS"] = "open"  # a member, not the owner
     return at
 
 
