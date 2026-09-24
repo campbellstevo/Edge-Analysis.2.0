@@ -156,8 +156,8 @@ def _gen_month(ms: pd.Timestamp, days, seed: int, attempt: int, balance: float):
                 "Mistake": mistake,
                 "Reason of loss": str(rng.choice(_LOSS_NOTES)) if (is_loss and rng.random() < 0.7) else "",
                 "Hour (Melb)": hour,
-                "2h session window": "Yes" if rng.random() < 0.05 else "",
             })
+            rng.random()  # was the retired window field's draw; kept so the demo's numbers don't move
     return rows, balance
 
 

@@ -1641,7 +1641,7 @@ def render_dashboard(mobile: bool):
         _db1, _db2 = st.columns([4.2, 1])
         with _db1:
             st.markdown(
-                "<div style='background:linear-gradient(90deg,#4800ff12,#4800ff08);"
+                "<div class='ea-demo-banner' style='background:linear-gradient(90deg,#4800ff12,#4800ff08);"
                 "border:1px solid #4800ff33;border-radius:12px;padding:10px 16px;"
                 "font-size:13.5px;color:#3b3f4d;margin:2px 0 8px;'>"
                 "<b style='color:#4800ff;'>You're exploring the demo</b> — a simulated "

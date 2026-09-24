@@ -220,7 +220,8 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
         # fact and would make this gate circular
         ("Bias written down, prepared before entry",
          _yes(g, "Clear Bias/Prepared"), "prepared", "unprepared"),
-        sess_rule,
+        # (No session gate: which sessions to trade is exactly what the data is
+        # still deciding — sessions are reported in the ranked lists below.)
         ("Single entry, structure stop set", ok_single, "single", "multi"),
         tf_rule,
         model_rule,
@@ -675,15 +676,10 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
             lines.append(f"{name}s {_fmt_r(float(grp['__rr'].sum()))} over {len(grp)}")
     if lines:
         st.caption("Direction split: " + " · ".join(lines))
-    sess_tot = {name: float(grp["__rr"].sum()) for name, grp in wk.groupby(sess_s) if name and str(name) != "nan"}
+    # No "Stop trading <session>" fix: one week's session total is one or two
+    # trades — it fired on a single stop-out in 37 of 46 demo weeks (STAT-06).
+    # The week's sessions are on the scoreboard above.
     wk_fixes = []
-    if sess_tot:
-        best_s = max(sess_tot, key=sess_tot.get)
-        worst_s = min(sess_tot, key=sess_tot.get)
-        if sess_tot[worst_s] < -0.8:
-            wk_fixes.append((abs(sess_tot[worst_s]), f"Stop trading {worst_s}",
-                             f"{_fmt_r(sess_tot[worst_s])} there this week vs "
-                             f"{_fmt_r(sess_tot[best_s])} in {best_s}"))
 
     # management leaks
     if mfe is not None and mfe.notna().any():
@@ -766,8 +762,8 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
             _cmp.append(("Net R", _fmt_r(float(pr.sum())), _fmt_r(net), net >= float(pr.sum())))
         st.markdown("".join(
             f"<div style='display:flex;gap:18px;align-items:center;padding:5px 0;'>"
-            f"<div style='flex:0 0 150px;font-size:13.5px;font-weight:700;color:#0f172a;'>{_l}</div>"
-            f"<div style='flex:0 0 140px;font-size:12.5px;color:#64748b;'>last {_a}</div>"
+            f"<div style='flex:0 1 150px;min-width:0;font-size:13.5px;font-weight:700;color:#0f172a;'>{_l}</div>"
+            f"<div style='flex:0 1 140px;min-width:0;font-size:12.5px;color:#64748b;'>last {_a}</div>"
             f"<div style='font-size:13px;font-weight:800;color:{GREEN if _ok else RED};'>now {_b}</div></div>"
             for _l, _a, _b, _ok in _cmp), unsafe_allow_html=True)
         if n > pn and net < float(pr.sum()):

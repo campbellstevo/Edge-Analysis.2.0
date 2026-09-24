@@ -658,16 +658,21 @@ def inject_theme():
       padding: .75rem .9rem !important;
     }}
     
-    /* Alerts (readable text) */
-    .stAlert {{
-      background: #ecfdf5 !important;
-      border: 1px solid #bbf7d0 !important;
-      color: #064e3b !important;
-      border-radius: 12px !important;
+    /* Alerts: one palette per kind (UI-03 — every error and warning used to
+       render in the success green). Info keeps its quiet grey rule below. */
+    .stAlert {{ border-radius: 12px !important; }}
+    .stAlert:has([data-testid="stAlertContentSuccess"]) {{
+      background: #ecfdf5 !important; border: 1px solid #bbf7d0 !important;
     }}
-    .stAlert * {{
-      color: #064e3b !important;
+    .stAlert:has([data-testid="stAlertContentSuccess"]) * {{ color: #064e3b !important; }}
+    .stAlert:has([data-testid="stAlertContentError"]) {{
+      background: #fef2f2 !important; border: 1px solid #fecaca !important;
     }}
+    .stAlert:has([data-testid="stAlertContentError"]) * {{ color: #7f1d1d !important; }}
+    .stAlert:has([data-testid="stAlertContentWarning"]) {{
+      background: #fffbeb !important; border: 1px solid #fde68a !important;
+    }}
+    .stAlert:has([data-testid="stAlertContentWarning"]) * {{ color: #78350f !important; }}
     
     /* Tables / tabs / cards */
     .header-logo-wrap {{
@@ -1184,7 +1189,7 @@ def inject_theme():
     /* Run row: a quiet note left, the Run button right. Outline until
        something changes (the page script adds .ea-dirty), then filled. */
     {_PRUN} {{ margin-top: -8px; }}
-    {_PRUN} .ea-projrun-note {{ font-size: 13px; color: #94a3b8; }}
+    {_PRUN} .ea-projrun-note {{ font-size: 13px; color: #64748b; }}
     {_PRUN} [data-testid="stFormSubmitButton"] {{ display: flex; justify-content: flex-end; }}
     {_PRUN} [data-testid="stFormSubmitButton"] > button {{
         min-height: 38px !important; height: 38px !important; padding: 0 22px !important;
@@ -1452,6 +1457,10 @@ def inject_theme():
     div[data-testid="stPopoverBody"]:has(.ea-chat-body) [data-testid="stTextInput"] input {{
         font-size: 13.5px;
     }}
+
+    /* Plan editor: the slider's value bubble sits above the thumb and covered
+       the field label on a narrow popover — give the label its own line. */
+    [class*="st-key-ea_m_"] [data-testid="stWidgetLabel"] {{ margin-bottom: 20px !important; }}
 
     /* Hidden JS helper components must take no space (white strips fix) */
     iframe[title="streamlit_js_eval.streamlit_js_eval"] {{ display: none !important; }}
@@ -1752,6 +1761,16 @@ def inject_theme():
             bottom: 68px !important;
             right: 12px !important;
         }}
+        /* On a phone the bubble sat on steppers, values and the footer: make it
+           smaller and give the page room to scroll the last card above it. */
+        div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-chatfab) button {{
+            width: 44px !important; height: 44px !important; min-width: 44px !important;
+            padding: 0 !important;
+        }}
+        div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-chatfab) button p {{
+            font-size: 18px !important;
+        }}
+        [data-testid="stMainBlockContainer"] {{ padding-bottom: 128px !important; }}
     }}
 
     /* Radios as pills (Most Possible / Worst / Best etc.) */
@@ -1838,6 +1857,16 @@ def inject_dark_overlay():
     .ea-verdict { color: #aeb6c6 !important; }
     .ea-verdict b { color: #e8ebf1 !important; }
     .ea-verdict-body { color: inherit; }
+    /* Brand-purple TEXT is 2.2:1 on the dark cards (VIS-D-02, UI-02). Browsers
+       serialise inline styles as "prop: value; prop: value", so matching the
+       start of the attribute or "; color:" hits the color property only —
+       never background-color or border-color (white-on-purple pills stay). */
+    [style^="color: rgb(72, 0, 255)"], [style*="; color: rgb(72, 0, 255)"],
+    [style^="color:#4800ff"], [style*=";color:#4800ff"],
+    .proj-stat-value { color: #a578ff !important; }
+    .ea-demo-banner { color: #c9d0dc !important; background: rgba(72,0,255,0.10) !important;
+                      border-color: rgba(165,120,255,0.35) !important; }
+    .ea-demo-banner b { color: #a578ff !important; }
     /* Segmented controls (Focus/Everything, setup pills): dark cards, not white */
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"],
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-setupseg) [role="radiogroup"] {
@@ -2054,6 +2083,8 @@ def inject_dark_overlay():
     .proj-stat-cell { background: #161b27 !important; border-color: rgba(255,255,255,0.09) !important; }
     .proj-stat-label { color: #9aa4b4 !important; }
     .proj-stat-value { color: #e8ebf1; }
+    .proj-positive { color: #4ade80 !important; }
+    .proj-negative { color: #f87171 !important; }
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-nav) [role="radiogroup"] > label { background: #161b27 !important; border-color: rgba(255,255,255,0.09) !important; }
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-nav) [role="radiogroup"] > label p { color: #c7cddb !important; }
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-nav) [role="radiogroup"] > label:has(input:checked) { background: #4800ff !important; border-color: #4800ff !important; }
@@ -2096,6 +2127,14 @@ def inject_dark_overlay():
         color: #d3d9e3 !important;
     }
     div[role="dialog"] div[style*="color: rgb(51, 65, 85)"] { color: #c9d0dc !important; }
+    div[role="dialog"] button[aria-label="Close"],
+    div[role="dialog"] button[aria-label="Close"] svg { color: #c9d0dc !important; fill: #c9d0dc !important; }
+    div[data-testid="stPopoverBody"]:has(.ea-chat-body) input,
+    div[data-testid="stPopoverBody"]:has(.ea-chat-body) [data-baseweb="input"],
+    div[data-testid="stPopoverBody"]:has(.ea-chat-body) [data-baseweb="base-input"] {
+        background: #161b27 !important; color: #e8ebf1 !important;
+        border-color: rgba(255,255,255,0.12) !important;
+    }
     [data-baseweb="calendar"], [data-baseweb="datepicker"] {
         background: #161b27 !important;
         color: #d3d9e3 !important;
@@ -2153,6 +2192,18 @@ def inject_dark_overlay():
     div[data-testid="stAlert"] [data-testid="stMarkdownContainer"] * {
         color: #9aa4b4 !important;
     }
+    div[data-testid="stAlert"]:has([data-testid="stAlertContentSuccess"]) {
+        background: rgba(34,197,94,0.10) !important; border-color: rgba(34,197,94,0.32) !important;
+    }
+    div[data-testid="stAlert"]:has([data-testid="stAlertContentSuccess"]) * { color: #86efac !important; }
+    div[data-testid="stAlert"]:has([data-testid="stAlertContentError"]) {
+        background: rgba(239,68,68,0.10) !important; border-color: rgba(239,68,68,0.35) !important;
+    }
+    div[data-testid="stAlert"]:has([data-testid="stAlertContentError"]) * { color: #fca5a5 !important; }
+    div[data-testid="stAlert"]:has([data-testid="stAlertContentWarning"]) {
+        background: rgba(245,158,11,0.10) !important; border-color: rgba(245,158,11,0.35) !important;
+    }
+    div[data-testid="stAlert"]:has([data-testid="stAlertContentWarning"]) * { color: #fcd34d !important; }
     button[data-testid="stBaseButton-secondary"],
     button[kind="secondary"], button[kind="secondaryFormSubmit"] {
         background: #161b27 !important;

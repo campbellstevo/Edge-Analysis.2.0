@@ -102,7 +102,7 @@ def findings(df: pd.DataFrame, min_n: int = _MIN_N) -> list:
             if not sess or sess.lower() in ("nan", "none", ""):
                 continue
             f = _gap_finding(df, rr, vals == sess, "session",
-                            f"Cut or fix {sess}",
+                            f"{sess} is below your average",
                             f"{sess} trades", min_n)
             if f:
                 out.append(f)

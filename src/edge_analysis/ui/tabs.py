@@ -176,8 +176,15 @@ def _coerce_datetime_series(df: pd.DataFrame, tz_name: str = "UTC"):
     if s_dt is None:
         dcol = next((c for c in cand_date if c in df.columns), None)
         if dcol:
-            s_date = pd.to_datetime(df[dcol].map(_extract_iso_from_notion), errors="coerce")
-            s_dt = pd.to_datetime(s_date.dt.strftime("%Y-%m-%d") + " 00:00", errors="coerce")
+            # Keep the time when the column has one. Rebuilding it as
+            # "date 00:00" put every trade at midnight: no loss was ever
+            # followed by a quick re-entry (the discipline score read 0 revenge
+            # beside the tilt card's 5), and every trade without a Session
+            # column was classified New York (TZ-05).
+            s_dt = pd.to_datetime(
+                df[dcol].map(_extract_iso_from_notion).astype(str)
+                .str.replace(r"\s*\(GMT.*\)$", "", regex=True),
+                errors="coerce", format="mixed")
 
     if s_dt is None:
         return None
@@ -733,14 +740,6 @@ def _digest_card(f: pd.DataFrame) -> None:
             _empty_note(f"Leaks appear once 5+ trades share a pattern \u2014 "
                         f"{_n_ex} executed so far, nothing recurring yet.")
         return
-    try:
-        # One lever, two halves: when a session leak coexists with a session
-        # edge, the leak's line says so — the reader should see one decision.
-        _sess_edge = next((x for x in strengths(f) if x["kind"] == "session"), None)
-        _sess_good = (_sess_edge["label"].replace("Lean on ", "")
-                      if _sess_edge else None)
-    except Exception:
-        _sess_good = None
     import html as _h2
     with st.container(border=True):
         st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
@@ -749,12 +748,10 @@ def _digest_card(f: pd.DataFrame) -> None:
                      "fix the top one first.")
         rows = []
         for i, f_ in enumerate(fs[:3], 1):
-            _sev = "#ef4444" if i == 1 else ("#f59e0b" if i == 2 else "#64748b")
+            _sev = "#ef4444" if i == 1 else ("#b45309" if i == 2 else "#64748b")
             _eyeb = "#64748b"
             _lab = _h2.escape(str(f_["label"]))
             _ev = _h2.escape(str(f_["evidence"]).split(" \u2014 ")[0])
-            if f_["kind"] == "session" and _sess_good:
-                _ev += _h2.escape(f" \u00b7 the other half of your {_sess_good} edge")
             _bord = "" if i == 1 else "border-top:1px solid #eef0f6;"
             _stk = f_["stake"]
             rows.append(
@@ -1065,13 +1062,22 @@ def _month_card(f: pd.DataFrame, styler) -> None:
                                   step=0.05, format="%.2f", key="ea_m_risk",
                                   help="What one R is worth. Your plan's number, "
                                        "not a guess from past stop sizes.")
-                        st.number_input("Account balance ($) — today", min_value=1.0,
-                                        max_value=1000000.0, step=50.0, format="%.2f",
-                                        value=float(st.session_state.get("ea_m_bal", 10000.0)),
-                                        key="ea_m_bal",
-                                        help="Today's balance. Past months use the balance "
-                                             "rebuilt from your own trade P&L, so each month "
-                                             "is a true return. Deposits/withdrawals shift it.")
+                        if _dollars_hidden():
+                            # Privacy on: the balance is a money figure too. Keep
+                            # its value (an unrendered widget's state is dropped)
+                            # without showing it.
+                            st.session_state["ea_m_bal"] = float(
+                                st.session_state.get("ea_m_bal", 10000.0))
+                            st.caption("Account balance hidden while dollar amounts are "
+                                       "off — ⋯ menu → Show dollar amounts to edit it.")
+                        else:
+                            st.number_input("Account balance ($) — today", min_value=1.0,
+                                            max_value=1000000.0, step=50.0, format="%.2f",
+                                            value=float(st.session_state.get("ea_m_bal", 10000.0)),
+                                            key="ea_m_bal",
+                                            help="Today's balance. Past months use the balance "
+                                                 "rebuilt from your own trade P&L, so each month "
+                                                 "is a true return. Deposits/withdrawals shift it.")
                         st.form_submit_button("Save", type="primary", on_click=_plan_dirty,
                                               use_container_width=True)
 
@@ -1898,14 +1904,15 @@ def _journal_completeness_strip(df: pd.DataFrame) -> None:
     fill_w = max(3, int(round(pct * 100)))
     nice = ", ".join(c.replace("?", "") for c in tag_cols)
     st.markdown(
-        f"<div style='display:flex;align-items:center;gap:16px;background:#fdf6e8;"
+        f"<div style='display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;background:#fdf6e8;"
         f"border:1px solid #ecd4a2;border-radius:12px;padding:14px 18px;margin:2px 0 10px;'>"
         f"<div style='font-size:19px;color:#7c4a03;font-weight:800;'>\u26a0</div>"
-        f"<div style='flex:1;'><div style='font-size:15.5px;font-weight:800;color:#7c4a03;'>"
+        f"<div style='flex:1 1 260px;min-width:0;'><div style='font-size:15.5px;font-weight:800;color:#7c4a03;'>"
         f"Journal completeness: {full} of {total} trades fully tagged</div>"
-        f"<div style='font-size:12.5px;color:#9a6b1f;margin-top:1px;'>This page reads only tagged trades "
-        f"\u2014 backfill {_html.escape(nice)} in Notion and it sharpens fast.</div></div>"
-        f"<div style='flex:0 0 180px;background:#f3e3c0;border-radius:8px;height:12px;overflow:hidden;'>"
+        f"<div style='font-size:12.5px;color:#9a6b1f;margin-top:1px;'>Cards built on these tags "
+        f"only see the tagged trades \u2014 backfill {_html.escape(nice)} in Notion and "
+        f"they sharpen fast.</div></div>"
+        f"<div style='flex:1 1 180px;max-width:240px;background:#f3e3c0;border-radius:8px;height:12px;overflow:hidden;'>"
         f"<div style='width:{fill_w}%;height:12px;background:#b45309;'></div></div>"
         f"</div>", unsafe_allow_html=True)
 
@@ -2215,20 +2222,24 @@ def _entry_models_tab(f: pd.DataFrame, show_table):
                           **{"Win %": r["win_rate"], "BE %": r["be_rate"], "Loss %": r["loss_rate"],
                              "Net PnL (R)": net_rr, "Expectancy (R)": ex_rr}))
     if rates:
-        df_em = pd.DataFrame(rates).sort_values("Win %", ascending=False)
+        df_em = pd.DataFrame(rates).sort_values("Expectancy (R)", ascending=False)
         st.markdown("### Entry model expectancy")
-        st.caption("Average R per trade by entry model — ranked best → worst.")
-        # verdict first, evidence under it (the card standard's order)
-        df_em3 = df_em[pd.to_numeric(df_em["Trades"], errors="coerce") >= 3]
-        if len(df_em3) >= 2 and int(pd.to_numeric(df_em3["Trades"], errors="coerce").max() or 0) >= 8:
-            best_em = df_em3.iloc[0]
-            worst_em = df_em3.iloc[-1]
-            if best_em["Entry_Model"] != worst_em["Entry_Model"]:
+        _two = bool(f_norm["Entry Models List"].apply(
+            lambda x: isinstance(x, (list, tuple)) and len(x) > 1).any())
+        st.caption("Average R per trade by entry model, best first"
+                   + (" — a trade logged with two models counts under each." if _two else "."))
+        # verdict first, evidence under it; read only between models with 8+
+        # trades, and say how many (the card's own measure: expectancy)
+        df_em8 = df_em[pd.to_numeric(df_em["Trades"], errors="coerce") >= 8]
+        if len(df_em8) >= 2:
+            best_em = df_em8.iloc[0]
+            worst_em = df_em8.iloc[-1]
+            if best_em["Expectancy (R)"] - worst_em["Expectancy (R)"] > 0.2:
                 _insight_box(
-                    f"<b>{best_em['Entry_Model']}</b> leads with <b>{best_em['Win %']:.1f}%</b> win rate "
-                    f"across {int(best_em['Trades'])} trades. "
-                    f"<b>{worst_em['Entry_Model']}</b> is your weakest model at "
-                    f"<b>{worst_em['Win %']:.1f}%</b> — consider filtering it out or reviewing entry criteria.", "info")
+                    f"<b>{_html.escape(str(best_em['Entry_Model']))}</b> averages "
+                    f"<b>{best_em['Expectancy (R)']:+.2f}R</b> a trade over {int(best_em['Trades'])} trades; "
+                    f"<b>{_html.escape(str(worst_em['Entry_Model']))}</b> "
+                    f"<b>{worst_em['Expectancy (R)']:+.2f}R</b> over {int(worst_em['Trades'])}.", "info")
         _flip("em_flip",
               lambda: _edge_tiles(df_em, "Entry_Model", "Expectancy (R)"),
               lambda: render_entry_model_table(df_em, title=None))
@@ -2578,17 +2589,22 @@ def _sessions_tab(f: pd.DataFrame, show_table):
             rates.append(dict(Session=sess, Trades=len(g),
                               **{"Win %": r["win_rate"], "BE %": r["be_rate"], "Loss %": r["loss_rate"],
                                  "Net PnL (R)": net_rr, "Expectancy (R)": ex_rr}))
-        df_rates = pd.DataFrame(rates).sort_values("Win %", ascending=False)
+        # Ranked by expectancy — the card's own measure (TZ-12) — and read
+        # only between sessions with 8+ trades, with the counts printed
+        # (TZ-11). Evidence, not an instruction: where the edge sits by
+        # session is what the trader is collecting data to decide.
+        df_rates = pd.DataFrame(rates).sort_values("Expectancy (R)", ascending=False)
         st.markdown("### Session expectancy")
-        st.caption("Average R per trade by session.")
-        if not df_rates.empty:
-            best = df_rates.iloc[0]
-            worst = df_rates.iloc[-1]
-            if best["Session"] != worst["Session"] and best["Win %"] - worst["Win %"] > 10:
+        st.caption("Average R per trade by session, best first.")
+        _read = df_rates[df_rates["Trades"] >= 8] if not df_rates.empty else df_rates
+        if len(_read) >= 2:
+            best = _read.iloc[0]
+            worst = _read.iloc[-1]
+            if best["Expectancy (R)"] - worst["Expectancy (R)"] > 0.2:
                 _insight_box(
-                    f"<b>{best['Session']}</b> is your best session at <b>{best['Win %']:.1f}%</b> win rate. "
-                    f"<b>{worst['Session']}</b> trails at <b>{worst['Win %']:.1f}%</b>. "
-                    f"Concentrate trade frequency in {best['Session']} and reduce exposure in {worst['Session']}.", "info")
+                    f"<b>{best['Session']}</b> averages <b>{best['Expectancy (R)']:+.2f}R</b> a trade "
+                    f"over {int(best['Trades'])} trades; <b>{worst['Session']}</b> "
+                    f"<b>{worst['Expectancy (R)']:+.2f}R</b> over {int(worst['Trades'])}.", "info")
         _flip("sess_flip",
               lambda: _rank_dots(df_rates, "Session", "Expectancy (R)"),
               lambda: render_session_performance_table(df_rates, title=None))
@@ -3027,6 +3043,27 @@ def _div_vs_sweep(f: pd.DataFrame) -> None:
                f"({max(combos, key=lambda r: r['Avg R'])['Avg R']:+.2f}R)." if combos else ""))
 
 
+# Long journal values read as one label each. A plain cut at 34 characters made
+# "…(Entry was within 2hs of news)" and "…(Entry was over 2hs before news)"
+# render identically (STAT-02).
+_SHORT_LABELS = [
+    (r"within\s*2\s*h", "Through news \u00b7 entered <2h before"),
+    (r"over\s*2\s*h\w*\s*before", "Through news \u00b7 entered 2h+ before"),
+    (r"closed before news", "Closed 2h+ before news"),
+]
+
+
+def _short_label(val, n: int = 30) -> str:
+    v = re.sub(r"\s+", " ", str(val)).strip()
+    low = v.lower()
+    for pat, lab in _SHORT_LABELS:
+        if re.search(pat, low):
+            return lab
+    if len(v) <= n:
+        return v
+    return v[:n].rsplit(" ", 1)[0].rstrip(" (,·-") + "\u2026"
+
+
 def _flag_verdicts(f: pd.DataFrame, scope: str = "entry"):
     """Collect per-flag average-R verdicts. scope='entry' = entry criteria;
     scope='external' = market externals (volatility, news, gap)."""
@@ -3080,9 +3117,9 @@ def _flag_verdicts(f: pd.DataFrame, scope: str = "entry"):
             if len(sub) >= 3:
                 short = col.replace("Tiers in pricing ", "Tiers ").replace("?", "")
                 if scope != "entry" and any(ch.isalpha() for ch in val):
-                    lab = val[:34]  # value reads on its own — column prefix is noise
+                    lab = _short_label(val)  # the value reads on its own
                 else:
-                    lab = f"{short} · {val[:24]}"
+                    lab = f"{short} · {_short_label(val, 24)}"
                 rows.append({"Category": lab,
                              "Avg R": round(float(sub["__rr"].mean()), 2), "Trades": len(sub)})
     return rows
@@ -3518,7 +3555,7 @@ def _loss_postmortem(f: pd.DataFrame) -> None:
                      f"than a new setup.", "bad")
 
 
-_EA_GREEN, _EA_RED, _EA_GREY = "#16a34a", "#ef4444", "#9ca3af"
+_EA_GREEN, _EA_RED, _EA_GREY = "#16a34a", "#ef4444", "#64748b"
 
 _EA_VIZ_CSS = """<style>
 .ea-pb{display:flex;flex-direction:column;gap:7px;margin:6px 0 10px;}
@@ -3530,7 +3567,8 @@ _EA_VIZ_CSS = """<style>
 .ea-pb-bar{height:14px;}
 .ea-pb-zero{position:absolute;left:50%;top:-3px;bottom:-3px;border-left:1.5px dashed #cbd5e1;}
 .ea-pb-val{flex:0 0 62px;font-size:12.5px;font-weight:700;}
-@media (max-width:640px){.ea-pb-lab{flex-basis:40%;font-size:12px;}}
+@media (max-width:640px){.ea-pb-lab{flex-basis:44%;font-size:12px;white-space:normal;
+  overflow-wrap:anywhere;line-height:1.25;}}
 .ea-et-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:6px 0 10px;}
 .ea-et{background:#ffffff;border:1px solid #eef0f4;border-left:4px solid #9ca3af;
   border-radius:0 10px 10px 0;padding:10px 12px;}
@@ -4168,7 +4206,7 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
         color: #1a0066;
         border-radius: 0 0 8px 8px;
     }
-    .proj-positive { color: #00a86b; font-weight: 600; }
+    .proj-positive { color: #15803d; font-weight: 600; }
     .proj-negative { color: #e03131; font-weight: 600; }
     @media (max-width: 768px) {
         .proj-stat-grid { grid-template-columns: repeat(2, 1fr); }
@@ -4522,7 +4560,9 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
         cols  = st.columns(len(chunk))
         for col, yr in zip(cols, chunk):
             yr_rows        = years_dict[yr]
-            yr_total_pct   = sum(r["pct"]    for r in yr_rows)
+            # months compound: the year is end balance / start balance − 1,
+            # not the sum of monthly percentages
+            yr_total_pct   = float(np.prod([1 + r["pct"] for r in yr_rows]) - 1)
             yr_total_dollar = sum(r["dollar"] for r in yr_rows)
 
             _2c = " proj-2col" if _hide else ""

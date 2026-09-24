@@ -227,18 +227,21 @@ def render_filters(
                 flt = st.expander(_flabel)
     with _hc2:
         _dark_now = st.session_state.get("ea_theme_pref", "light") == "dark"
-        _want = "\u263e" if _dark_now else "\u2600"
-        if st.session_state.get("ea_theme_seg") not in ("\u2600", "\u263e"):
-            st.session_state["ea_theme_seg"] = _want
+        # One widget per applied theme. The saved theme arrives from the browser
+        # a run or two after the first paint, so a single widget seeded once sat
+        # on ☀ over a dark page; writing its value from code instead races the
+        # value the browser sends back and can flip the theme on the next click.
+        # A new key is a new widget, drawn with the right default.
+        _seg_key = "ea_theme_seg_d" if _dark_now else "ea_theme_seg_l"
 
         def _theme_cb():
-            want = "dark" if st.session_state.get("ea_theme_seg") == "\u263e" else "light"
+            want = "dark" if st.session_state.get(_seg_key) == "\u263e" else "light"
             if st.session_state.get("ea_theme_pref", "light") != want:
                 st.session_state["ea_theme_pref"] = want
                 st.session_state["ea_theme_dirty"] = True
 
         st.markdown('<div class="ea-themeseg"></div>', unsafe_allow_html=True)
-        st.radio("Theme", ["\u2600", "\u263e"], key="ea_theme_seg",
+        st.radio("Theme", ["\u2600", "\u263e"], index=1 if _dark_now else 0, key=_seg_key,
                  horizontal=True, on_change=_theme_cb, label_visibility="collapsed")
     with _hc3:
         st.markdown('<div class="ea-dots"></div>', unsafe_allow_html=True)
