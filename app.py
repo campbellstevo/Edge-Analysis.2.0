@@ -1108,18 +1108,8 @@ def _inject_signin_css():
     )
 
 
-def _render_login_page():
-    """Render the login/sign-in page using pure Streamlit components."""
-    _inject_signin_css()
-
-    # Get OAuth URL from existing helper
-    auth_url = _prepare_oauth_url()
-    if not auth_url:
-        st.error("Could not prepare Notion OAuth URL. Check your client ID, secret, and redirect URI.")
-        return
-
-    # Centered sign-in page layout using a single card
-    # Load the logo image and convert to base64 if available
+def _wall_logo_html() -> str:
+    """The Edge Analysis logo as an inline <img> for the sign-in card."""
     logo_html = ""
     try:
         assets_dir = ASSETS_DIR if 'ASSETS_DIR' in globals() else _find_assets_dir()
@@ -1133,6 +1123,11 @@ def _render_login_page():
     except Exception:
         pass
 
+    return logo_html
+
+
+def _wallcard_css() -> None:
+    """The centred white card the sign-in and access pages sit in."""
     st.markdown("""
         <style>
         div[data-testid="stVerticalBlock"]:has(> div.stElementContainer .ea-wallcard) {
@@ -1152,6 +1147,23 @@ def _render_login_page():
             background: #f4f0ff; color: #4800ff; border-color: #4800ff;
         }
         </style>""", unsafe_allow_html=True)
+
+
+def _render_login_page():
+    """Render the login/sign-in page using pure Streamlit components."""
+    _inject_signin_css()
+
+    # Get OAuth URL from existing helper
+    auth_url = _prepare_oauth_url()
+    # Without OAuth secrets the card still renders (logo, demo) — only the
+    # sign-in link is replaced by a line saying why.
+    _signin_html = (f'<a href="{auth_url}" class="ea-link-btn">Sign in with Notion</a>'
+                    if auth_url else
+                    '<div style="font-size:13px;color:#b45309;margin:4px 0;">'
+                    'Notion sign-in isn\'t set up on this server yet.</div>')
+
+    logo_html = _wall_logo_html()
+    _wallcard_css()
     with st.container():
         st.markdown(
             f"""<div class="ea-wallcard"></div>{logo_html}
@@ -1165,7 +1177,7 @@ def _render_login_page():
         st.markdown(
             f"""<div style="font-size:12.5px;color:#64748b;margin:6px 0 16px;">
               Realistic simulated journal — nothing to connect</div>
-            <a href="{auth_url}" class="ea-link-btn">Sign in with Notion</a>
+            {_signin_html}
             <div style="font-size:12.5px;color:#64748b;margin:10px 0 0;">
               {_tpl_html}Notion will show a checklist of your pages —
               <b>tick your Trade Journal</b> and we find it automatically.</div>
@@ -1285,6 +1297,7 @@ def _use_other_account() -> None:
 def _render_access_page(denied: dict) -> None:
     """Shown instead of the app to anyone the access switch does not admit."""
     _inject_signin_css()
+    _wallcard_css()
     why = (denied or {}).get("why") or "not_open"
     title, body = _ACCESS_COPY.get(why, _ACCESS_COPY["not_open"])
     who = html.escape(str((denied or {}).get("email") or ""))
@@ -1292,8 +1305,8 @@ def _render_access_page(denied: dict) -> None:
                 f'Signed in to Notion as {who}</p>' if who else "")
     with st.container():
         st.markdown(
-            f'''<div class="ea-wallcard"></div>
-            <h3 style="margin:0 0 8px;">{title}</h3>
+            f'''<div class="ea-wallcard"></div>{_wall_logo_html()}
+            <h3 style="margin:14px 0 8px;">{title}</h3>
             <p style="margin:0 0 14px;">{body}</p>{who_html}''',
             unsafe_allow_html=True)
         st.button("▶ View the live demo", key="ea_demo_enter_denied",
