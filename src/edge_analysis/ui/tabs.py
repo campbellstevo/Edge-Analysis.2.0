@@ -4155,6 +4155,8 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
         border-bottom: 1px solid #f0ecff;
     }
     .proj-table-row:nth-child(even) { background: #faf8ff; }
+    .proj-table-header.proj-2col, .proj-table-row.proj-2col,
+    .proj-table-total.proj-2col { grid-template-columns: 1fr 1fr; }
     .proj-table-total {
         display: grid;
         grid-template-columns: 1fr 1fr 1fr;
@@ -4267,11 +4269,16 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
         st.session_state["proj_seed_sig"] = _sig
         st.session_state["proj_applied"] = dict(_seeds)
     _mobile = st.session_state.get("layout_mode") == "mobile"
+    # Privacy on: the projection is shown as growth in %, which does not depend
+    # on the balance — so the balance row (seeded from the real account) and
+    # every $ figure below stay off screen (COMP-07).
+    _hide = _dollars_hidden()
     with st.form("proj_settings", border=False):
         with st.container():
             st.markdown('<div class="ea-projrows"></div>', unsafe_allow_html=True)
-            _proj_row("Starting balance", "usd", "proj_balance", _seeds["proj_balance"],
-                      1_000, 200_000, 500, 100, None, _mobile)
+            if not _hide:
+                _proj_row("Starting balance", "usd", "proj_balance", _seeds["proj_balance"],
+                          1_000, 200_000, 500, 100, None, _mobile)
             _proj_row("Risk per trade", "pct", "proj_risk", _seeds["proj_risk"],
                       0.25, 10.0, 0.25, 0.05, "%.2f", _mobile)
             _proj_row("Winning trades", "pct", "proj_wr", _seeds["proj_wr"],
@@ -4397,24 +4404,29 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
     step        = max(1, total_trades // 80)
     sample_idxs = rng.choice(N_PATHS, size=min(30, N_PATHS), replace=False)
 
+    def _y(b):  # $ balance, or growth from the start when dollars are hidden
+        return float(b) / float(starting_balance) - 1.0 if _hide else float(b)
+
+    _y_title, _y_fmt = ("Growth", "+.0%") if _hide else ("Balance ($)", "$,.0f")
+
     bg_rows = []
     for i in sample_idxs:
         eq_path = np.concatenate([[starting_balance], equity_paths[i]])
         for t, b in zip(trade_axis[::step], eq_path[::step]):
-            bg_rows.append({"trade": int(t), "balance": float(b), "path": str(i)})
+            bg_rows.append({"trade": int(t), "balance": _y(b), "path": str(i)})
 
     hl_rows = []
     for label, pidx in scenario_indices.items():
         eq_path = np.concatenate([[starting_balance], equity_paths[pidx]])
         for t, b in zip(trade_axis[::step], eq_path[::step]):
-            hl_rows.append({"trade": int(t), "balance": float(b), "Scenario": label})
+            hl_rows.append({"trade": int(t), "balance": _y(b), "Scenario": label})
 
     bg_chart = (
         alt.Chart(alt.Data(values=bg_rows))
         .mark_line(opacity=0.06, strokeWidth=1, color="#4800ff")
         .encode(
             x=alt.X("trade:Q", title="Trade #"),
-            y=alt.Y("balance:Q", title="Balance ($)", axis=alt.Axis(format="$,.0f")),
+            y=alt.Y("balance:Q", title=_y_title, axis=alt.Axis(format=_y_fmt)),
             detail="path:N"
         )
     )
@@ -4436,13 +4448,13 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
             tooltip=[
                 alt.Tooltip("trade:Q", title="Trade"),
                 alt.Tooltip("Scenario:N"),
-                alt.Tooltip("balance:Q", title="Balance", format="$,.0f"),
+                alt.Tooltip("balance:Q", title=_y_title, format=_y_fmt),
             ]
         )
     )
 
     rule = (
-        alt.Chart(alt.Data(values=[{"y": float(starting_balance)}]))
+        alt.Chart(alt.Data(values=[{"y": _y(starting_balance)}]))
         .mark_rule(strokeDash=[4, 4], color="#aaa", strokeWidth=1)
         .encode(y="y:Q")
     )
@@ -4466,7 +4478,7 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
         </div>
         <div class="proj-stat-cell">
             <div class="proj-stat-label">Result Balance</div>
-            <div class="proj-stat-value">${s['result_balance']:,.0f}</div>
+            <div class="proj-stat-value">{_money(f"${s['result_balance']:,.0f}")}</div>
         </div>
         <div class="proj-stat-cell">
             <div class="proj-stat-label">Total Return</div>
@@ -4513,7 +4525,10 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
             yr_total_pct   = sum(r["pct"]    for r in yr_rows)
             yr_total_dollar = sum(r["dollar"] for r in yr_rows)
 
-            header = f'<div class="proj-table-header"><span>{yr}</span><span>Results %</span><span>Results $</span></div>'
+            _2c = " proj-2col" if _hide else ""
+            _dol_h = "" if _hide else "<span>Results $</span>"
+            header = (f'<div class="proj-table-header{_2c}"><span>{yr}</span>'
+                      f'<span>Results %</span>{_dol_h}</div>')
             body   = ""
             for r in yr_rows:
                 pct_cls = "proj-positive" if r["pct"] >= 0 else "proj-negative"
@@ -4521,21 +4536,21 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
                 pct_str = f"{'+' if r['pct'] >= 0 else ''}{r['pct']:.1%}"
                 dol_str = f"{'$' if r['dollar'] >= 0 else '-$'}{abs(r['dollar']):,.0f}"
                 body += (
-                    f'<div class="proj-table-row">'
+                    f'<div class="proj-table-row{_2c}">'
                     f'<span>{MONTHS[r["month"]-1]}</span>'
                     f'<span class="{pct_cls}">{pct_str}</span>'
-                    f'<span class="{dol_cls}">{dol_str}</span>'
-                    f'</div>'
+                    + ("" if _hide else f'<span class="{dol_cls}">{dol_str}</span>')
+                    + '</div>'
                 )
 
             tot_pct_str = f"{'+' if yr_total_pct >= 0 else ''}{yr_total_pct:.1%}"
             tot_dol_str = f"{'$' if yr_total_dollar >= 0 else '-$'}{abs(yr_total_dollar):,.0f}"
             footer = (
-                f'<div class="proj-table-total">'
+                f'<div class="proj-table-total{_2c}">'
                 f'<span>Total</span>'
                 f'<span>{tot_pct_str}</span>'
-                f'<span>{tot_dol_str}</span>'
-                f'</div>'
+                + ("" if _hide else f'<span>{tot_dol_str}</span>')
+                + '</div>'
             )
 
             with col:

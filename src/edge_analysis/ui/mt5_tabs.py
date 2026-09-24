@@ -291,13 +291,14 @@ def _dollar_pnl_section(df: pd.DataFrame, styler) -> None:
     if comm is not None: costs += float(pd.to_numeric(g.get("Commission"), errors="coerce").fillna(0).sum())
     if swap is not None: costs += float(pd.to_numeric(g.get("Swap"), errors="coerce").fillna(0).sum())
 
+    _hide = t._dollars_hidden()
     c1, c2, c3, c4 = st.columns(4)
-    with c1: _kpi("Net P&L", f"{'-' if net < 0 else ''}${abs(net):,.0f}", f"over {len(g)} trades", "#16a34a" if net >= 0 else "#ef4444")
-    with c2: _kpi("Avg / trade", f"{'-' if avg < 0 else ''}${abs(avg):,.2f}", "mean dollar result")
+    with c1: _kpi("Net P&L", t._money(f"{'-' if net < 0 else ''}${abs(net):,.0f}"), f"over {len(g)} trades", "#16a34a" if net >= 0 else "#ef4444")
+    with c2: _kpi("Avg / trade", t._money(f"{'-' if avg < 0 else ''}${abs(avg):,.2f}"), "mean dollar result")
     with c3: _kpi("Profit factor", "—" if np.isnan(pf) else f"{pf:.2f}", "gross win $ / gross loss $")
-    with c4: _kpi("Costs", f"{'-' if costs < 0 else ''}${abs(costs):,.0f}", "commission + swap")
+    with c4: _kpi("Costs", t._money(f"{'-' if costs < 0 else ''}${abs(costs):,.0f}"), "commission + swap")
 
-    if "Date" in g.columns:
+    if "Date" in g.columns and not _hide:
         gg = g.copy()
         gg["__d"] = pd.to_datetime(gg["Date"], errors="coerce")
         gg = gg[gg["__d"].notna()].sort_values("__d")
@@ -312,7 +313,8 @@ def _dollar_pnl_section(df: pd.DataFrame, styler) -> None:
                 st.altair_chart(styler(alt.layer(area, line).properties(height=300)), use_container_width=True)
 
     t._insight_box(
-        f"Net <b>${net:,.0f}</b> across {len(g)} trades (avg <b>${avg:,.1f}</b>/trade). "
+        (f"{'Positive' if net >= 0 else 'Negative'} net across {len(g)} trades. " if _hide else
+         f"Net <b>${net:,.0f}</b> across {len(g)} trades (avg <b>${avg:,.1f}</b>/trade). ")
         + ("Profit factor <b>{:.2f}</b>.".format(pf) if not np.isnan(pf) else ""),
         "good" if net >= 0 else "bad")
 

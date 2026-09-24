@@ -113,3 +113,23 @@ def test_chat_cap_fails_closed(monkeypatch):
 def test_paid_chat_is_offered_to_the_owner_only():
     src = (ROOT / "app.py").read_text(encoding="utf-8")
     assert "render_chat_bubble(f, llm_for_this_user=_session_is_owner())" in src
+
+
+# ── 1.11: privacy on (the default) shows no dollar figure on any view ────────
+def test_privacy_on_shows_no_dollar_figure_anywhere():
+    import re
+    at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180)
+    at.query_params["demo"] = "1"
+    at.run()
+    assert at.session_state["ea_privacy"] is True  # the default
+    leaks = {}
+    for view in ["Performance", "Entry", "Externals", "Psychology", "Plan", "Review"]:
+        at.session_state["ea_tab"] = view
+        at.session_state["ea_nav_external"] = True
+        at.run()
+        assert not at.exception, at.exception
+        texts = [str(m.value) for m in at.markdown] + [str(c.value) for c in at.caption]
+        found = [m.group(0) for t in texts for m in re.finditer(r"-?\$\s?\d[\d,.]*", t)]
+        if found:
+            leaks[view] = found[:5]
+    assert leaks == {}, leaks
