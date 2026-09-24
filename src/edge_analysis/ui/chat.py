@@ -821,19 +821,21 @@ def _llm_allowed() -> bool:
             return bump_llm_use(str(uid), _DAILY_CAP)
         return int(st.session_state.get("ea_chat_used", 0)) < 5
     except Exception:
-        return True
+        return False  # the cap fails closed: no count, no paid call
 
 
 # ─────────────────────────── UI ──────────────────────────────────────────────
-def render_chat_bubble(df: pd.DataFrame) -> None:
+def render_chat_bubble(df: pd.DataFrame, llm_for_this_user: bool = False) -> None:
     """Floating 'Ask your data' popover, pinned bottom-right by theme CSS.
 
-    The built-in analyst answers the common questions for free; when an
-    API key is present, unmatched questions upgrade to the LLM."""
+    The built-in analyst answers the common questions for free, for everyone.
+    Unmatched questions upgrade to the LLM only when an API key is present
+    AND the caller says this visitor may use it — the owner, at launch (D5);
+    the key is his."""
     hist = st.session_state.setdefault("ea_chat", [])
     used = int(st.session_state.get("ea_chat_used", 0))
     left = max(0, _DAILY_CAP - used)
-    llm_on = chat_enabled()
+    llm_on = chat_enabled() and bool(llm_for_this_user)
     with st.container():
         st.markdown('<div class="ea-chatfab"></div>', unsafe_allow_html=True)
         with st.popover("💬", help="Ask your data"):

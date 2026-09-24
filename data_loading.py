@@ -38,6 +38,41 @@ def _pq_path(token, dbid) -> str:
     return f"/tmp/ea_journal_{key}.parquet"
 
 
+# The warm-boot copy on disk is a speed cache, not an archive: older than
+# this, it is deleted rather than served (DATA-19).
+_PQ_MAX_AGE_S = 24 * 3600
+
+
+def _sweep_old_journal_copies() -> None:
+    """Delete every user's disk copy older than _PQ_MAX_AGE_S, not just this
+    visitor's — someone who never comes back must not leave a copy behind."""
+    import glob as _glob
+    import os as _os
+    import time as _time
+    now = _time.time()
+    for f in _glob.glob("/tmp/ea_journal_*.parquet"):
+        try:
+            if now - _os.path.getmtime(f) > _PQ_MAX_AGE_S:
+                _os.remove(f)
+        except OSError:
+            pass
+
+
+def forget_journal_cache(token, dbid) -> None:
+    """Delete every server-side copy of one journal: the disk copy and the
+    in-memory cache entry (Disconnect, SEC-07)."""
+    import os as _os
+    try:
+        _os.remove(_pq_path(token, dbid))
+    except OSError:
+        pass
+    try:
+        _load_live_df_cached.clear(token, dbid)
+    except Exception:
+        pass
+    _FETCHED_THIS_PROCESS.discard((str(token)[:12], str(dbid)))
+
+
 @st.cache_data(show_spinner=False, ttl=21600)
 def _load_live_df_cached(token: Optional[str], dbid: Optional[str]):
     """Returns (df, fetched_at_epoch) — the stamp lives with the cache entry, so
@@ -58,6 +93,7 @@ def load_live_df(token: Optional[str], dbid: Optional[str]) -> pd.DataFrame:
     import os as _os
     cache_cold = (str(token)[:12], str(dbid)) not in _FETCHED_THIS_PROCESS
     pq = _pq_path(token, dbid)
+    _sweep_old_journal_copies()
     if (cache_cold and not st.session_state.get("ea_warm_served")
             and _os.path.exists(pq)):
         try:

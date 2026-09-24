@@ -177,3 +177,28 @@ def test_owner_passes_while_paused():
     at.run()
     assert "paused for a moment" not in _page_text(at)
     assert not at.exception
+
+
+# ── SEC-06: a token in the URL is never a login ──────────────────────────────
+def test_url_token_does_not_sign_in_and_is_stripped():
+    at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180)
+    at.query_params["notion_token"] = "abc"
+    at.query_params["database_id"] = "0" * 32
+    at.run()
+    assert not at.exception, at.exception
+    assert "user_notion_token" not in at.session_state
+    assert "override_NOTION_TOKEN" not in at.session_state
+    assert "notion_token" not in at.query_params
+    assert "database_id" not in at.query_params
+
+
+def test_url_params_are_not_runtime_secrets():
+    src = (ROOT / "app.py").read_text(encoding="utf-8")
+    assert '_get_query_param("notion_token")' not in src
+    assert '_get_query_param("database_id")' not in src
+
+
+def test_phone_sign_in_never_puts_a_token_in_a_link():
+    src = (ROOT / "filters.py").read_text(encoding="utf-8")
+    assert '"notion_token"' not in src
+    assert "st.code(url" not in src

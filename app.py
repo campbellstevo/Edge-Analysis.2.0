@@ -162,21 +162,14 @@ def _clear_query_params():
 
 def _runtime_secret(key: str, default=None):
     """
-    Get a secret value from session state, query params, st.secrets, or environment.
-    Priority: session state override > query params > secrets.toml > env vars
+    Get a secret value from session state, st.secrets, or environment.
+    Priority: session state override > secrets.toml > env vars.
+    Never the URL: a query string is not a place for credentials (SEC-06, SEC-13).
     """
     override_key = f"override_{key}"
     val = st.session_state.get(override_key)
     if val:
         return val
-    if key == "NOTION_TOKEN":
-        qp = _get_query_param("notion_token")
-        if qp:
-            return qp
-    if key == "DATABASE_ID":
-        qp = _get_query_param("database_id")
-        if qp:
-            return qp
     try:
         return st.secrets[key]
     except Exception:
@@ -187,12 +180,12 @@ def _runtime_secret(key: str, default=None):
 # load_trades_from_notion is imported in data_loading module
 
 # Pull in externalized modules for cleaner structure
-from data_loading import load_live_df
+from data_loading import load_live_df, forget_journal_cache
 from filters import render_filters
 from edge_analysis.core.constants import MODEL_SET, SESSION_CANONICAL
 from edge_analysis.ui.components import show_light_table
 from edge_analysis.ui.tabs import render_all_tabs, generate_overall_stats
-from edge_analysis.user_store import get_user, upsert_user, set_user_db
+from edge_analysis.user_store import get_user, upsert_user, set_user_db, delete_user
 from edge_analysis.data import whoop
 from edge_analysis import access
 
@@ -791,21 +784,13 @@ def render_connect_page(mobile: bool):
         with c2:
             st.markdown('<div class="ea-secondary">', unsafe_allow_html=True)
             if st.button("Disconnect", key="btn_oauth_clear"):
-                for key in [
-                    SessionKeys.OAUTH_TOKEN,
-                    SessionKeys.USER_TOKEN,
-                    SessionKeys.USER_ID,
-                    SessionKeys.OAUTH_PENDING,
-                    SessionKeys.OAUTH_CALLBACK,
-                ]:
-                    st.session_state.pop(key, None)
-                st.session_state.pop("ea_db_cands", None)
-                _clear_device_auth()
-                st.info("Disconnected.")
+                _forget_this_user()
+                st.info("Disconnected. Your account link and cached journal are "
+                        "deleted from this server; your journal in Notion is untouched.")
             st.markdown('</div>', unsafe_allow_html=True)
 
         if st.session_state.get(SessionKeys.OAUTH_TOKEN):
-            st.success("Connected (token stored for this session only)")
+            st.success("Connected — this browser remembers your sign-in until you disconnect")
         elif st.session_state.get(SessionKeys.OAUTH_PENDING):
             st.info("Completing Notion sign-in...")
 
@@ -1185,7 +1170,7 @@ def _render_login_page():
               {_tpl_html}Notion will show a checklist of your pages —
               <b>tick your Trade Journal</b> and we find it automatically.</div>
             <div class="ea-login-note">
-              🔒 Your Notion credentials are never stored. Authentication is handled securely via Notion's OAuth system.
+              🔒 You sign in on Notion's own page — the app never sees your Notion password. This browser remembers the sign-in until you disconnect.
             </div>""",
             unsafe_allow_html=True)
     with st.expander("On your phone and it opens the Notion app instead?"):
@@ -1198,6 +1183,38 @@ def _render_login_page():
             "normal page to select your template.\n\n"
             "After that, this device stays signed in automatically."
         )
+
+
+# ------------------------------ Disconnect = delete ----------------------------
+def _forget_this_user() -> None:
+    """Disconnect deletes what this server holds for the visitor (SEC-07):
+    their user record, the cached copy of their journal, their session and
+    this browser's saved sign-in. Their Notion is never touched."""
+    uid = st.session_state.get(SessionKeys.USER_ID)
+    token = (st.session_state.get(SessionKeys.USER_TOKEN)
+             or st.session_state.get(SessionKeys.OAUTH_TOKEN))
+    dbid = st.session_state.get(SessionKeys.DB_ID)
+    if uid:
+        try:
+            delete_user(uid)
+        except Exception:
+            pass
+    if token and dbid:
+        try:
+            forget_journal_cache(token, dbid)
+        except Exception:
+            pass
+    for key in [
+        SessionKeys.OAUTH_TOKEN,
+        SessionKeys.USER_TOKEN,
+        SessionKeys.USER_ID,
+        SessionKeys.DB_ID,
+        SessionKeys.OAUTH_PENDING,
+        SessionKeys.OAUTH_CALLBACK,
+        "ea_db_cands", "ea_user_email", "ea_user_id", "ea_user_ids",
+    ]:
+        st.session_state.pop(key, None)
+    _clear_device_auth()
 
 
 # ------------------------------ Access switch ---------------------------------
@@ -1242,13 +1259,25 @@ def _render_access_page(denied: dict) -> None:
                       use_container_width=True, on_click=_use_other_account)
 
 
-def _enforce_access() -> None:
-    """Re-check a signed-in session against the live switch on every run."""
+def _session_identity() -> Tuple[set, str]:
     ids = set(st.session_state.get("ea_user_ids") or [])
     for _k in ("ea_user_id", SessionKeys.USER_ID):
         if st.session_state.get(_k):
             ids.add(str(st.session_state[_k]).lower())
-    email = str(st.session_state.get("ea_user_email") or "")
+    return ids, str(st.session_state.get("ea_user_email") or "")
+
+
+def _session_is_owner() -> bool:
+    """The signed-in visitor is the owner named by EA_OWNER / WHOOP_OWNER."""
+    if st.session_state.get("ea_demo"):
+        return False
+    ids, email = _session_identity()
+    return access.check(ids, email)[1] == "owner"
+
+
+def _enforce_access() -> None:
+    """Re-check a signed-in session against the live switch on every run."""
+    ids, email = _session_identity()
     admitted, why = access.check(ids, email)
     if not admitted:
         _render_access_page({"why": why, "email": email})
@@ -1386,8 +1415,23 @@ def _clear_device_auth() -> None:
     _js_eval(f"localStorage.removeItem({json.dumps(_DEVICE_AUTH_KEY)})", key="ea_auth_clear")
 
 
+_URL_CREDENTIAL_PARAMS = ("notion_token", "database_id")
+
+
+def _drop_url_credentials() -> None:
+    """A token in a link is never a login (SEC-06): old phone-QR links and
+    crafted links are stripped from the address bar and ignored."""
+    try:
+        for _p in _URL_CREDENTIAL_PARAMS:
+            if _p in st.query_params:
+                del st.query_params[_p]
+    except Exception:
+        pass
+
+
 def _require_notion_login():
     """Enforce Notion OAuth login before accessing main app."""
+    _drop_url_credentials()
     qp = _get_all_query_params()
     _rs = qp.get("state")
     _rs = _rs[0] if isinstance(_rs, list) else _rs
@@ -1404,16 +1448,6 @@ def _require_notion_login():
         or st.session_state.get(SessionKeys.OAUTH_TOKEN)
     )
     if token:
-        return
-
-    # Tokenized link (phone handoff): log in straight from the URL.
-    url_token = _get_query_param("notion_token")
-    if url_token:
-        _complete_login_with_token(url_token)
-        url_db = _get_query_param("database_id")
-        if url_db and _validate_dbid(url_db.replace("-", "")):
-            st.session_state[SessionKeys.DB_ID] = url_db
-            st.session_state[SessionKeys.NAV_TARGET] = PageNames.DASHBOARD
         return
 
     # Login saved on this device (set after any previous successful login).
@@ -1512,10 +1546,13 @@ def render_dashboard(mobile: bool):
     styler = get_chart_styler()
 
     # Get token and database ID
+    # The operator's own NOTION_TOKEN / DATABASE_ID secrets are fallbacks for
+    # the owner only — a member's view is only ever read with the member's token.
+    _owner = _session_is_owner()
     token = (
         st.session_state.get(SessionKeys.USER_TOKEN)
         or st.session_state.get(SessionKeys.OAUTH_TOKEN)
-        or _runtime_secret("NOTION_TOKEN")
+        or (_runtime_secret("NOTION_TOKEN") if _owner else None)
     )
 
     dbid = st.session_state.get(SessionKeys.DB_ID)
@@ -1525,7 +1562,7 @@ def render_dashboard(mobile: bool):
             rec = get_user(uid)
             if rec and rec.get("db_id"):
                 dbid = rec["db_id"]
-        if not dbid:
+        if not dbid and _owner:
             dbid = _runtime_secret("DATABASE_ID")
 
     _demo = bool(st.session_state.get("ea_demo"))
@@ -1892,14 +1929,14 @@ def render_dashboard(mobile: bool):
         with st.expander("Error details"):
             st.code(_tb.format_exc())
     st.markdown(
-        "<div style='text-align:center;font-size:12px;color:#b3bac6;margin:34px 0 10px;'>"
-        "Your trades live in your Notion — this server keeps only your account "
-        "link (name, email, chosen template) and a short-lived cache for speed · "
+        "<div class='ea-foot' style='text-align:center;font-size:12px;color:#64748b;margin:34px 0 10px;'>"
+        "Your trades live in your Notion — this server keeps only which journal "
+        "you connected and a day-old-at-most cache for speed · "
         "Edge Analysis is a journal, not financial advice · Privacy &amp; terms in the ⋯ menu.</div>",
         unsafe_allow_html=True)
     try:
         from edge_analysis.ui.chat import render_chat_bubble
-        render_chat_bubble(f)
+        render_chat_bubble(f, llm_for_this_user=_session_is_owner())
     except Exception:
         pass
     if st.session_state.pop("ea_needs_fresh", False):

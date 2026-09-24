@@ -385,8 +385,6 @@ def render_filters(
         st.markdown(_eyebrow_div.format("ACTIONS"), unsafe_allow_html=True)
         st.button("Refresh data", key="mm_refresh", use_container_width=True,
                   on_click=_refresh)
-        st.button("Sign in on iPhone", key="mm_qr", use_container_width=True,
-                  on_click=_flag, args=("ea_show_qr",))
         st.button("Auto-log my trades", key="mm_broker", use_container_width=True,
                   on_click=_flag, args=("ea_show_broker",))
         if _fb:
@@ -440,43 +438,17 @@ def render_filters(
 
 
 def _phone_qr_body() -> None:
-    """Phone handoff: scan once, phone stays signed in (device-persistent login)."""
-    token = (
-        st.session_state.get(SessionKeys.USER_TOKEN)
-        or st.session_state.get(SessionKeys.OAUTH_TOKEN)
-    )
-    if not token:
-        st.caption("Sign in on this computer first, then come back here.")
-        return
-    from urllib.parse import urlencode
-    params = {"notion_token": token}
-    dbid = st.session_state.get(SessionKeys.DB_ID)
-    if dbid:
-        params["database_id"] = dbid
-    url = "https://edge-analysis2.streamlit.app/?" + urlencode(params)
-    qr_html = ""
-    try:
-        import qrcode
-        import qrcode.image.svg as _qsvg
-        _svg = qrcode.make(url, image_factory=_qsvg.SvgPathImage).to_string().decode("utf-8")
-        qr_html = _svg.replace(
-            "<svg",
-            "<svg style='width:210px;height:210px;background:#fff;padding:10px;"
-            "border:1px solid rgba(0,0,0,0.08);border-radius:14px;'", 1)
-    except Exception:
-        pass
+    """Phone sign-in. The old QR carried the Notion token in its URL — anyone
+    with the picture was signed in as you (SEC-06) — so it is gone until a
+    single-use pairing code replaces it (roadmap 5.6)."""
     st.markdown(
-        "<div style='text-align:center;padding:4px 0 2px;'>" + qr_html + "</div>"
-        "<div style='font-size:14px;color:#334155;line-height:2;padding:10px 6px 2px;'>"
-        "<b>1.</b> Point your phone camera at the code<br>"
-        "<b>2.</b> Open the link — the dashboard signs in by itself<br>"
-        "<b>3.</b> Add it to your home screen and you're set"
+        "<div style='font-size:14px;color:#334155;line-height:2;padding:4px 6px 2px;'>"
+        "<b>1.</b> Open this site on your phone<br>"
+        "<b>2.</b> Tap <b>Sign in with Notion</b> once<br>"
+        "<b>3.</b> Add it to your home screen — that phone stays signed in"
         "</div>",
         unsafe_allow_html=True,
     )
-    if not qr_html:
-        st.code(url, language=None)
-    st.caption("This code signs anyone in to your dashboard — don't share or screenshot it.")
 
 
 try:
@@ -507,17 +479,19 @@ except Exception:
 
 LEGAL_MD = """
 **Your data.** Your trading journal stays in **your** Notion workspace — the app reads
-it to draw your dashboard. This server keeps only your account link (Notion name,
-email, chosen template) and a short-lived cache of your journal for speed. Sign-in
-and preferences live in your own browser. If you connect WHOOP, its token is stored
-in a private page inside your own Notion, not here.
+it to draw your dashboard. This server keeps only which journal you connected, a count
+of chat questions for the daily limit, and a cached copy of your journal (at most a
+day old) so pages load fast. It does not keep your name or email. Your sign-in and
+preferences are saved in your own browser.
 
 **What we never do.** No selling or sharing of data, no ads, no training on your
-journal, no ability to place trades. The optional AI chat sends only your question
-plus a compact statistical summary — never your raw journal — to Anthropic's API.
+journal, no ability to place trades. The analyst chat answers from your own numbers
+on this server. If a page fails to draw, an error report (what broke and where — not
+your journal) goes to our crash reporter so it can be fixed.
 
-**Deleting.** Disconnect in the app or email campbellstevo@gmail.com and we delete
-your account link and cache. Your journal in Notion is untouched either way.
+**Deleting.** ⋯ menu → Journals → **Disconnect** deletes your account link and the
+cached copy of your journal from this server, and this browser's saved sign-in. Your
+journal in Notion is untouched either way.
 
 ---
 
@@ -618,8 +592,8 @@ def _setup_body() -> None:
         "the dashboard works identically; auto-sync for other platforms is on "
         "the roadmap.\n\n"
         "**4. Phone**\n"
-        "⋯ menu → *Sign in on iPhone*, scan once, add to home screen. Stays "
-        "signed in.\n\n"
+        "Open the site on your phone and sign in with Notion once, then add it "
+        "to your home screen. It stays signed in.\n\n"
         "**5. Tag the thinking**\n"
         "The numbers arrive on their own; the edge is in the manual fields — "
         "A+ Setup, Conviction, Mental State, Mistake. Every tagged trade sharpens "
