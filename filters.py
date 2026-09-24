@@ -395,8 +395,13 @@ def render_filters(
         st.markdown(_eyebrow_div.format("ACTIONS"), unsafe_allow_html=True)
         st.button("Refresh data", key="mm_refresh", use_container_width=True,
                   on_click=_refresh)
-        st.button("Auto-log my trades", key="mm_broker", use_container_width=True,
-                  on_click=_flag, args=("ea_show_broker",))
+        # Auto-log writes MT5-shaped rows (Symbol, Position ID, Open Time…): a
+        # journal on another template rejects every one and it retries forever
+        # (roadmap 1.10, D6). Offered to MT5 journals and the demo only.
+        if (st.session_state.get("ea_demo")
+                or st.session_state.get("detected_schema") == "mt5"):
+            st.button("Auto-log my trades", key="mm_broker", use_container_width=True,
+                      on_click=_flag, args=("ea_show_broker",))
         if _fb:
             st.button("Send feedback", key="mm_fb", use_container_width=True,
                       on_click=_flag, args=("ea_show_feedback",))
@@ -428,7 +433,7 @@ def render_filters(
         if _broker_dialog is not None:
             _broker_dialog()
         else:
-            with st.expander("Connect your broker", expanded=True):
+            with st.expander("Auto-log my trades", expanded=True):
                 _broker_body()
     if st.session_state.pop("ea_show_setup", False):
         if _setup_dialog is not None:
@@ -536,7 +541,7 @@ def _mt5sync_body() -> None:
     st.markdown(
         "Every trade you close in **MetaTrader 5** will appear in your journal "
         "by itself. Three steps, once:\n\n"
-        "**1. Press the purple button below.** A zip file downloads \u2014 it's "
+        "**1. Press the download button below.** A zip file downloads \u2014 it's "
         "yours only, your journal key is already inside.\n\n"
         "**2. Right-click the downloaded file \u2192 Extract All.**\n\n"
         "**3. Open the new folder and double-click `run_sync.bat`** on the "
@@ -554,12 +559,11 @@ def _mt5sync_body() -> None:
                            mime="application/zip", use_container_width=True)
     except Exception:
         st.info("The download isn't available right now — refresh and reopen this.")
-    st.caption("Windows + Python required. Already-journaled trades are never "
-               "duplicated, so it's safe to stop and start any time.")
+    st.caption("Windows + Python required. Safe to stop and start any time.")
 
 
 try:
-    @st.dialog("MT5 auto-sync")
+    @st.dialog("Auto-log my trades")
     def _mt5sync_dialog():
         _mt5sync_body()
 except Exception:
@@ -583,7 +587,7 @@ def _broker_body() -> None:
 
 
 try:
-    @st.dialog("Connect your broker")
+    @st.dialog("Auto-log my trades")
     def _broker_dialog():
         _broker_body()
 except Exception:
@@ -612,7 +616,7 @@ def _setup_body() -> None:
         "No keys, no setup. Notion shows a checklist of your pages — tick your "
         "Trade Journal and the app finds it by itself.\n\n"
         "**3. Get your trades in**\n"
-        "**MetaTrader 5:** ⋯ menu → *MT5 auto-sync* — your download comes with "
+        "**MetaTrader 5 journals:** ⋯ menu → *Auto-log my trades* — your download comes with "
         "everything pre-filled; unzip and run it on the PC where MT5 lives, and "
         "every closed trade writes itself into your journal.\n"
         "**Any other broker:** log trades straight into the Notion journal — "

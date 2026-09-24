@@ -153,7 +153,7 @@ _SALTY_COLUMN_MAP = {
     "Divergence (Execution)":       "DIV?",             # map to SR's DIV? field
     "RR":                           "Targeted RR",      # planned RR = targeted
     "Price Delivery":               "Price Delivery",
-    "Rules Followed? Y/N":          "Rules Followed",
+    "Rules Followed? Y/N":          "Rules Followed?",  # the name every UI read uses (DATA-10)
     "Trade Quality Rating":         "Trade Quality Rating",
     "Trade of the Day":             "A+ Setup?",        # closest equivalent
     "HTF/MTF Bias Strength":        "HTF/MTF Bias Strength",
@@ -186,6 +186,30 @@ _SALTY_RESULT_MAP = {
 }
 
 
+def _clock_hour(v) -> Optional[int]:
+    """Hour from a free-text clock: "21:30", "9:30 PM", "9pm", "0930"."""
+    if v is None or (isinstance(v, float) and pd.isna(v)):
+        return None
+    s = str(v).strip().lower()
+    if not s or s in ("nan", "none"):
+        return None
+    m = re.search(r"\b(\d{1,2})(?::(\d{2}))?\s*([ap])\.?m\b", s)
+    if m:
+        h = int(m.group(1)) % 12
+        return h + 12 if m.group(3) == "p" else h
+    m = re.search(r"\b(\d{1,2})[:.](\d{2})\b", s) or re.fullmatch(r"(\d{2})(\d{2})", s)
+    if m and int(m.group(1)) < 24:
+        return int(m.group(1))
+    return None
+
+
+def _yn_to_yes_no(series: pd.Series) -> pd.Series:
+    """Salty's checkboxes are Y/N selects; every reader in the app expects
+    Yes/No, so "Y" matched none of them (0 of 120 recognised)."""
+    return series.map(lambda v: {"y": "Yes", "n": "No"}.get(str(v).strip().lower(), v)
+                      if pd.notna(v) else v)
+
+
 def normalise_salty_df(df: pd.DataFrame) -> pd.DataFrame:
     """
     Rename Salty columns to canonical names and normalise key fields
@@ -202,6 +226,20 @@ def normalise_salty_df(df: pd.DataFrame) -> pd.DataFrame:
         out["Result"] = out["Result"].map(
             lambda v: _SALTY_RESULT_MAP.get(str(v).strip(), str(v).strip()) if pd.notna(v) else v
         )
+
+    # Y/N selects → Yes/No, for any column that holds nothing else
+    for col in out.columns:
+        vals = out[col].dropna().astype(str).str.strip().str.lower()
+        vals = vals[vals != ""]
+        if len(vals) and vals.isin(["y", "n"]).all():
+            out[col] = _yn_to_yes_no(out[col])
+
+    # The template keeps the day in "Date" and the clock, as free text, in
+    # "Time of Trade". Every hour surface reads "Hour (Melb)" first, so the
+    # trader's own clock goes there; without it a date-only journal showed a
+    # synthetic 10:00/11:00 on every trade (1.9). Blank stays blank.
+    if "Time of Trade" in out.columns and "Hour (Melb)" not in out.columns:
+        out["Hour (Melb)"] = out["Time of Trade"].map(_clock_hour)
 
     # Salty has no "Account" column — fill with a sentinel so Account tab shows gracefully
     if "Account" not in out.columns:

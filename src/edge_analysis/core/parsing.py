@@ -18,7 +18,7 @@ def infer_instrument(v):
 
 def normalize_session(s:str)->str:
     t=str(s).lower().strip()
-    if not t or t=="nan": return None
+    if not t or t in ("nan","none","null"): return None  # no phantom "None" session
     if re.search(r"\bny\b|nyc|new ?york|us session|us open|new-?york",t): return "New York"
     if re.search(r"london|ldn|uk session|eu session|euro",t): return "London"
     if re.search(r"asia|asian|tokyo|sydney",t): return "Asia"
