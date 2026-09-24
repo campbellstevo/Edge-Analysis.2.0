@@ -1185,6 +1185,50 @@ def _render_login_page():
         )
 
 
+# ------------------------------ Error reports ---------------------------------
+def _sentry_on() -> bool:
+    return bool(os.environ.get("_EA_SENTRY_ON"))
+
+
+def _report_error(exc: BaseException, where: str = "", test: bool = False) -> str:
+    """Send one error to Sentry and return the short reference the visitor sees.
+
+    Sent as a message carrying the exception type, text and the traceback's
+    text — never the frames' local variables, which can hold tokens and
+    journal rows (SEC-03). The reference is a tag, so repeats still group."""
+    import traceback as _tb
+    ref = secrets.token_hex(3).upper()
+    if not _sentry_on():
+        return ref
+    try:
+        import sentry_sdk
+        with sentry_sdk.new_scope() as scope:
+            scope.set_tag("ea_ref", ref)
+            scope.set_tag("ea_where", where or "unknown")
+            scope.set_tag("ea_test", "yes" if test else "no")
+            scope.set_tag("ea_owner", "yes" if _session_is_owner() else "no")
+            scope.set_context("traceback", {"text": "".join(
+                _tb.format_exception(type(exc), exc, exc.__traceback__))[-6000:]})
+            sentry_sdk.capture_message(
+                f"{'TEST ' if test else ''}Render error in {where or 'app'}: "
+                f"{type(exc).__name__}: {str(exc)[:200]}", level="error")
+    except Exception:
+        pass
+    return ref
+
+
+def _owner_tools_actions() -> None:
+    """Owner-only actions raised from the ⋯ menu (roadmap 1.4)."""
+    if st.session_state.pop("ea_send_test_error", False) and _session_is_owner():
+        if not _sentry_on():
+            st.warning("SENTRY_DSN is not set on this server — nothing was sent.")
+        else:
+            ref = _report_error(RuntimeError("Test error from the ⋯ menu"),
+                                where="owner test", test=True)
+            st.success(f"Test error sent — reference {ref}. It should reach your "
+                       "phone within five minutes if the Sentry alert rule is on.")
+
+
 # ------------------------------ Disconnect = delete ----------------------------
 def _forget_this_user() -> None:
     """Disconnect deletes what this server holds for the visitor (SEC-07):
@@ -1852,10 +1896,12 @@ def render_dashboard(mobile: bool):
                 st.session_state["ea_tour_done"] = True
                 _st_rerun()
 
+    st.session_state["ea_is_owner"] = _session_is_owner()
     sel_inst, sel_em, sel_sess, date_range, sel_acct, sel_tot = render_filters(
         mobile, inst_opts, em_opts, sess_opts, date_mode_options, min_date, max_date,
         acct_opts, tot_opts, brand=_brand
     )
+    _owner_tools_actions()
 
     # The Trade-Type coaching lives on the select itself (its help tooltip) —
     # a standing sentence above the nav was clutter in prime space.
@@ -1922,12 +1968,14 @@ def render_dashboard(mobile: bool):
         # split too — otherwise the hero and the card below it disagree
         _df_hist = df[_paper_mask].copy() if _paper_mask is not None else df
         render_all_tabs(f, _df_hist, styler, show_light_table, hero_fn=None)
-    except Exception:
+    except Exception as _exc:
         import traceback as _tb
-        st.error("Something broke rendering this view — usually a template/column mismatch. "
-                 "Screenshot the details below to report it.")
-        with st.expander("Error details"):
-            st.code(_tb.format_exc())
+        _ref = _report_error(_exc, where=str(st.session_state.get("ea_tab") or "view"))
+        st.error(f"This view couldn't be drawn. It has been reported (reference {_ref}) — "
+                 "try another view, or refresh in a minute.")
+        if _session_is_owner():
+            with st.expander("Error details (only you see this)"):
+                st.code(_tb.format_exc())
     st.markdown(
         "<div class='ea-foot' style='text-align:center;font-size:12px;color:#64748b;margin:34px 0 10px;'>"
         "Your trades live in your Notion — this server keeps only which journal "

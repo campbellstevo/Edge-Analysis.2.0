@@ -349,8 +349,15 @@ def render_filters(
         st.session_state["ea_show_qr"] = False
 
     def _refresh():
+        # This visitor's journal only — clearing every cache made one member's
+        # refresh cost every other member a full refetch.
+        _tok = (st.session_state.get(SessionKeys.USER_TOKEN)
+                or st.session_state.get("override_NOTION_TOKEN"))
+        _db = st.session_state.get(SessionKeys.DB_ID)
         try:
-            st.cache_data.clear()
+            if _tok and _db:
+                from data_loading import forget_journal_cache
+                forget_journal_cache(_tok, _db)
         except Exception:
             pass
         st.session_state.pop("ea_last_sync", None)
@@ -397,6 +404,11 @@ def render_filters(
                   on_click=_flag, args=("ea_show_help",))
         st.button("Privacy & terms", key="mm_legal", use_container_width=True,
                   on_click=_flag, args=("ea_show_legal",))
+        if st.session_state.get("ea_is_owner"):
+            st.markdown(_eyebrow_div.format("OWNER"), unsafe_allow_html=True)
+            st.button("Send a test error", key="mm_testerr", use_container_width=True,
+                      on_click=_flag, args=("ea_send_test_error",))
+            st.caption(_server_clock_line())
     if st.session_state.pop("ea_show_qr", False):
         if _qr_dialog is not None:
             _qr_dialog()
@@ -435,6 +447,18 @@ def render_filters(
                 _fb_body_safe()
 
     return sel_inst, sel_em, sel_sess, date_range, sel_acct, sel_tot
+
+
+def _server_clock_line() -> str:
+    """Owner-only: what this server thinks the time is, and in which zone —
+    the 'this week / this month' surfaces read this clock (TZ-04)."""
+    import os as _os
+    import time as _time
+    from datetime import datetime as _dt
+    now = _dt.now().astimezone()
+    local = _os.environ.get("EDGE_LOCAL_TZ") or "Australia/Sydney (default)"
+    return (f"Server clock {now:%a %d %b %H:%M} {now.tzname() or _time.tzname[0]} · "
+            f"app zone {local}")
 
 
 def _phone_qr_body() -> None:
