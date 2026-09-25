@@ -711,7 +711,7 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
                                                      ("Rules Followed?", "Rules"), ("Mistake", "Mistake"))
         if _c in wk.columns)
     st.markdown(
-        "<div class='table-wrap'><table><thead><tr><th class='text'>Day / Session</th>"
+        "<div class='table-wrap ea-keepcols'><table><thead><tr><th class='text'>Day / Session</th>"
         "<th class='text'>Dir</th><th class='text'>Result</th><th class='num'>R</th>"
         + ("<th class='num'>P&L</th>" if _show_pnl else "")
         + ("<th class='num'>MFE</th>" if _show_mfe else "")

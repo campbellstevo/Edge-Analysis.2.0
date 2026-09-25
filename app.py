@@ -1925,7 +1925,7 @@ def render_dashboard(mobile: bool):
             st.markdown(
                 "<div style='font-size:11px;font-weight:700;letter-spacing:0.06em;"
                 "color:#64748b;margin-bottom:8px;'>WHERE TO LOOK FIRST</div>"
-                "<div style='font-size:14px;line-height:2.0;color:#3b3f4d;'>"
+                "<div class='ea-tour' style='font-size:14px;line-height:2.0;color:#3b3f4d;'>"
                 "<b>Your month vs your plan</b> — the first card, target and "
                 "max-loss included.<br>"
                 + ("<b>What needs work</b> — the Review tab prices your leaks in R; "

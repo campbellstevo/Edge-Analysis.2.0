@@ -1564,9 +1564,10 @@ def inject_theme():
     /* Tables: swipeable on phones, essentials-only under 640px */
     .table-wrap {{ overflow-x: auto; -webkit-overflow-scrolling: touch; }}
     @media (max-width: 640px) {{
-        .table-wrap th:nth-child(4), .table-wrap td:nth-child(4),
-        .table-wrap th:nth-child(5), .table-wrap td:nth-child(5),
-        .table-wrap th:nth-child(6), .table-wrap td:nth-child(6) {{
+        /* .ea-keepcols opts out: the Review scoreboard's 4th column is R */
+        .table-wrap:not(.ea-keepcols) th:nth-child(4), .table-wrap:not(.ea-keepcols) td:nth-child(4),
+        .table-wrap:not(.ea-keepcols) th:nth-child(5), .table-wrap:not(.ea-keepcols) td:nth-child(5),
+        .table-wrap:not(.ea-keepcols) th:nth-child(6), .table-wrap:not(.ea-keepcols) td:nth-child(6) {{
             display: none;
         }}
         .table-wrap th, .table-wrap td {{
@@ -1872,6 +1873,9 @@ def inject_dark_overlay():
     .ea-demo-banner { color: #c9d0dc !important; background: rgba(72,0,255,0.10) !important;
                       border-color: rgba(165,120,255,0.35) !important; }
     .ea-demo-banner b { color: #a578ff !important; }
+    /* first-run "where to look first" note (members only, so the demo
+       captures never showed it at 1.8:1) */
+    .ea-tour, .ea-tour b { color: #c9d0dc !important; }
     /* Segmented controls (Focus/Everything, setup pills): dark cards, not white */
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-densityseg) [role="radiogroup"],
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-setupseg) [role="radiogroup"] {
