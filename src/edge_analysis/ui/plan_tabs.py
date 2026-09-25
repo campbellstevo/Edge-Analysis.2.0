@@ -167,7 +167,7 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
         _st = _st[~_st.index.isin(["", "nan", "None"])]
         return set(_st[(_st["size"] >= min_n) & (_st["mean"] > 0)].index)
 
-    def _names(items, cap=3):
+    def _names(items, cap=8):  # all of them in practice: "+2" hid the best model
         items = sorted(items)
         return ", ".join(items[:cap]) + (f" +{len(items) - cap}" if len(items) > cap else "")
 
@@ -284,13 +284,15 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
         op = "opacity:0.65;" if faded else ""
         num_bg = "#c3c9d4" if faded else PURPLE
         return (
-            f"<div style='display:flex;align-items:center;gap:14px;padding:11px 16px;{op}"
+            # wraps on a phone: the rule keeps a readable width and the edge
+            # figures drop beneath it instead of squeezing it to ~85px
+            f"<div style='display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;padding:11px 16px;{op}"
             f"border-bottom:1px solid rgba(148,163,184,0.15);'>"
             f"<div style='min-width:26px;height:26px;border-radius:50%;background:{num_bg};"
             f"color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center;"
             f"justify-content:center;'>{i}</div>"
-            f"<div style='flex:1;font-size:14px;color:#334155;font-weight:600;'>{rule}</div>"
-            f"<div style='text-align:right;'>{stat}{small}</div></div>"
+            f"<div style='flex:1 1 220px;min-width:0;font-size:14px;color:#334155;font-weight:600;'>{rule}</div>"
+            f"<div style='text-align:right;margin-left:auto;'>{stat}{small}</div></div>"
         )
 
     rows_html = "".join(_row(i, e) for i, e in enumerate(proven, 1))
@@ -438,8 +440,8 @@ def _rules_save() -> None:
 def _rules_section(good, bad) -> None:
     t = _t()
     st.markdown("#### My rules")
-    st.caption("Your own rules plus ones recommended from your data. "
-               "Saved on this device.")
+    st.caption(("Your own rules plus ones recommended from your data. " if t._verdicts_on()
+                else "Your own rules. ") + "Saved on this device.")
     state = _rules_state()
 
     # recommendations derived from the ranked edge
@@ -474,7 +476,8 @@ def _rules_section(good, bad) -> None:
                     _rules_save()
                     st.rerun()
     else:
-        st.caption("No rules yet — add your own below or accept a recommendation.")
+        st.caption("No rules yet — add your own below"
+                   + (" or accept a recommendation." if t._verdicts_on() else "."))
 
     c1, c2 = st.columns([12, 2])
     with c1:
@@ -649,7 +652,9 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
             else:
                 _v = str(_raw if _raw is not None else "").strip()
             if _v.lower() in ("", "nan", "none", "na", "[]"):
-                extras += "<td class='text' style='color:#b45309;'>—</td>"
+                # an untagged field is flagged amber; a blank Mistake is no mistake
+                _dc = "#64748b" if _tc == "Mistake" else "#b45309"
+                extras += f"<td class='text' style='color:{_dc};'>—</td>"
             else:
                 _vl = _v.lower()
                 if _tc != "Mistake":

@@ -89,7 +89,7 @@ def _tiles(rows, styler=None) -> None:
                 f"<div style='font-size:34px;font-weight:800;line-height:1.15;color:{c};margin:6px 0 2px;'>{avg:+.2f}R</div>"
                 f"<div style='font-size:13px;color:#64748b;'>{wr:.0f}% win{net_s}</div>"
                 f"<div style='height:6px;border-radius:3px;margin-top:10px;"
-                f"background:linear-gradient(90deg,{c} {wr:.0f}%, #e5e7eb {wr:.0f}%);'></div>"
+                f"background:linear-gradient(90deg,{c} {wr:.0f}%, var(--ea-track, #e5e7eb) {wr:.0f}%);'></div>"
                 f"</div>", unsafe_allow_html=True)
 
 
@@ -732,11 +732,13 @@ def _missed_runner_section(df: pd.DataFrame, styler) -> None:
     mfe = pd.to_numeric(missed.get("MFE (R)"), errors="coerce")
     left = float((mfe - rr).clip(lower=0).sum()) if (mfe is not None and rr is not None and not missed.empty) else float("nan")
     c1, c2, c3 = st.columns(3)
-    with c1: _kpi("Missed runners", f"{n}", f"{pct}% of trades", "#ef4444" if pct > 15 else PURPLE)
-    with c2: _kpi("R left behind", "—" if np.isnan(left) else f"{left:.0f}R", "captured-to-TP gap")
+    # the share is of trades where the field was answered, and says so —
+    # "17.5% of trades" read as 17.5% of all 232 when it was 14 of 80
+    with c1: _kpi("Missed runners", f"{n}", f"{pct}% of {total} tagged trades", "#ef4444" if pct > 15 else PURPLE)
+    with c2: _kpi("R left behind", "—" if np.isnan(left) else f"{left:.1f}R", "peak (MFE) minus closed R")
     with c3:
         avg_left = (left / n) if (n and not np.isnan(left)) else float("nan")
         _kpi("Avg per miss", "—" if np.isnan(avg_left) else f"{avg_left:.1f}R", "left on each")
     if n and not np.isnan(left) and pct > 12:
-        t._insight_box(f"You exited <b>{n}</b> trades ({pct}%) that then ran to full TP, leaving ~<b>{left:.0f}R</b> on the table. "
+        t._insight_box(f"You exited <b>{n}</b> of {total} tagged trades ({pct}%) that then ran to full TP, leaving ~<b>{left:.1f}R</b> on the table. "
                        f"Cross-check with the Exit Optimizer before tightening management.", "warn")

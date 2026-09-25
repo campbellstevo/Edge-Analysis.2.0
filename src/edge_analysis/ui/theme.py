@@ -1849,7 +1849,12 @@ def inject_dark_overlay():
     picks dark mode — !important rules override the light inline styles.
     Charts and data tables intentionally stay as white cards for legibility."""
     st.markdown("""
+    <div class="ea-dark-css"></div>
     <style>
+    /* The overlay's own style blocks take no room: each empty element used to
+       add the page's 12px gap, pushing the dark page 24px down. A <style>
+       inside a hidden element still applies. */
+    [data-testid="stElementContainer"]:has(.ea-dark-css) { display: none !important; }
     .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"],
     [data-testid="stHeader"], .stAppHeader, [data-testid="stToolbar"] {
         background: #0e1117 !important;
@@ -2067,9 +2072,12 @@ def inject_dark_overlay():
     }
     .table-wrap td {
         background: transparent !important;
-        color: #c9d0dc !important;
         border-color: rgba(255,255,255,0.06) !important;
     }
+    /* Cells that carry their own colour (Win green, Loss red, ±R) keep it —
+       one blanket colour here turned every result white. */
+    .table-wrap td:not([style*="color"]) { color: #c9d0dc !important; }
+    :root { --ea-track: #2a3142; }
     .table-wrap tr:nth-child(even) td { background: #191f2c !important; }
     .ref-card {
         background: #161b27 !important;
@@ -2303,6 +2311,7 @@ div[style*="background: rgb(251, 252, 254)"] {
     _PROW = _PR + ' [data-testid="stHorizontalBlock"]:has(.ea-prow)'
     _PNC = _PR + ' [data-testid="stNumberInput"] [data-testid="stNumberInputContainer"]'
     st.markdown(f"""
+    <div class="ea-dark-css"></div>
     <style>
     {_PR} .ea-prow {{ color: #9aa4b4 !important; }}
     {_PNC} > [data-baseweb="input"] {{ background: transparent !important; border-color: transparent !important; }}
@@ -2445,6 +2454,9 @@ _DARK_CHART_COLORS = {
     "#e5e7eb": "#414b61",
     "#ffffff": "#161b27",
     "#fff": "#161b27",
+    # brand purple lines, bars and points were ~2.2:1 on the dark canvas
+    "#4800ff": "#a578ff",
+    "#4800FF": "#a578ff",
 }
 
 

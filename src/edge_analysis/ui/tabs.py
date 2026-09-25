@@ -5374,7 +5374,10 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
                                                                        "#ef4444"])),
                                 tooltip=[alt.Tooltip("Month:N"),
                                          alt.Tooltip("Cum:Q", format="+.2f")]))
-                labs = (alt.Chart(alt.Data(values=endpts))
+                # Only this month is named on the chart: past months all end near
+                # day 30 at similar values and their names printed on top of
+                # each other. Hover any line for its month.
+                labs = (alt.Chart(alt.Data(values=[e for e in endpts if e["col"] == "cur"]))
                         .mark_text(align="left", dx=9, dy=-2, fontSize=11.5,
                                    fontWeight=700)
                         .encode(x=alt.X("Day:Q", title=None, scale=xsc),
