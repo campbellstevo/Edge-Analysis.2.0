@@ -2456,234 +2456,27 @@ def _per_tag_confluences(g: pd.DataFrame) -> None:
     render_entry_model_table(conf_df, title=None, first_col_label="Confluence")
 
 
-def _hourly_expectancy_clock(df_raw: pd.DataFrame) -> None:
-    """
-    24-hour radial clock showing expectancy by entry hour.
-    Reads from the raw (pre-pipeline) df so early-close rows are included
-    and Closed RR values are used directly.
-    Renders via st.components.v1.html so the interactive JS hover works.
-    """
-    import json
-    import streamlit.components.v1 as components
-
-    WIN_RESULTS  = {"Full TP", "Early Close (Ended up being a win)", "TP2 (SL2TP1)", "Win"}
-    LOSS_RESULTS = {"Loss", "Bad Beat", "Breakeven, Loss"}
-
-    def _parse_hour(dt_str):
-        if pd.isna(dt_str):
-            return None
-        s = str(dt_str).strip()
-        m = re.search(r'(\d{1,2}):(\d{2})\s*(AM|PM)', s, re.IGNORECASE)
-        if m:
-            h, ampm = int(m.group(1)), m.group(3).upper()
-            if ampm == "PM" and h != 12:
-                h += 12
-            if ampm == "AM" and h == 12:
-                h = 0
-            return h
-        m = re.search(r'(\d{1,2}):(\d{2})(?!\s*[AP]M)', s, re.IGNORECASE)
-        if m:
-            return int(m.group(1)) % 24
-        return None
-
-    if df_raw is None or df_raw.empty:
-        _empty_note("The hourly clock appears once trades carry a time.")
+def _timing_reshaped(f: pd.DataFrame, df_raw: pd.DataFrame, show_table) -> None:
+    """Mockup V3: hour bars replace the 24-hour wheel, and a weekday × time
+    grid replaces the day-of-week table (its All day column). One metric
+    switch drives both."""
+    from edge_analysis.ui import reshape as rx
+    data = f if (f is not None and not f.empty) else df_raw
+    if data is None or data.empty:
+        _empty_note("Timing appears once trades are logged.")
         return
-
-    df = df_raw.copy()
-
-    dt_col  = next((c for c in ["Day/Time/Date of Trade", "Date & Time", "Datetime"] if c in df.columns), None)
-    time_col = "Time of Trade" if "Time of Trade" in df.columns else None
-
-    if dt_col:
-        df["_hour"] = df[dt_col].apply(_parse_hour)
-    elif time_col:
-        df["_hour"] = df[time_col].apply(_parse_hour)
-    elif "Hour (Melb)" in df.columns:
-        df["_hour"] = pd.to_numeric(df["Hour (Melb)"], errors="coerce")
-    elif "Open Time" in df.columns:
-        df["_hour"] = pd.to_datetime(df["Open Time"], errors="coerce").dt.hour
-    elif "Date" in df.columns and pd.to_datetime(df["Date"], errors="coerce").dt.hour.fillna(0).nunique() > 1:
-        df["_hour"] = pd.to_datetime(df["Date"], errors="coerce").dt.hour
-    else:
-        st.caption("Hourly clock: no entry-time data in this journal yet.")
-        return
-
-    if "Result" in df.columns:
-        df["_outcome"] = df["Result"].apply(
-            lambda r: "win" if str(r).strip() in WIN_RESULTS
-            else ("loss" if str(r).strip() in LOSS_RESULTS else "be"))
-    elif "Outcome" in df.columns:
-        df["_outcome"] = df["Outcome"].astype(str).str.lower().map(
-            lambda v: v if v in ("win", "loss", "be") else "be")
-    else:
-        df["_outcome"] = "be"
-
-    df["_rr"] = pd.to_numeric(df["Closed RR"], errors="coerce") if "Closed RR" in df.columns else float("nan")
-
-    hourly = df.dropna(subset=["_hour", "_rr"]).copy()
-    hourly["_hour"] = hourly["_hour"].astype(int)
-
-    hour_data = {}
-    for h, grp in hourly.groupby("_hour"):
-        wins   = grp[grp["_outcome"] == "win"]["_rr"]
-        losses = grp[grp["_outcome"] == "loss"]["_rr"]
-        n      = len(grp)
-        wr     = len(wins)   / n if n else 0
-        lr     = len(losses) / n if n else 0
-        avg_w  = float(wins.mean())   if len(wins)   else 0.0
-        avg_l  = float(losses.mean()) if len(losses) else 0.0
-        exp    = round(wr * avg_w + lr * avg_l, 3)
-        hour_data[int(h)] = {"e": exp, "n": int(n)}
-
-    if not hour_data:
-        _empty_note("Not enough data to build the hourly expectancy clock.")
-        return
-
-    all_exp     = [v["e"] for v in hour_data.values()]
-    overall_avg = round(sum(all_exp) / len(all_exp), 2)
-    data_js     = json.dumps(hour_data)
-
-    html = f"""
-<div style="font-family:-apple-system,sans-serif;display:flex;flex-direction:column;align-items:center;padding:0.5rem 0 0;background:#f6f7fb;border-radius:12px;">
-  <p style="margin:0 0 4px;font-size:14px;font-weight:500;color:#0f172a;">Expectancy by entry hour</p>
-  <p style="margin:0 0 14px;font-size:12px;color:#64748b;">hover a segment to inspect</p>
-  <svg id="eclock" width="360" height="360"
-       viewBox="-180 -180 360 360"
-       xmlns="http://www.w3.org/2000/svg" role="img">
-    <title>24-hour expectancy clock</title>
-    <desc>Radial clock showing trading expectancy per entry hour. Purple = positive, red = negative, opacity encodes magnitude.</desc>
-    <g id="cg"></g>
-    <circle cx="0" cy="0" r="100" fill="none" stroke="rgba(72,0,255,0.06)" stroke-width="0.5"/>
-    <circle cx="0" cy="0" r="130" fill="none" stroke="rgba(72,0,255,0.06)" stroke-width="0.5"/>
-    <circle cx="0" cy="0" r="68" fill="#ffffff" stroke="rgba(72,0,255,0.12)" stroke-width="0.5"/>
-    <text id="ch" x="0" y="-22" text-anchor="middle" dominant-baseline="central"
-          style="font-size:11px;fill:#64748b;"></text>
-    <text id="cv" x="0" y="-2" text-anchor="middle" dominant-baseline="central"
-          style="font-size:20px;font-weight:500;fill:#4800ff;"></text>
-    <text id="cs" x="0" y="20" text-anchor="middle" dominant-baseline="central"
-          style="font-size:11px;fill:#64748b;"></text>
-  </svg>
-  <div style="display:flex;gap:14px;margin-top:8px;font-size:12px;color:#64748b;align-items:center;">
-    <span style="display:flex;align-items:center;gap:4px;">
-      <span style="width:9px;height:9px;background:#4800ff;border-radius:2px;opacity:0.75;display:inline-block;"></span>positive
-    </span>
-    <span style="display:flex;align-items:center;gap:4px;">
-      <span style="width:9px;height:9px;background:#ef4444;border-radius:2px;opacity:0.75;display:inline-block;"></span>negative
-    </span>
-    <span style="display:flex;align-items:center;gap:4px;">
-      <span style="width:9px;height:9px;background:#e2e8f0;border-radius:2px;display:inline-block;"></span>no data
-    </span>
-  </div>
-</div>
-<script>
-(function(){{
-  const DATA    = {data_js};
-  const OVERALL = {overall_avg};
-  const NS      = "http://www.w3.org/2000/svg";
-  const g       = document.getElementById("cg");
-  const cv      = document.getElementById("cv");
-  const cs      = document.getElementById("cs");
-  const ch      = document.getElementById("ch");
-  const INNER   = 74, OUTER = 152, MAX_ABS = 3.0;
-
-  function polar(deg, r) {{
-    const rad = (deg - 90) * Math.PI / 180;
-    return [r * Math.cos(rad), r * Math.sin(rad)];
-  }}
-
-  function arc(h, ir, or_) {{
-    const sd = 360/24, sa = h*sd, ea = sa+sd-1.2;
-    const [x1,y1]=polar(sa,or_),[x2,y2]=polar(ea,or_);
-    const [x3,y3]=polar(ea,ir),[x4,y4]=polar(sa,ir);
-    return `M${{x1.toFixed(2)}},${{y1.toFixed(2)}} A${{or_}},${{or_}} 0 0,1 ${{x2.toFixed(2)}},${{y2.toFixed(2)}} L${{x3.toFixed(2)}},${{y3.toFixed(2)}} A${{ir}},${{ir}} 0 0,0 ${{x4.toFixed(2)}},${{y4.toFixed(2)}} Z`;
-  }}
-
-  function color(e, alpha) {{
-    if (e >= 0) {{
-      const t = Math.min(e / MAX_ABS, 1);
-      return `rgba(72,0,255,${{Math.min(alpha * (0.3 + t * 0.7), 1).toFixed(2)}})`;
-    }} else {{
-      const t = Math.min(Math.abs(e) / MAX_ABS, 1);
-      return `rgba(239,68,68,${{Math.min(alpha * (0.3 + t * 0.7), 1).toFixed(2)}})`;
-    }}
-  }}
-
-  function setCenter(h) {{
-    if (h === null) {{
-      ch.textContent = "";
-      cs.textContent = "avg expectancy";
-      cv.textContent = (OVERALL>=0?"+":"")+OVERALL.toFixed(2)+"R";
-      cv.style.fill = OVERALL>=0 ? "#4800ff" : "#dc2626";
-    }} else {{
-      const d = DATA[h];
-      ch.textContent = String(h).padStart(2,"0")+"h";
-      if (d) {{
-        cs.textContent = d.n+" trade"+(d.n===1?"":"s");
-        cv.textContent = (d.e>=0?"+":"")+d.e.toFixed(2)+"R";
-        cv.style.fill = d.e>=0 ? "#4800ff" : "#dc2626";
-      }} else {{
-        cs.textContent = "no data";
-        cv.textContent = "—";
-        cv.style.fill = "#64748b";
-      }}
-    }}
-  }}
-
-  const segs = [];
-  for (let h=0; h<24; h++) {{
-    const d = DATA[h];
-    const seg = document.createElementNS(NS,"path");
-    seg.setAttribute("d", arc(h, INNER, OUTER));
-    seg.setAttribute("fill", d ? color(d.e, 0.7) : "#e2e8f0");
-    seg.setAttribute("stroke","#f6f7fb");
-    seg.setAttribute("stroke-width","1");
-    seg.style.cursor = d ? "pointer" : "default";
-    seg.style.transition = "fill 0.12s";
-    segs.push({{seg, h, d}});
-
-    seg.addEventListener("mouseenter", () => {{
-      segs.forEach(s => s.seg.setAttribute("fill",
-        s.h===h
-          ? (s.d ? color(s.d.e, 1) : "#cbd5e1")
-          : (s.d ? color(s.d.e, 0.25) : "#eaecf0")
-      ));
-      setCenter(h);
-    }});
-    seg.addEventListener("mouseleave", () => {{
-      segs.forEach(s => s.seg.setAttribute("fill", s.d ? color(s.d.e, 0.7) : "#e2e8f0"));
-      setCenter(null);
-    }});
-    g.appendChild(seg);
-
-    const mid = h*(360/24)+(360/48);
-    const [lx,ly] = polar(mid, OUTER+14);
-    const lbl = document.createElementNS(NS,"text");
-    lbl.setAttribute("x", lx.toFixed(1));
-    lbl.setAttribute("y", ly.toFixed(1));
-    lbl.setAttribute("text-anchor","middle");
-    lbl.setAttribute("dominant-baseline","central");
-    lbl.style.cssText = "font-size:9px;fill:#64748b;font-family:-apple-system,sans-serif;";
-    lbl.textContent = String(h).padStart(2,"0")+"h";
-    g.appendChild(lbl);
-  }}
-
-  setCenter(null);
-}})();
-</script>
-"""
-    if st.session_state.get("ea_theme_pref") == "dark":
-        html = "<style>html,body{background:#161b27 !important;margin:0;}</style>" + html
-        for _a, _b in [("#f6f7fb", "#161b27"), ("background: white", "background: #161b27"),
-                       ("#eaecf0", "#1d2331"), ("#cbd5e1", "#3a4256"),
-                       ("background:white", "background:#161b27"),
-                       ("#ffffff", "#161b27"), ("#fff", "#161b27"),
-                       ("#64748b", "#9aa4b4"), ("#e2e8f0", "#262c3b"),
-                       ("#0f172a", "#e8ebf1"), ("#334155", "#c9d0dc"),
-                       ("rgba(72,0,255,0.06)", "rgba(139,124,255,0.16)"),
-                       ("rgba(72,0,255,0.12)", "rgba(139,124,255,0.28)")]:
-            html = html.replace(_a, _b)
-    components.html(html, height=460, scrolling=False)
+    metric = rx.metric_picker("ea_time_metric")
+    st.markdown("### By hour of entry")
+    st.caption("On your journal's own clock. Grey bars have too few trades to read yet.")
+    if not rx.hour_bars(data, metric):
+        _empty_note("Hours appear once your trades carry an entry time.")
+    _gap(14)
+    st.markdown("### Day \u00d7 time of day")
+    st.caption("Four-hour blocks. Hatched cells have under 5 trades. "
+               "The All day column is each weekday on its own.")
+    if not rx.day_time_grid(data, metric):
+        # no entry times: keep the plain day-of-week view
+        _time_days_tab(f, show_table)
 
 
 def _sessions_tab(f: pd.DataFrame, show_table):
@@ -5675,7 +5468,7 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
     )
     from edge_analysis.ui.pro_tabs import (
         _exit_optimizer, _mae_stop_optimizer, _tilt, _a_game,
-        _heatmap_hour_day, _symbol_session_matrix, _cost_drag,
+        _symbol_session_matrix, _cost_drag,
     )
     from edge_analysis.ui.plan_tabs import render_plan_tab, render_review_tab
 
@@ -5761,11 +5554,9 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
             st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
             _card_header("Timing", "When your edge shows up \u2014 hours, sessions and days.")
             with _budget(1):
-                _hourly_expectancy_clock(df_all_safe)
+                _timing_reshaped(f_perf, df_all_safe, show_table)
                 _gap(18)
                 _sessions_tab(f_perf, show_table)
-                _gap(18)
-                _time_days_tab(f_perf, show_table)
                 if _mt5:
                     _gap(18)
                     _holdtime_section(_data, styler)
@@ -5807,9 +5598,9 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                 _confluence_board(f_perf, scope="external")
                 _gap(18)
                 _liquidity_windows(f_perf)
+                # weekday × hour now lives on Entry → Timing for every journal
+                # (the day × time grid), not as an MT5-only ranked list here
                 if _mt5:
-                    _gap(18)
-                    _heatmap_hour_day(_data, styler)
                     _gap(18)
                     _symbol_session_matrix(_data, styler)
         if _mt5:
