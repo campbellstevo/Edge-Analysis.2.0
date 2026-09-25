@@ -202,3 +202,22 @@ def test_phone_sign_in_never_puts_a_token_in_a_link():
     src = (ROOT / "filters.py").read_text(encoding="utf-8")
     assert '"notion_token"' not in src
     assert "st.code(url" not in src
+
+
+def test_owner_typed_on_a_phone_still_matches(monkeypatch):
+    # curly quotes, stray straight quotes and <brackets> never lock the owner out
+    for raw in ("“Owner@Example.com”", '"owner@example.com"', "<owner@example.com>"):
+        monkeypatch.setenv("EA_OWNER", raw)
+        assert access.owners() == {OWNER}, raw
+
+
+def test_owner_pasted_under_a_toml_section_is_found(monkeypatch):
+    # appending EA_OWNER at the bottom of Secrets puts it inside the last [section]
+    import streamlit as st
+
+    class _Sec(dict):
+        pass
+    monkeypatch.delenv("EA_OWNER", raising=False)
+    monkeypatch.delenv("WHOOP_OWNER", raising=False)
+    monkeypatch.setattr(st, "secrets", _Sec({"notion": {"client_id": "x", "EA_OWNER": OWNER}}))
+    assert access.owners() == {OWNER}

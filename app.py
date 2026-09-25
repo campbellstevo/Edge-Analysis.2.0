@@ -1209,6 +1209,8 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .
 .ea-gate-code { text-align: left; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px;
                 padding: 12px 14px; font: 600 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
                 color: #0f172a; user-select: all; word-break: break-all; }
+.ea-gate-hint { text-align: left; font-size: 13px; color: #64748b; line-height: 1.5; margin: 2px 0 4px; }
+.ea-gate-hint b { color: #0f172a; }
 .ea-gate-note { display: flex; gap: 10px; align-items: flex-start; text-align: left; font-size: 12.5px;
                 color: #64748b; line-height: 1.5; border-top: 1px solid #eef0f5; padding-top: 16px; margin-top: 6px; }
 .ea-gate-note svg { flex: none; width: 16px; height: 16px; margin-top: 1px; stroke: #64748b; fill: none;
@@ -1410,6 +1412,16 @@ def _render_access_page(denied: dict) -> None:
         if why == "no_owner":
             st.markdown(f'<div class="ea-gate-code">EA_OWNER = "{who or "you@example.com"}"</div>',
                         unsafe_allow_html=True)
+            st.markdown('<div class="ea-gate-hint">Already added it? Type the quotes as plain '
+                        '<b>"</b> (a phone keyboard makes them curly, which breaks the whole '
+                        'Secrets file), press Save, wait about a minute, then sign in again.</div>',
+                        unsafe_allow_html=True)
+        elif why == "not_open" and who:
+            # an owner IS set but isn't this account; for the owner that means
+            # a typo in EA_OWNER. A stranger learns nothing they can use.
+            st.markdown(f'<div class="ea-gate-hint">Own this site? The <b>EA_OWNER</b> secret '
+                        f'doesn\'t match <b>{who}</b>, the email Notion gave us. Check it for a '
+                        f'typo, save, then sign in again.</div>', unsafe_allow_html=True)
         if who:
             st.markdown(f'<div><span class="ea-gate-who"><i></i>Signed in to Notion as '
                         f'{who}</span></div>', unsafe_allow_html=True)

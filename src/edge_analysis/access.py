@@ -36,13 +36,31 @@ def _secret(key: str) -> str:
         v = st.secrets.get(key)
         if v:
             return str(v)
+        # A line pasted at the bottom of Secrets lands INSIDE the last
+        # [section] (TOML), where a top-level lookup never finds it and the
+        # owner was locked out as "no owner set" (25 Sep). Look one level down.
+        for name in list(st.secrets.keys()):
+            sub = st.secrets.get(name)
+            if hasattr(sub, "get") and not isinstance(sub, str):
+                v = sub.get(key)
+                if v:
+                    return str(v)
     except Exception:
         pass
     return str(os.environ.get(key) or "")
 
 
+# typed on a phone, "…" becomes curly quotes; a pasted <you@x.com> keeps its brackets
+_WRAP = "\"'\u201c\u201d\u2018\u2019<>"
+
+
 def _split(raw: str) -> Set[str]:
-    return {p.strip().lower() for p in re.split(r"[,;\s]+", raw or "") if p.strip()}
+    out = set()
+    for p in re.split(r"[,;\s]+", raw or ""):
+        p = p.strip().strip(_WRAP).strip().lower()
+        if p:
+            out.add(p)
+    return out
 
 
 def mode() -> str:
