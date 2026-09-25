@@ -1,0 +1,130 @@
+Trade No. ,Date,Time of Trade,Pair,R Result,Result,3SL Window,Entry Model,Entry Model Timeframe,Long or Short,Rules Followed? Y/N,HTF/MTF Bias Strength,Confirmation/Risk,Double Confirmation,+S (Execution),Did price hit full TP without you?,Entry Confluences,Emotional State Before Entry,News Proximity,Trade Duration
+1,2026-05-27,11:00,XAUUSD,+2RR,Win,Asia,FBoS,3M,Long,Y,Weak,Confirmation,Y,+S,N,Sweep,Calm,No News,>2h
+2,2026-07-02,19:00,XAUUSD,-1RR,Loss,London,NC Model,5M,Long,Y,Weak,Risk,Y,+S,Y,"Sweep, Divergence",Anxious,No News,>2h
+3,2026-03-16,22:30,XAUUSD,-1RR,Loss,NY,NC Model,5M,Long,Y,Medium,Confirmation,Y,+S,Y,GAP,Confident,Post News,30m-2h
+4,2026-07-17,22:30,XAUUSD,0RR,BE,NY,FBoS,5M,Long,Y,Strong,Risk,N,No +S,N,GAP,Calm,No News,>2h
+5,2026-07-01,17:30,XAUUSD,5-6RR,Win,London,NC Model,1M,Short,N,Medium,Risk,N,No +S,Y,,Anxious,Post News,>2h
+6,2026-02-24,18:15,XAUUSD,-1RR,Loss,London,NC Model,3M,Short,N,Strong,Risk,N,+S,Y,Sweep,Calm,Post News,<30m
+7,2026-04-30,17:30,XAUUSD,-1RR,Loss,London,FBoS,3M,Short,N,Weak,Risk,Y,No +S,N,"Divergence, GAP",Confident,Post News,<30m
+8,2026-03-26,18:15,XAUUSD,+3RR,Win,London,NC Model,1M,Short,Y,Medium,Confirmation,Y,No +S,N,"GAP, Divergence",Calm,No News,30m-2h
+9,2026-08-20,19:00,XAUUSD,+2RR,Win,London,Protected Structure Continuation,1M,Long,N,Strong,Confirmation,N,+S,Y,GAP,Calm,No News,<30m
+10,2026-08-24,17:30,XAUUSD,+4RR,Win,London,FBoS,5M,Short,Y,Strong,Risk,N,No +S,N,,Calm,Post News,30m-2h
+11,2026-07-22,19:00,XAUUSD,+2RR,Win,London,Protected Structure Continuation,3M,Long,Y,Weak,Confirmation,Y,No +S,Y,"GAP, Sweep",Confident,Post News,>2h
+12,2026-03-05,23:15,XAUUSD,+4RR,Win,NY,FBoS,5M,Short,Y,Weak,Confirmation,Y,+S,N,"Sweep, GAP",Confident,Post News,30m-2h
+13,2026-02-11,10:15,XAUUSD,-1RR,Loss,Asia,FBoS,5M,Short,N,Medium,Risk,N,+S,Y,,Calm,Post News,<30m
+14,2026-06-02,18:15,XAUUSD,-1RR,Loss,London,NC Model,3M,Long,Y,Weak,Confirmation,N,+S,N,,Anxious,Post News,<30m
+15,2026-06-23,19:00,XAUUSD,-1RR,Loss,London,FBoS,1M,Long,Y,Strong,Confirmation,N,+S,N,"Divergence, Sweep",Confident,No News,<30m
+16,2026-02-05,23:45,XAUUSD,-1RR,Loss,NY,NC Model,1M,Short,Y,Strong,Confirmation,Y,No +S,Y,GAP,Calm,Post News,30m-2h
+17,2026-08-14,19:00,XAUUSD,+4RR,Win,London,NC Model,5M,Short,N,Weak,Confirmation,Y,+S,N,,Confident,No News,<30m
+18,2026-04-03,19:00,XAUUSD,-1RR,Loss,London,FBoS,3M,Short,Y,Strong,Confirmation,Y,+S,N,,Calm,Post News,>2h
+19,2026-02-11,23:15,XAUUSD,-1RR,Loss,NY,NC Model,5M,Long,N,Weak,Risk,N,No +S,Y,"GAP, Divergence",Confident,No News,30m-2h
+20,2026-03-23,19:00,XAUUSD,+4RR,Win,London,FBoS,3M,Long,Y,Strong,Risk,Y,+S,N,,Anxious,No News,30m-2h
+21,2026-04-21,23:45,XAUUSD,5-6RR,Win,NY,FBoS,1M,Short,Y,Weak,Risk,N,No +S,Y,Divergence,Calm,Post News,<30m
+22,2026-06-02,23:15,XAUUSD,0RR,BE,NY,Protected Structure Continuation,5M,Short,Y,Weak,Confirmation,Y,+S,Y,,Anxious,Post News,<30m
+23,2026-04-07,18:15,XAUUSD,5-6RR,Win,London,FBoS,5M,Short,Y,Weak,Risk,Y,No +S,Y,"Sweep, Divergence",Calm,Post News,<30m
+24,2026-09-16,18:15,XAUUSD,+3RR,Win,London,FBoS,3M,Long,Y,Medium,Risk,N,+S,Y,"GAP, Sweep",Calm,No News,30m-2h
+25,2026-02-18,19:00,XAUUSD,-1RR,Loss,London,FBoS,3M,Short,Y,Weak,Confirmation,N,No +S,Y,Sweep,Calm,No News,>2h
+26,2026-07-31,23:15,XAUUSD,5-6RR,Win,NY,FBoS,5M,Short,Y,Weak,Risk,N,No +S,Y,,Anxious,No News,>2h
+27,2026-09-16,17:30,XAUUSD,-1RR,Loss,London,FBoS,1M,Short,Y,Medium,Confirmation,Y,+S,N,"GAP, Divergence",Confident,No News,>2h
+28,2026-05-18,17:30,XAUUSD,+4RR,Win,London,Protected Structure Continuation,3M,Short,N,Weak,Risk,Y,+S,N,,Anxious,No News,<30m
+29,2026-06-01,17:30,XAUUSD,0RR,BE,London,NC Model,1M,Long,Y,Medium,Confirmation,Y,No +S,Y,Sweep,Anxious,Post News,>2h
+30,2026-04-24,19:00,XAUUSD,-1RR,Loss,London,NC Model,5M,Short,Y,Medium,Risk,Y,No +S,Y,,Confident,Post News,>2h
+31,2026-07-31,19:00,XAUUSD,-1RR,Loss,London,NC Model,5M,Long,Y,Strong,Confirmation,Y,+S,N,,Anxious,Post News,>2h
+32,2026-02-18,23:15,XAUUSD,-1RR,Loss,NY,Protected Structure Continuation,1M,Short,Y,Strong,Confirmation,Y,No +S,N,,Anxious,No News,>2h
+33,2026-04-15,18:15,XAUUSD,-1RR,Loss,London,Protected Structure Continuation,1M,Short,N,Weak,Risk,Y,+S,Y,"Sweep, Divergence",Anxious,Post News,>2h
+34,2026-08-24,18:15,XAUUSD,0RR,BE,London,NC Model,1M,Long,N,Weak,Risk,N,No +S,N,Divergence,Calm,No News,30m-2h
+35,2026-03-03,11:00,XAUUSD,5-6RR,Win,Asia,Protected Structure Continuation,3M,Short,Y,Strong,Confirmation,Y,+S,Y,"GAP, Divergence",Anxious,No News,>2h
+36,2026-09-15,22:30,XAUUSD,-1RR,Loss,NY,Protected Structure Continuation,3M,Short,Y,Strong,Confirmation,Y,No +S,N,Divergence,Confident,No News,30m-2h
+37,2026-06-04,18:15,XAUUSD,+4RR,Win,London,Protected Structure Continuation,3M,Long,Y,Strong,Confirmation,N,No +S,N,,Anxious,Post News,>2h
+38,2026-02-27,17:30,XAUUSD,0RR,BE,London,Protected Structure Continuation,1M,Long,Y,Weak,Risk,Y,+S,N,GAP,Anxious,No News,30m-2h
+39,2026-07-03,11:00,XAUUSD,-1RR,Loss,Asia,NC Model,1M,Long,N,Strong,Risk,N,+S,N,Sweep,Confident,No News,<30m
+40,2026-07-20,18:15,XAUUSD,+4RR,Win,London,NC Model,1M,Short,Y,Medium,Risk,Y,+S,Y,,Calm,Post News,>2h
+41,2026-04-21,17:30,XAUUSD,5-6RR,Win,London,NC Model,1M,Long,N,Strong,Confirmation,N,+S,N,,Anxious,Post News,>2h
+42,2026-04-14,10:15,XAUUSD,-1RR,Loss,Asia,Protected Structure Continuation,5M,Long,N,Medium,Risk,N,+S,N,GAP,Anxious,No News,>2h
+43,2026-07-30,22:30,XAUUSD,-1RR,Loss,NY,Protected Structure Continuation,1M,Short,Y,Medium,Risk,N,No +S,Y,,Calm,Post News,>2h
+44,2026-07-21,10:15,XAUUSD,0RR,BE,Asia,NC Model,3M,Short,Y,Strong,Confirmation,Y,+S,Y,"GAP, Sweep",Confident,Post News,<30m
+45,2026-08-18,23:45,XAUUSD,+3RR,Win,NY,FBoS,5M,Short,Y,Strong,Risk,N,+S,Y,,Anxious,No News,30m-2h
+46,2026-05-05,19:00,XAUUSD,-1RR,Loss,London,Protected Structure Continuation,3M,Short,Y,Medium,Confirmation,N,+S,Y,,Anxious,Post News,<30m
+47,2026-02-09,17:30,XAUUSD,-1RR,Loss,London,Protected Structure Continuation,1M,Short,N,Medium,Confirmation,N,+S,N,"Divergence, GAP",Confident,Post News,<30m
+48,2026-02-03,22:30,XAUUSD,-1RR,Loss,NY,Protected Structure Continuation,1M,Short,Y,Strong,Confirmation,N,+S,N,Sweep,Confident,Post News,>2h
+49,2026-04-08,11:00,XAUUSD,0RR,BE,Asia,FBoS,3M,Long,Y,Strong,Confirmation,Y,No +S,Y,"Sweep, GAP",Anxious,Post News,>2h
+50,2026-05-25,23:15,XAUUSD,-1RR,Loss,NY,FBoS,1M,Short,Y,Strong,Risk,N,No +S,N,Sweep,Calm,No News,<30m
+51,2026-05-12,19:00,XAUUSD,0RR,BE,London,FBoS,3M,Short,Y,Medium,Risk,Y,+S,N,,Anxious,Post News,<30m
+52,2026-05-27,19:00,XAUUSD,-1RR,Loss,London,Protected Structure Continuation,1M,Short,Y,Strong,Risk,Y,No +S,Y,,Anxious,No News,>2h
+53,2026-02-24,11:00,XAUUSD,+4RR,Win,Asia,FBoS,3M,Short,Y,Medium,Risk,Y,+S,Y,,Calm,Post News,>2h
+54,2026-07-17,10:15,XAUUSD,+4RR,Win,Asia,FBoS,3M,Long,N,Strong,Risk,Y,+S,N,Divergence,Anxious,No News,>2h
+55,2026-04-13,19:00,XAUUSD,5-6RR,Win,London,FBoS,3M,Short,Y,Strong,Risk,Y,+S,N,"Sweep, GAP",Calm,Post News,30m-2h
+56,2026-07-10,19:00,XAUUSD,5-6RR,Win,London,NC Model,5M,Long,Y,Medium,Risk,N,No +S,N,GAP,Anxious,No News,30m-2h
+57,2026-04-30,18:15,XAUUSD,+4RR,Win,London,FBoS,3M,Short,Y,Strong,Confirmation,Y,No +S,Y,,Calm,Post News,<30m
+58,2026-07-10,09:30,XAUUSD,+4RR,Win,Asia,FBoS,1M,Long,Y,Strong,Risk,Y,No +S,N,"Sweep, GAP",Confident,Post News,<30m
+59,2026-02-13,17:30,XAUUSD,+3RR,Win,London,NC Model,5M,Long,Y,Strong,Risk,N,No +S,Y,"Divergence, Sweep",Calm,No News,30m-2h
+60,2026-08-17,19:00,XAUUSD,5-6RR,Win,London,NC Model,1M,Long,Y,Medium,Risk,N,No +S,N,Sweep,Anxious,Post News,30m-2h
+61,2026-06-30,19:00,XAUUSD,-1RR,Loss,London,FBoS,3M,Short,Y,Strong,Confirmation,N,+S,N,,Calm,Post News,>2h
+62,2026-06-11,19:00,XAUUSD,+2RR,Win,London,FBoS,5M,Short,Y,Strong,Risk,Y,+S,N,Sweep,Confident,No News,<30m
+63,2026-03-11,18:15,XAUUSD,-1RR,Loss,London,FBoS,1M,Short,Y,Medium,Confirmation,N,+S,Y,"Sweep, Divergence",Confident,No News,30m-2h
+64,2026-04-07,23:15,XAUUSD,+3RR,Win,NY,FBoS,1M,Long,N,Weak,Confirmation,Y,+S,N,,Anxious,Post News,>2h
+65,2026-09-14,23:45,XAUUSD,-1RR,Loss,NY,FBoS,3M,Short,Y,Weak,Risk,N,No +S,Y,,Calm,Post News,30m-2h
+66,2026-04-27,17:30,XAUUSD,-1RR,Loss,London,Protected Structure Continuation,3M,Long,N,Strong,Confirmation,N,No +S,N,,Anxious,No News,<30m
+67,2026-09-16,19:00,XAUUSD,-1RR,Loss,London,NC Model,1M,Long,Y,Weak,Risk,Y,+S,Y,"GAP, Sweep",Calm,No News,30m-2h
+68,2026-05-14,11:00,XAUUSD,-1RR,Loss,Asia,NC Model,1M,Long,Y,Medium,Risk,Y,No +S,N,Sweep,Anxious,Post News,<30m
+69,2026-09-01,18:15,XAUUSD,0RR,BE,London,FBoS,1M,Long,Y,Medium,Confirmation,N,No +S,N,,Anxious,No News,>2h
+70,2026-02-18,23:15,XAUUSD,5-6RR,Win,NY,NC Model,5M,Short,Y,Weak,Risk,N,No +S,N,"Sweep, Divergence",Anxious,No News,30m-2h
+71,2026-04-23,18:15,XAUUSD,-1RR,Loss,London,NC Model,3M,Short,Y,Weak,Risk,Y,+S,Y,,Anxious,Post News,30m-2h
+72,2026-08-04,19:00,XAUUSD,5-6RR,Win,London,NC Model,1M,Long,Y,Strong,Confirmation,N,No +S,Y,"Divergence, Sweep",Anxious,Post News,>2h
+73,2026-03-20,17:30,XAUUSD,-1RR,Loss,London,FBoS,1M,Long,N,Weak,Confirmation,N,+S,Y,"Sweep, Divergence",Anxious,Post News,<30m
+74,2026-02-20,23:45,XAUUSD,-1RR,Loss,NY,NC Model,5M,Short,Y,Weak,Risk,Y,+S,Y,,Calm,No News,30m-2h
+75,2026-04-08,19:00,XAUUSD,+2RR,Win,London,NC Model,5M,Long,Y,Strong,Risk,Y,No +S,Y,"Divergence, Sweep",Anxious,No News,>2h
+76,2026-07-22,22:30,XAUUSD,5-6RR,Win,NY,NC Model,5M,Short,N,Strong,Confirmation,Y,No +S,Y,"Sweep, GAP",Anxious,Post News,>2h
+77,2026-02-19,19:00,XAUUSD,-1RR,Loss,London,NC Model,3M,Short,N,Weak,Confirmation,Y,+S,Y,Sweep,Confident,No News,<30m
+78,2026-05-28,19:00,XAUUSD,+3RR,Win,London,NC Model,5M,Short,N,Medium,Confirmation,Y,No +S,Y,"Divergence, Sweep",Anxious,No News,>2h
+79,2026-04-02,18:15,XAUUSD,+2RR,Win,London,FBoS,5M,Long,Y,Strong,Confirmation,Y,+S,Y,"Sweep, GAP",Confident,Post News,<30m
+80,2026-08-11,09:30,XAUUSD,5-6RR,Win,Asia,FBoS,1M,Long,Y,Strong,Confirmation,Y,No +S,N,,Calm,No News,>2h
+81,2026-04-15,18:15,XAUUSD,+4RR,Win,London,Protected Structure Continuation,3M,Long,Y,Weak,Risk,N,No +S,N,"GAP, Sweep",Anxious,No News,30m-2h
+82,2026-08-05,23:45,XAUUSD,+2RR,Win,NY,FBoS,5M,Short,Y,Strong,Risk,Y,+S,N,,Calm,Post News,30m-2h
+83,2026-03-06,18:15,XAUUSD,-1RR,Loss,London,NC Model,3M,Short,Y,Weak,Confirmation,N,+S,Y,Sweep,Calm,No News,30m-2h
+84,2026-08-20,22:30,XAUUSD,-1RR,Loss,NY,Protected Structure Continuation,3M,Long,Y,Medium,Confirmation,N,+S,N,Divergence,Confident,No News,30m-2h
+85,2026-09-15,18:15,XAUUSD,0RR,BE,London,NC Model,3M,Long,Y,Medium,Risk,Y,No +S,N,"Divergence, Sweep",Calm,Post News,30m-2h
+86,2026-09-18,10:15,XAUUSD,+3RR,Win,Asia,NC Model,5M,Long,Y,Weak,Confirmation,Y,No +S,N,,Calm,Post News,<30m
+87,2026-05-05,09:30,XAUUSD,-1RR,Loss,Asia,NC Model,1M,Long,Y,Medium,Confirmation,Y,No +S,N,Divergence,Calm,No News,>2h
+88,2026-03-11,17:30,XAUUSD,-1RR,Loss,London,FBoS,3M,Short,N,Weak,Confirmation,N,No +S,Y,,Anxious,Post News,<30m
+89,2026-04-29,09:30,XAUUSD,0RR,BE,Asia,NC Model,5M,Long,N,Weak,Confirmation,Y,No +S,N,Divergence,Confident,No News,30m-2h
+90,2026-04-29,23:15,XAUUSD,-1RR,Loss,NY,Protected Structure Continuation,3M,Short,Y,Strong,Risk,Y,No +S,Y,Divergence,Calm,No News,30m-2h
+91,2026-08-14,19:00,XAUUSD,-1RR,Loss,London,Protected Structure Continuation,1M,Short,Y,Weak,Confirmation,N,+S,N,"Divergence, GAP",Confident,Post News,<30m
+92,2026-04-08,19:00,XAUUSD,-1RR,Loss,London,NC Model,3M,Long,Y,Medium,Risk,N,No +S,Y,,Calm,Post News,30m-2h
+93,2026-09-14,22:30,XAUUSD,+4RR,Win,NY,Protected Structure Continuation,5M,Short,Y,Weak,Confirmation,N,No +S,Y,,Calm,No News,>2h
+94,2026-04-10,17:30,XAUUSD,-1RR,Loss,London,Protected Structure Continuation,5M,Short,Y,Medium,Risk,Y,No +S,N,,Anxious,Post News,>2h
+95,2026-05-01,09:30,XAUUSD,-1RR,Loss,Asia,NC Model,3M,Short,N,Strong,Risk,N,No +S,N,GAP,Confident,No News,>2h
+96,2026-06-10,17:30,XAUUSD,5-6RR,Win,London,NC Model,3M,Long,Y,Weak,Risk,Y,+S,Y,,Confident,Post News,30m-2h
+97,2026-09-07,18:15,XAUUSD,+3RR,Win,London,Protected Structure Continuation,1M,Long,Y,Medium,Confirmation,Y,No +S,Y,GAP,Calm,No News,>2h
+98,2026-07-08,23:15,XAUUSD,+2RR,Win,NY,FBoS,1M,Short,Y,Medium,Confirmation,N,No +S,Y,"Divergence, Sweep",Anxious,No News,>2h
+99,2026-09-03,11:00,XAUUSD,+4RR,Win,Asia,NC Model,3M,Short,N,Medium,Risk,N,No +S,Y,,Confident,Post News,>2h
+100,2026-09-21,17:30,XAUUSD,-1RR,Loss,London,NC Model,3M,Short,Y,Strong,Confirmation,Y,No +S,Y,Sweep,Confident,Post News,30m-2h
+101,2026-07-21,23:15,XAUUSD,-1RR,Loss,NY,Protected Structure Continuation,3M,Short,Y,Medium,Confirmation,N,No +S,N,Divergence,Anxious,Post News,>2h
+102,2026-06-04,10:15,XAUUSD,-1RR,Loss,Asia,FBoS,3M,Short,Y,Strong,Confirmation,Y,No +S,N,"GAP, Sweep",Anxious,Post News,<30m
+103,2026-02-03,19:00,XAUUSD,-1RR,Loss,London,NC Model,1M,Short,N,Weak,Confirmation,Y,+S,Y,"GAP, Divergence",Confident,No News,<30m
+104,2026-04-07,11:00,XAUUSD,0RR,BE,Asia,FBoS,3M,Long,Y,Medium,Risk,N,+S,N,,Anxious,No News,30m-2h
+105,2026-08-21,23:15,XAUUSD,-1RR,Loss,NY,NC Model,5M,Long,Y,Strong,Risk,N,No +S,Y,,Confident,Post News,>2h
+106,2026-09-01,10:15,XAUUSD,-1RR,Loss,Asia,Protected Structure Continuation,5M,Long,Y,Strong,Risk,Y,+S,Y,Sweep,Calm,No News,<30m
+107,2026-04-20,11:00,XAUUSD,+2RR,Win,Asia,NC Model,1M,Short,Y,Weak,Confirmation,Y,No +S,Y,"Sweep, Divergence",Confident,Post News,30m-2h
+108,2026-05-04,09:30,XAUUSD,+2RR,Win,Asia,FBoS,5M,Long,Y,Medium,Risk,N,+S,N,"Sweep, Divergence",Anxious,Post News,30m-2h
+109,2026-04-01,19:00,XAUUSD,-1RR,Loss,London,FBoS,5M,Short,Y,Medium,Risk,N,No +S,N,Divergence,Calm,Post News,>2h
+110,2026-02-05,23:45,XAUUSD,-1RR,Loss,NY,Protected Structure Continuation,1M,Short,Y,Medium,Risk,Y,No +S,N,"Sweep, Divergence",Anxious,Post News,30m-2h
+111,2026-03-30,23:15,XAUUSD,-1RR,Loss,NY,FBoS,5M,Long,Y,Medium,Risk,N,+S,N,Sweep,Confident,No News,30m-2h
+112,2026-09-07,19:00,XAUUSD,+3RR,Win,London,FBoS,3M,Short,Y,Weak,Confirmation,N,+S,Y,GAP,Confident,Post News,>2h
+113,2026-05-27,17:30,XAUUSD,-1RR,Loss,London,FBoS,1M,Long,Y,Weak,Risk,N,No +S,N,"Sweep, GAP",Calm,Post News,30m-2h
+114,2026-03-11,17:30,XAUUSD,0RR,BE,London,Protected Structure Continuation,5M,Long,Y,Medium,Risk,Y,+S,Y,,Confident,Post News,>2h
+115,2026-08-24,18:15,XAUUSD,-1RR,Loss,London,FBoS,3M,Long,Y,Medium,Confirmation,N,+S,Y,Sweep,Calm,No News,<30m
+116,2026-08-19,17:30,XAUUSD,-1RR,Loss,London,NC Model,5M,Short,N,Strong,Confirmation,N,No +S,Y,"Sweep, Divergence",Calm,Post News,<30m
+117,2026-06-12,09:30,XAUUSD,-1RR,Loss,Asia,FBoS,3M,Short,Y,Strong,Confirmation,Y,No +S,N,,Calm,No News,30m-2h
+118,2026-02-03,11:00,XAUUSD,-1RR,Loss,Asia,NC Model,3M,Long,Y,Medium,Risk,N,No +S,N,,Anxious,Post News,30m-2h
+119,2026-04-02,18:15,XAUUSD,-1RR,Loss,London,NC Model,1M,Long,Y,Strong,Confirmation,Y,No +S,Y,Sweep,Anxious,No News,>2h
+120,2026-02-27,17:30,XAUUSD,+3RR,Win,London,NC Model,3M,Long,N,Medium,Confirmation,Y,+S,N,"Sweep, Divergence",Calm,Post News,30m-2h
+900,2026-09-21,18:15,XAUUSD,,,London,FBoS,1M,Long,,Medium,Risk,N,+S,N,Sweep,Anxious,Post News,30m-2h
+901,2026-09-18,17:30,XAUUSD,,,London,FBoS,5M,Long,,Weak,Confirmation,N,No +S,Y,Sweep,Anxious,Post News,30m-2h
+902,2026-09-17,17:30,XAUUSD,,,London,FBoS,1M,Short,,Medium,Risk,Y,+S,N,,Confident,No News,30m-2h
+950,2026-09-15,,XAUUSD,,,,,,,,,,,,,,,,
+951,2026-09-14,,XAUUSD,,,,,,,,,,,,,,,,
+952,2026-09-11,,XAUUSD,,,,,,,,,,,,,,,,
+953,2026-09-10,,XAUUSD,,,,,,,,,,,,,,,,
+,,,XAUUSD,,,,,,,,,,,,,,,,
+,,,XAUUSD,,,,,,,,,,,,,,,,
