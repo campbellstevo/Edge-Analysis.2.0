@@ -35,9 +35,12 @@ def _tokens() -> dict:
                 grey="#cbd5e1", few="#94a3b8", pos_fg="#14532d", neg_fg="#7f1d1d")
 
 
-def css() -> str:
-    """The reshape components' stylesheet for the current theme. Blank lines
-    are stripped: a Markdown <style> block ends at the first one."""
+def css(extra: str = "") -> str:
+    """The reshape components' stylesheet for the current theme, plus any
+    `extra` rules, as ONE <style> block. Blank lines are stripped (a Markdown
+    <style> block ends at the first one), and two blocks must never share a
+    line: the HTML block ends at the line holding the first </style>, so the
+    second block's rules leaked out as page text and hid what followed."""
     t = _tokens()
     s = f"""<style>
 .ea-rx{{color:{t['ink']};}}
@@ -74,6 +77,7 @@ def css() -> str:
 .ea-hm td.none{{background:{t['soft']};color:{t['few']};font-weight:600;font-size:12px;}}
 .ea-hm td.tot{{box-shadow:inset 0 0 0 2px {t['base']};}}
 .ea-hm tr.tot td.name{{color:{t['muted']};}}
+{extra}
 </style>"""
     return re.sub(r"\n\s*\n", "\n", s)
 
@@ -353,3 +357,74 @@ def pair_grid(counted: pd.DataFrame, m1: pd.Series, m2: pd.Series,
               row_head="Model 1 ↓  ·  Model 2 →", total_row_label="Any model 1",
               total_col_label="Any model 2", name_w="210px")
     return True
+
+
+# ── discipline hero (mockup V4) ──────────────────────────────────────────────
+def _ring(score: int, size: int = 132) -> str:
+    import math
+    t = _tokens()
+    r = size / 2 - 11
+    c = 2 * math.pi * r
+    col = GREEN if score >= 80 else ("#f59e0b" if score >= 60 else RED)
+    return (f'<svg width="{size}" height="{size}" viewBox="0 0 {size} {size}" role="img" '
+            f'aria-label="Discipline score {score}%">'
+            f'<circle cx="{size/2}" cy="{size/2}" r="{r:.1f}" fill="none" stroke="{t["h1"]}" stroke-width="12"/>'
+            f'<circle cx="{size/2}" cy="{size/2}" r="{r:.1f}" fill="none" stroke="{col}" stroke-width="12" '
+            f'stroke-linecap="round" stroke-dasharray="{c * score / 100:.1f} {c:.1f}" '
+            f'transform="rotate(-90 {size/2} {size/2})"/>'
+            f'<text x="{size/2}" y="{size/2 + 5}" font-size="30" font-weight="800" fill="{t["ink"]}" '
+            f'text-anchor="middle">{score}%</text>'
+            f'<text x="{size/2}" y="{size/2 + 24}" font-size="11.5" fill="{t["muted"]}" '
+            f'text-anchor="middle">clean trades</text></svg>')
+
+
+def discipline_hero(score: int, n_clean: int, n_total: int, causes: list, checked: str,
+                    clean_r=None, flag_r=None, days: list | None = None, facts: list | None = None) -> None:
+    """Score ring, one sentence on what discipline is worth in R, the causes as
+    pills and a strip of the last 90 trading days (green = nothing broke)."""
+    t = _tokens()
+    if n_clean == n_total:
+        head = f"All {n_total} trades broke nothing"
+    else:
+        head = f"{n_clean} of {n_total} trades broke nothing"
+    worth = ""
+    if clean_r is not None and flag_r is not None:
+        _cc = GREEN if clean_r >= 0 else RED
+        _fc = GREEN if flag_r >= 0 else RED
+        # say what the numbers say: in some journals the rule-breakers still
+        # average more, and claiming a "gap" there would be false
+        _end = ("That gap is what discipline is worth." if clean_r > flag_r + 0.05 else
+                "So far, trades that broke something have done no worse on average; "
+                "the rules guard the bad days more than the average.")
+        worth = (f'<div class="ea-dh-s">Clean trades average <b style="color:{_cc}">{_h.escape(fmt_r(clean_r))}</b>; '
+                 f'trades that broke something average <b style="color:{_fc}">{_h.escape(fmt_r(flag_r))}</b>. '
+                 f'{_end}</div>')
+    pills = "".join(f'<span class="ea-dh-p bad">{n} {_h.escape(lab)}</span>' for n, lab in causes)
+    pills += "".join(f'<span class="ea-dh-p">{_h.escape(x)}</span>' for x in (facts or []))
+    strip = ""
+    if days:
+        sq = "".join(f'<i title="{_h.escape(d)}" style="background:{GREEN if ok else "#f4a3a3"};"></i>'
+                     for d, ok in days[-90:])
+        strip = (f'<div class="ea-dh-strip"><div class="ea-dh-k">LAST {min(90, len(days))} TRADING DAYS</div>'
+                 f'<div class="ea-dh-sq">{sq}</div>'
+                 f'<div class="ea-rx-cap"><span><i style="background:{GREEN}"></i>nothing broke</span>'
+                 f'<span><i style="background:#f4a3a3"></i>something broke</span></div></div>')
+    s = f"""
+.ea-dh{{display:flex;gap:26px;align-items:center;flex-wrap:wrap;margin:4px 0 8px;}}
+.ea-dh-m{{flex:1 1 320px;min-width:0;}}
+.ea-dh-h{{font-size:20px;font-weight:800;color:{t['ink']};}}
+.ea-dh-s{{font-size:14.5px;color:{t['muted']};margin:4px 0 10px;line-height:1.5;}}
+.ea-dh-s b{{font-weight:800;}}
+.ea-dh-p{{display:inline-block;font-size:12.5px;font-weight:700;border-radius:999px;padding:3px 10px;margin:0 6px 6px 0;
+  background:{t['h1']};color:{t['muted']};}}
+.ea-dh-p.bad{{background:{'#3a1d22' if _dark() else '#fde8e8'};color:{'#fca5a5' if _dark() else '#7f1d1d'};}}
+.ea-dh-c{{font-size:12.5px;color:{t['muted']};margin-top:4px;}}
+.ea-dh-strip{{flex:0 1 330px;}}
+.ea-dh-k{{font-size:11.5px;font-weight:700;letter-spacing:.07em;color:{t['muted']};margin-bottom:6px;}}
+.ea-dh-sq{{display:grid;grid-template-columns:repeat(15,14px);gap:4px;}}
+.ea-dh-sq i{{display:block;width:14px;height:14px;border-radius:3px;}}
+"""
+    body = (f'<div class="ea-rx ea-dh">{_ring(int(score))}<div class="ea-dh-m"><div class="ea-dh-h">{_h.escape(head)}</div>'
+            f'{worth}<div>{pills}</div><div class="ea-dh-c">Checked on every trade: {_h.escape(checked)}</div></div>'
+            f'{strip}</div>')
+    st.markdown(css(s) + body, unsafe_allow_html=True)

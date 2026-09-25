@@ -76,3 +76,15 @@ def test_grids_drop_blocks_nobody_trades(monkeypatch):
     assert rx.day_time_grid(g, "Expectancy")
     html = "".join(out)
     assert "16–20" in html and "04–08" not in html
+
+
+def test_discipline_hero_never_claims_a_gap_that_is_not_there(monkeypatch):
+    out = _capture(monkeypatch)
+    rx.discipline_hero(71, 166, 233, [(26, "went past your monthly cap")], "x",
+                       clean_r=0.16, flag_r=0.40, days=[("d", True)], facts=[])
+    html = "".join(out)
+    assert "That gap is what discipline is worth" not in html
+    assert "no worse on average" in html
+    out.clear()
+    rx.discipline_hero(76, 178, 233, [], "x", clean_r=0.44, flag_r=-0.43)
+    assert "That gap is what discipline is worth" in "".join(out)

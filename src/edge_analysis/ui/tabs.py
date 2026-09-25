@@ -2074,82 +2074,36 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
     )
     _month_n = int((g["__month"] == pd.Timestamp.now().strftime("%Y-%m")).sum())
 
-    k1, k2, k3, k4 = st.columns(4)
-    with k1:
-        st.markdown(f"""
-            <div class='kpi'>
-              <div class='label'>Discipline Score</div>
-              <div class='value' style='color:{score_color}'>{discipline_score}%</div>
-              <div class='muted'>{n_clean} of {n_total} trades broke nothing</div>
-            </div>""", unsafe_allow_html=True)
-    with k2:
-        if rules_known:
-            _rc = "#16a34a" if rules_kept == rules_known else ("#b45309" if rules_kept / rules_known < 0.7 else "#4800ff")
-            st.markdown(f"""
-            <div class='kpi'>
-              <div class='label'>Rules Followed</div>
-              <div class='value' style='color:{_rc}'>{rules_kept} of {rules_known}</div>
-              <div class='muted'>by your own tag</div>
-            </div>""", unsafe_allow_html=True)
-        else:
-            st.markdown(f"""
-            <div class='kpi'>
-              <div class='label'>Rules Followed</div>
-              <div class='value' style='color:#64748b'>—</div>
-              <div class='muted'>add a Rules Followed? tag in Notion</div>
-            </div>""", unsafe_allow_html=True)
-    with k3:
-        if _cap_is_theirs:
-            _cc = "#ef4444" if _month_n > _cap else "#4800ff"
-            st.markdown(f"""
-            <div class='kpi'>
-              <div class='label'>Cap Discipline</div>
-              <div class='value' style='color:{_cc}'>{_month_n} of {_cap}</div>
-              <div class='muted'>trades this month vs your cap</div>
-            </div>""", unsafe_allow_html=True)
-        else:
-            st.markdown(f"""
-            <div class='kpi'>
-              <div class='label'>Trades This Month</div>
-              <div class='value' style='color:#4800ff'>{_month_n}</div>
-              <div class='muted'>no monthly cap · optional, in ✎ on Performance</div>
-            </div>""", unsafe_allow_html=True)
-    with k4:
-        st.markdown(f"""
-            <div class='kpi'>
-              <div class='label'>Flagged Trades</div>
-              <div class='value' style='color:{"#ef4444" if n_flagged else "#4800ff"}'>{n_flagged}</div>
-              <div class='muted'>{round(n_flagged / max(1, n_total) * 100, 1)}% of all trades</div>
-            </div>""", unsafe_allow_html=True)
-
-    _gap(10)
-
     _checked = ["your Rules Followed tag" if "Rules Followed?" in g.columns else None,
                 f"the monthly cap of {_cap}" if _cap_is_theirs else None,
                 "one entry per session" if _scol else None,
                 f"no more than {OVERTRADE_LIMIT} a day",
                 f"no entry within {REVENGE_WINDOW_MINS // 60}h of a loss" if _has_times else None]
     _checked_txt = " \u00b7 ".join(c for c in _checked if c)
-    if n_flagged == 0:
-        st.markdown(
-            "<div style='display:flex;align-items:center;gap:16px;background:#e9f7ef;"
-            "border:1px solid #bfe6cd;border-radius:12px;padding:16px 20px;margin:8px 0;'>"
-            "<div style='min-width:36px;height:36px;border-radius:50%;background:#16a34a;"
-            "color:#fff;font-size:19px;font-weight:800;display:flex;align-items:center;"
-            "justify-content:center;'>\u2713</div>"
-            "<div><div style='font-size:17px;font-weight:800;color:#14532d;'>"
-            f"Discipline: all {n_total} trades clean</div>"
-            f"<div style='font-size:13.5px;color:#2f6b45;margin-top:2px;'>Checked: {_checked_txt}"
-            "</div></div></div>", unsafe_allow_html=True)
-    else:
-        _why = "; ".join(f"<b>{n}</b> {lab}" for n, lab in _causes)
-        _kind = "good" if discipline_score >= 80 else ("warn" if discipline_score >= 60 else "bad")
-        _insight_box(f"<b>{n_flagged}</b> of {n_total} trades broke something: {_why}. "
-                     "A trade can break more than one.", _kind)
-        st.caption("Checked on every trade: " + _checked_txt
-                   + ("" if _has_times else " · re-entry after a loss needs entry times in your journal")
-                   + ("" if _cap_is_theirs else " · no monthly cap set (optional)"))
+    _checked_txt += ("" if _has_times else " \u00b7 re-entry after a loss needs entry times in your journal")
+    _checked_txt += ("" if _cap_is_theirs else " \u00b7 no monthly cap set (optional, in \u270e on Performance)")
 
+    # Mockup V4: one ring, what discipline is worth in R, the causes, and
+    # the last 90 trading days (the four KPI tiles folded into its pills)
+    from edge_analysis.ui import reshape as rx
+    _r = pd.to_numeric(g.get("Closed RR"), errors="coerce") if "Closed RR" in g.columns else None
+    _clean_r = _flag_r = None
+    if _r is not None:
+        _cr, _fr = _r[~g["__flag"]].dropna(), _r[g["__flag"]].dropna()
+        if len(_cr) >= 5 and len(_fr) >= 5:
+            _clean_r, _flag_r = float(_cr.mean()), float(_fr.mean())
+    _facts = []
+    if rules_known:
+        _facts.append(f"rules followed on {rules_kept} of {rules_known} (your tag)")
+    _facts.append(f"{_month_n} of {_cap} trades this month" if _cap_is_theirs
+                  else f"{_month_n} trades this month")
+    _dd = g.groupby(pd.to_datetime(g["__date"]))["__flag"].any().sort_index()
+    _days = [(d.strftime("%a %d %b %Y"), not bool(v)) for d, v in _dd.items()]
+    rx.discipline_hero(discipline_score, n_clean, n_total,
+                       [(n, lab) for n, lab in _causes], _checked_txt,
+                       _clean_r, _flag_r, _days, _facts)
+
+    if n_flagged:
         st.markdown("### Discipline score over time")
         _daily = (g.groupby(pd.to_datetime(g["__date"]))
                   .agg(trades=("__flag", "size"), clean=("__flag", lambda s: int((~s).sum())))

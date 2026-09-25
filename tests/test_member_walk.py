@@ -117,7 +117,7 @@ def test_discipline_score_counts_every_rule(member):
     # it read 100% beside 14 of 23 rules followed and 18 trades on a cap of 12.
     import re
     text = _view(member, "Psychology")
-    m = re.search(r"Discipline Score</div>\s*<div class='value'[^>]*>(\d+)%", text)
+    m = re.search(r'aria-label="Discipline score (\d+)%"', text)
     assert m, "no discipline score on the page"
     assert int(m.group(1)) <= round(92 / 120 * 100)     # can't beat their own rules tag
     assert "broke your rules (your own tag)" in text
