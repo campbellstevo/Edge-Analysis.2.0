@@ -110,3 +110,16 @@ def test_refinements_are_owner_only(member):
     text = _view(member, "Plan")
     assert "Data-backed tweaks worth testing next" not in text
     assert "Keep stacking this condition" not in text
+
+
+def test_discipline_score_counts_every_rule(member):
+    # 25 Sep: the score counted only overtrading days and revenge entries, so
+    # it read 100% beside 14 of 23 rules followed and 18 trades on a cap of 12.
+    import re
+    text = _view(member, "Psychology")
+    m = re.search(r"Discipline Score</div>\s*<div class='value'[^>]*>(\d+)%", text)
+    assert m, "no discipline score on the page"
+    assert int(m.group(1)) <= round(92 / 120 * 100)     # can't beat their own rules tag
+    assert "broke your rules (your own tag)" in text
+    assert "second entry in the same session" in text
+    assert "Discipline: all clear" not in text

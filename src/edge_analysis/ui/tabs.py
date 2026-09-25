@@ -1989,14 +1989,24 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
 
     g["__date"] = g["__local_ts"].dt.date
 
-    trades_per_day = g.groupby("__date")["__ts"].transform("count")
-    g["__overtrade"] = trades_per_day > OVERTRADE_LIMIT
+    # ── Discipline: every trade checked against EVERY rule the journal can
+    # see (his ask, 25 Sep: "dictated around everything, not just revenge
+    # trades"). The score used to count only overtrading days and revenge
+    # entries, so it read 100% beside 14 of 23 rules followed and 18 of 12.
+    g = g.sort_values("__ts").reset_index(drop=True)
+    _saved_plan = st.session_state.get("ea_mplan_saved") or {}
+    _cap_is_theirs = bool(_saved_plan.get("c") or st.session_state.get("ea_plan_user_edited")
+                          or st.session_state.get("ea_demo"))
+    _cap = int(_saved_plan.get("c") or st.session_state.get("ea_m_cap", 12))
 
+    # 1. more than OVERTRADE_LIMIT trades in a day — the extra ones
+    g["__overtrade"] = (g.groupby("__date").cumcount() + 1) > OVERTRADE_LIMIT
+    # 2. an entry within REVENGE_WINDOW_MINS of a loss (needs entry times)
     g["__revenge"] = False
     revenge_window = timedelta(minutes=REVENGE_WINDOW_MINS)
     outcome_col = "Outcome" if "Outcome" in g.columns else None
-
-    if outcome_col:
+    _has_times = bool((g["__local_ts"].dt.hour.fillna(0) + g["__local_ts"].dt.minute.fillna(0)).gt(0).any())
+    if outcome_col and _has_times:
         loss_times = g.loc[g[outcome_col] == "Loss", "__ts"].tolist()
         for idx, row in g.iterrows():
             entry_ts = row["__ts"]
@@ -2004,49 +2014,50 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
                 if lt < entry_ts and (entry_ts - lt) <= revenge_window:
                     g.at[idx, "__revenge"] = True
                     break
+    # 3. the trader's own tag says the rules were broken
+    g["__rulebreak"] = False
+    rules_kept = rules_known = None
+    if "Rules Followed?" in g.columns:
+        _rv = g["Rules Followed?"].astype(str).str.strip().str.lower()
+        _kn = _rv.isin(["yes", "no", "true", "false", "__yes__", "__no__", "1", "0"])
+        g["__rulebreak"] = _kn & _rv.isin(["no", "false", "__no__", "0"])
+        if int(_kn.sum()) >= 3:
+            rules_known = int(_kn.sum())
+            rules_kept = int((_rv.isin(["yes", "true", "__yes__", "1"]) & _kn).sum())
+    # 4. past the monthly cap (only a cap they set — the Auto default isn't a rule)
+    g["__month"] = g["__local_ts"].dt.strftime("%Y-%m")
+    g["__overcap"] = ((g.groupby("__month").cumcount() + 1) > _cap) if _cap_is_theirs else False
+    # 5. a second entry in the same session on the same day (the 3 Session Lock;
+    #    the London/NY overlap is its own session, as on its card)
+    g["__extra_sess"] = False
+    _scol = next((c for c in ("Session Norm", "Session") if c in g.columns), None)
+    if _scol:
+        _sess = g[_scol].apply(lambda v: "London/NY Overlap" if "overlap" in str(v or "").lower()
+                               else _clean_session_value(v))
+        _known = _sess.notna() & _sess.astype(str).str.strip().ne("")
+        _nth = g.assign(__s=_sess)[_known].groupby(["__date", "__s"]).cumcount()
+        g.loc[_nth.index, "__extra_sess"] = _nth > 0
 
-    day_flags = g.groupby("__date").agg(
-        overtrade=("__overtrade", "any"),
-        revenge=("__revenge", "any"),
-    ).reset_index()
-    day_flags["__violation"] = day_flags["overtrade"] | day_flags["revenge"]
-    total_days = len(day_flags)
-    clean_days = int((~day_flags["__violation"]).sum())
-    discipline_score = round((clean_days / max(1, total_days)) * 100)
-
-    if outcome_col:
-        day_outcome = g.groupby("__date").agg(
-            trade_count=("__ts", "count"),
-            net_wins=("Outcome", lambda s: int((s == "Win").sum()) - int((s == "Loss").sum())),
-        ).reset_index()
-        day_outcome["day_result"] = day_outcome["net_wins"].apply(
-            lambda x: "Winning Day" if x > 0 else ("Losing Day" if x < 0 else "Neutral Day"))
-        avg_by_result = day_outcome.groupby("day_result")["trade_count"].mean().round(2)
-        avg_win_day = float(avg_by_result.get("Winning Day", 0.0))
-        avg_loss_day = float(avg_by_result.get("Losing Day", 0.0))
-    else:
-        avg_win_day = avg_loss_day = 0.0
-
-    n_revenge = int(g["__revenge"].sum())
-    n_overtrade_days = int(day_flags["overtrade"].sum())
+    _checks = [("__rulebreak", "broke your rules (your own tag)"),
+               ("__overcap", f"went past your monthly cap of {_cap}"),
+               ("__extra_sess", "were a second entry in the same session"),
+               ("__overtrade", f"were trade {OVERTRADE_LIMIT + 1}+ of a day"),
+               ("__revenge", f"came within {REVENGE_WINDOW_MINS // 60}h of a loss")]
+    g["__flag"] = g[[c for c, _ in _checks]].any(axis=1)
     n_total = len(g)
-    n_flagged = int((g["__overtrade"] | g["__revenge"]).sum())
+    n_flagged = int(g["__flag"].sum())
+    n_clean = n_total - n_flagged
+    discipline_score = round(n_clean / max(1, n_total) * 100)
+    _causes = [(int(g[c].sum()), lab) for c, lab in _checks if int(g[c].sum())]
+    _causes.sort(key=lambda x: -x[0])
+    n_revenge = int(g["__revenge"].sum())
 
     score_color = (
         "#16a34a" if discipline_score >= 80
         else "#f59e0b" if discipline_score >= 60
         else "#ef4444"
     )
-
-    rules_kept = rules_known = None
-    if "Rules Followed?" in g.columns:
-        _rv = g["Rules Followed?"].astype(str).str.strip().str.lower()
-        _kn = _rv.isin(["yes", "no", "true", "false", "__yes__", "__no__", "1", "0"])
-        if int(_kn.sum()) >= 3:
-            rules_known = int(_kn.sum())
-            rules_kept = int((_rv.isin(["yes", "true", "__yes__", "1"]) & _kn).sum())
-    _cap = int(st.session_state.get("ea_m_cap", 12))
-    _month_n = int((g["__local_ts"].dt.to_period("M") == pd.Timestamp.now().to_period("M")).sum())
+    _month_n = int((g["__month"] == pd.Timestamp.now().strftime("%Y-%m")).sum())
 
     k1, k2, k3, k4 = st.columns(4)
     with k1:
@@ -2054,7 +2065,7 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
             <div class='kpi'>
               <div class='label'>Discipline Score</div>
               <div class='value' style='color:{score_color}'>{discipline_score}%</div>
-              <div class='muted'>{clean_days} / {total_days} clean days</div>
+              <div class='muted'>{n_clean} of {n_total} trades broke nothing</div>
             </div>""", unsafe_allow_html=True)
     with k2:
         if rules_known:
@@ -2068,33 +2079,36 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
         else:
             st.markdown(f"""
             <div class='kpi'>
-              <div class='label'>Avg Trades — Win Day</div>
-              <div class='value' style='color:#4800ff'>{avg_win_day:.1f}</div>
-              <div class='muted'>trades per winning day</div>
+              <div class='label'>Rules Followed</div>
+              <div class='value' style='color:#64748b'>—</div>
+              <div class='muted'>add a Rules Followed? tag in Notion</div>
             </div>""", unsafe_allow_html=True)
     with k3:
-        _cc = "#ef4444" if _month_n > _cap else "#4800ff"
+        _cc = "#ef4444" if (_month_n > _cap and _cap_is_theirs) else "#4800ff"
         st.markdown(f"""
             <div class='kpi'>
               <div class='label'>Cap Discipline</div>
               <div class='value' style='color:{_cc}'>{_month_n} of {_cap}</div>
-              <div class='muted'>trades this month vs cap</div>
+              <div class='muted'>{"trades this month vs your cap" if _cap_is_theirs
+                                  else "vs the default cap · set yours in ✎ on Performance"}</div>
             </div>""", unsafe_allow_html=True)
     with k4:
         st.markdown(f"""
             <div class='kpi'>
               <div class='label'>Flagged Trades</div>
-              <div class='value' style='color:#4800ff'>{n_flagged}</div>
+              <div class='value' style='color:{"#ef4444" if n_flagged else "#4800ff"}'>{n_flagged}</div>
               <div class='muted'>{round(n_flagged / max(1, n_total) * 100, 1)}% of all trades</div>
             </div>""", unsafe_allow_html=True)
 
     _gap(10)
 
-    # "All clear" must agree with the cards beside it: a month over its cap
-    # is not clear, whatever the day-level score says.
-    _all_clear = (int(n_overtrade_days) == 0 and int(n_revenge) == 0
-                  and float(discipline_score) >= 100 and _month_n <= _cap)
-    if _all_clear:
+    _checked = ["your Rules Followed tag" if "Rules Followed?" in g.columns else None,
+                f"the monthly cap of {_cap}" if _cap_is_theirs else None,
+                "one entry per session" if _scol else None,
+                f"no more than {OVERTRADE_LIMIT} a day",
+                f"no entry within {REVENGE_WINDOW_MINS // 60}h of a loss" if _has_times else None]
+    _checked_txt = " \u00b7 ".join(c for c in _checked if c)
+    if n_flagged == 0:
         st.markdown(
             "<div style='display:flex;align-items:center;gap:16px;background:#e9f7ef;"
             "border:1px solid #bfe6cd;border-radius:12px;padding:16px 20px;margin:8px 0;'>"
@@ -2102,23 +2116,25 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
             "color:#fff;font-size:19px;font-weight:800;display:flex;align-items:center;"
             "justify-content:center;'>\u2713</div>"
             "<div><div style='font-size:17px;font-weight:800;color:#14532d;'>"
-            "No overtrading or revenge days</div>"
-            f"<div style='font-size:13.5px;color:#2f6b45;margin-top:2px;'>"
-            f"No day over {OVERTRADE_LIMIT} trades \u00b7 no entry within "
-            f"{REVENGE_WINDOW_MINS // 60}h of a loss \u00b7 {clean_days} of {total_days} clean days"
+            f"Discipline: all {n_total} trades clean</div>"
+            f"<div style='font-size:13.5px;color:#2f6b45;margin-top:2px;'>Checked: {_checked_txt}"
             "</div></div></div>", unsafe_allow_html=True)
     else:
+        _why = "; ".join(f"<b>{n}</b> {lab}" for n, lab in _causes)
+        _kind = "good" if discipline_score >= 80 else ("warn" if discipline_score >= 60 else "bad")
+        _insight_box(f"<b>{n_flagged}</b> of {n_total} trades broke something: {_why}. "
+                     "A trade can break more than one.", _kind)
+        st.caption("Checked on every trade: " + _checked_txt
+                   + ("" if _has_times else " · re-entry after a loss needs entry times in your journal")
+                   + ("" if _cap_is_theirs else " · the monthly cap counts once you set yours"))
+
         st.markdown("### Discipline score over time")
-
-        day_flags["__date"] = pd.to_datetime(day_flags["__date"])
-        day_flags_indexed = day_flags.set_index("__date").sort_index()
-
-        if len(day_flags_indexed) >= 2:
-            rolling = (
-                (~day_flags_indexed["__violation"]).astype(int)
-                .rolling("28D", min_periods=1).mean().mul(100).round(1)
-                .reset_index()
-            )
+        _daily = (g.groupby(pd.to_datetime(g["__date"]))
+                  .agg(trades=("__flag", "size"), clean=("__flag", lambda s: int((~s).sum())))
+                  .sort_index())
+        if len(_daily) >= 2:
+            _roll = _daily.rolling("28D", min_periods=1).sum()
+            rolling = (_roll["clean"] / _roll["trades"] * 100).round(1).reset_index()
             rolling.columns = ["Date", "Score"]
             rolling_vals = _to_alt_values(rolling)
 
@@ -2134,21 +2150,8 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
                     .properties(height=240))
             st.altair_chart(styler(alt.layer(area, line)), use_container_width=True)
             st.markdown(
-                "<div class='muted'>Rolling 4-week average — higher is better</div>",
+                "<div class='muted'>Share of trades that broke nothing, rolling 4 weeks — higher is better</div>",
                 unsafe_allow_html=True)
-            if discipline_score >= 80:
-                _insight_box(f"Discipline score is <b>{discipline_score}%</b> — strong. "
-                             f"{clean_days} of {total_days} trading days had no overtrading or revenge trades.", "good")
-            elif discipline_score >= 60:
-                _insight_box(f"Discipline score is <b>{discipline_score}%</b>. "
-                             f"{total_days - clean_days} days had violations — "
-                             f"overtrading ({n_overtrade_days} days) or revenge entries ({n_revenge} trades). "
-                             f"Each violation day is a compounding leak in your edge.", "warn")
-            else:
-                _insight_box(f"Discipline score is <b>{discipline_score}%</b> — needs attention. "
-                             f"{total_days - clean_days} of {total_days} days had an overtrading "
-                             f"day ({n_overtrade_days}) or a quick re-entry after a loss "
-                             f"({n_revenge} trades).", "bad")
         else:
             _empty_note("The rolling view appears once a few trades are logged.")
 
