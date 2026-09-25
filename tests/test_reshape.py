@@ -139,3 +139,13 @@ def test_explorer_frame_reads_both_journal_shapes():
     assert bool(first["flag"]) and bool(x.iloc[1]["flag"])          # mistake / rule broken
     assert not bool(x.iloc[0]["flag"])                               # "NA" is no mistake
     assert first["notes"] == "<b>chased</b>"                        # escaped at render, kept raw here
+
+
+def test_share_card_is_a_png_with_r_only():
+    png = rx.share_card_png("Week of 21 Sep", "+4.6R", "this week",
+                            ["50% won · 7 trades", "rules followed 6 of 7", "best +3.8R · Internal FBoS"],
+                            [0.0, 1.0, 0.5, 2.0, 4.6])
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+    from PIL import Image
+    import io
+    assert Image.open(io.BytesIO(png)).size == (1200, 630)

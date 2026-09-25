@@ -4491,7 +4491,7 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
     st.markdown("#### Win rate — confidence vs sample size")
 
     _z = scipy_stats.norm.ppf(0.95)  # 90% two-sided Wilson CI
-    sample_sizes = np.arange(10, max(total + 100, 300), 5)
+    sample_sizes = np.arange(10, max(total_incl_be + 100, 300), 5)
     ci_rows = []
     for n in sample_sizes:
         p = wr_frac
@@ -4523,7 +4523,7 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
         )
     )
     sample_rule = (
-        alt.Chart(alt.Data(values=[{"x": total}]))
+        alt.Chart(alt.Data(values=[{"x": total_incl_be}]))
         .mark_rule(strokeDash=[4, 4], color="#4800ff", strokeWidth=1.5)
         .encode(x="x:Q")
     )
@@ -4533,7 +4533,8 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
         use_container_width=True
     )
     st.caption(
-        f"Dashed line = your current sample ({total} win/loss trades \u2014 break-evens sit outside the win rate). "
+        f"Dashed line = your current sample ({total_incl_be} trades). Win rate is wins over every "
+        "trade, break-evens included, as everywhere on the site. "
         "Shaded band = 90% confidence interval — narrows as sample grows."
     )
 

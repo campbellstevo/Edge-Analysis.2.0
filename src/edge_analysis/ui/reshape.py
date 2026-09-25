@@ -1046,3 +1046,52 @@ def trade_explorer(g: pd.DataFrame, key: str = "ea_tx") -> None:
             + (f'<div class="rec">{rec}</div>' if rec else "")
             + f'<div class="e" style="margin-top:12px;">YOUR NOTES</div>{notes}</div>')
     st.markdown(css(extra) + card, unsafe_allow_html=True)
+
+
+# ── share card (mockup V7): an R-only image for the group ────────────────────
+def share_card_png(eyebrow: str, big: str, big_sub: str, lines: list, spark: list,
+                   positive: bool = True) -> bytes:
+    """1200×630 PNG for Discord. R only by construction: callers pass R
+    strings, never a balance, lot size or dollar figure."""
+    import io
+    import os
+    import numpy as np
+    from PIL import Image, ImageDraw, ImageFont
+
+    W, H = 1200, 630
+    yy, xx = np.mgrid[0:H, 0:W]
+    tt = np.clip((xx / W) * 0.65 + (yy / H) * 0.35, 0, 1)[..., None]
+    c0, c1, c2 = np.array([11, 11, 26]), np.array([29, 11, 82]), np.array([58, 18, 184])
+    rgb = np.where(tt < 0.7, c0 + (c1 - c0) * (tt / 0.7), c1 + (c2 - c1) * ((tt - 0.7) / 0.3))
+    im = Image.fromarray(rgb.astype("uint8"), "RGB")
+    d = ImageDraw.Draw(im)
+
+    def font(sz):
+        return ImageFont.load_default(size=sz)
+
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    logo_p = os.path.join(root, "assets", "edge_logo_bar_dark.png")
+    if os.path.exists(logo_p):
+        lg = Image.open(logo_p).convert("RGBA")
+        lg = lg.resize((int(lg.width * 62 / lg.height), 62))
+        im.paste(lg, (56, 48), lg)
+    d.text((W - 56, 70), eyebrow.upper(), font=font(24), fill=(196, 181, 253), anchor="ra")
+    col = (74, 222, 128) if positive else (248, 113, 113)
+    d.text((56, 170), big, font=font(150), fill=col, stroke_width=4, stroke_fill=col)
+    d.text((60, 345), big_sub, font=font(30), fill=(203, 213, 225))
+    y = 190
+    for ln in lines[:4]:
+        d.text((720, y), ln, font=font(32), fill=(237, 233, 254), stroke_width=1, stroke_fill=(237, 233, 254))
+        y += 52
+    vals = [float(v) for v in spark if v == v]
+    if len(vals) >= 2:
+        lo, hi = min(vals), max(vals)
+        rng = (hi - lo) or 1.0
+        x0, x1, y0, y1 = 56, W - 56, 430, 540
+        pts = [(x0 + (x1 - x0) * i / (len(vals) - 1), y1 - (v - lo) / rng * (y1 - y0)) for i, v in enumerate(vals)]
+        d.line(pts, fill=(167, 139, 250), width=5, joint="curve")
+    d.text((56, H - 44), "R only · no balances", font=font(22), fill=(148, 163, 184))
+    d.text((W - 56, H - 44), "Edge Analysis", font=font(22), fill=(148, 163, 184), anchor="ra")
+    buf = io.BytesIO()
+    im.save(buf, "PNG", optimize=True)
+    return buf.getvalue()

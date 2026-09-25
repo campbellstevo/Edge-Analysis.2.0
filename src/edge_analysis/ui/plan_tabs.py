@@ -704,6 +704,21 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
         fix.append((f"Backfill the journal \u2014 {n - full_n} of {n} trades not fully tagged",
                     "the discipline score can't see unlogged trades"))
     rx.week_report("", headline, sub, grade if grade else None, stats, _days, keep, fix)
+    # the share card: R only, so it is safe to post in the group
+    with st.expander("Share this week \u2014 an image for the group, R only"):
+        _lines = [f"{round(n_w / n * 100)}% won \u00b7 {n} trade{'s' if n != 1 else ''}"]
+        if rules_known:
+            _lines.append(f"rules followed {rules_kept} of {rules_known}")
+        _lines.append(f"best {rx.fmt_r(float(rr.max()), 1)}" + (f" \u00b7 {_best_em}" if _best_em else ""))
+        if grade:
+            _lines.append(f"process grade {grade}")
+        _png = rx.share_card_png(f"Week of {sel_p.start_time.strftime('%d %b')}", rx.fmt_r(net, 1),
+                                 "this week", _lines, list(g["__rr"].cumsum().tail(80)), net >= 0)
+        st.image(_png, use_container_width=True)
+        st.download_button("Download the image", _png, use_container_width=True, mime="image/png",
+                           file_name=f"edge-week-{sel_p.start_time.strftime('%Y-%m-%d')}.png",
+                           key="ea_share_week")
+        st.caption("Nothing on it but R: no balance, lot size or dollars.")
     if not grade and comps:
         st.caption(f"{n} trade{'s' if n != 1 else ''} \u2014 too few to grade the week's process.")
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
