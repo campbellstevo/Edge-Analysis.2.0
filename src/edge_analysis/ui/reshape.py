@@ -360,22 +360,22 @@ def pair_grid(counted: pd.DataFrame, m1: pd.Series, m2: pd.Series,
 
 
 # ── discipline hero (mockup V4) ──────────────────────────────────────────────
-def _ring(score: int, size: int = 132) -> str:
+def _ring(score: int, size: int = 132, what: str = "clean trades", name: str = "Discipline score") -> str:
     import math
     t = _tokens()
     r = size / 2 - 11
     c = 2 * math.pi * r
     col = GREEN if score >= 80 else ("#f59e0b" if score >= 60 else RED)
     return (f'<svg width="{size}" height="{size}" viewBox="0 0 {size} {size}" role="img" '
-            f'aria-label="Discipline score {score}%">'
+            f'aria-label="{name} {score}%">'
             f'<circle cx="{size/2}" cy="{size/2}" r="{r:.1f}" fill="none" stroke="{t["h1"]}" stroke-width="12"/>'
             f'<circle cx="{size/2}" cy="{size/2}" r="{r:.1f}" fill="none" stroke="{col}" stroke-width="12" '
             f'stroke-linecap="round" stroke-dasharray="{c * score / 100:.1f} {c:.1f}" '
             f'transform="rotate(-90 {size/2} {size/2})"/>'
-            f'<text x="{size/2}" y="{size/2 + 5}" font-size="30" font-weight="800" fill="{t["ink"]}" '
-            f'text-anchor="middle">{score}%</text>'
-            f'<text x="{size/2}" y="{size/2 + 24}" font-size="11.5" fill="{t["muted"]}" '
-            f'text-anchor="middle">clean trades</text></svg>')
+            f'<text x="{size/2}" y="{size/2 + size * 0.04:.1f}" font-size="{size * (0.2 if score >= 100 else 0.23):.1f}" '
+            f'font-weight="800" fill="{t["ink"]}" text-anchor="middle">{score}%</text>'
+            f'<text x="{size/2}" y="{size/2 + size * 0.18:.1f}" font-size="{max(10.0, size * 0.087):.1f}" fill="{t["muted"]}" '
+            f'text-anchor="middle">{what}</text></svg>')
 
 
 def discipline_hero(score: int, n_clean: int, n_total: int, causes: list, checked: str,
@@ -1095,3 +1095,139 @@ def share_card_png(eyebrow: str, big: str, big_sub: str, lines: list, spark: lis
     buf = io.BytesIO()
     im.save(buf, "PNG", optimize=True)
     return buf.getvalue()
+
+
+# ── journal health (mockup V8) ───────────────────────────────────────────────
+TAG_COLS = ["A+ Setup?", "Conviction (1-5)", "Mental State", "Mistake", "Rules Followed?"]
+_RULE_MISTAKES = ("no a+ setup", "overtraded", "revenge traded", "revenge trade", "outside session")
+_NO_MISTAKE = ("na", "none", "no mistake")
+
+
+def _blank(v, mistake: bool = False) -> bool:
+    if isinstance(v, bool):
+        return False
+    s = _txt(v).lower() if not isinstance(v, str) else v.strip().lower()
+    if mistake and s in _NO_MISTAKE:
+        return False
+    return s in ("", "nan", "none", "na", "[]", "null", "nat")
+
+
+def journal_health(df: pd.DataFrame) -> dict:
+    """Completeness plus each specific problem found, with its count and fix.
+    Every check is plain counting; nothing here is a verdict on the trading."""
+    out = dict(pct=100.0, full=0, total=0, problems=[], fill=[])
+    if df is None or df.empty:
+        return out
+    g = df.copy()
+    tags = [c for c in TAG_COLS if c in g.columns]
+    n = len(g)
+    out["total"] = n
+    if len(tags) >= 2:
+        full_mask = g.apply(lambda r: not any(_blank(r.get(c), c == "Mistake") for c in tags), axis=1)
+        out["full"] = int(full_mask.sum())
+        out["pct"] = 100.0 * out["full"] / max(1, n)
+        # untagged run at the end of the journal: tagging stopped
+        if "Date" in g.columns and not full_mask.all():
+            order = pd.to_datetime(g["Date"], errors="coerce").sort_values().index
+            tail = 0
+            for i in reversed(list(order)):
+                if full_mask.get(i, True):
+                    break
+                tail += 1
+            untagged = int((~full_mask).sum())
+            if tail >= 2:
+                since = pd.to_datetime(g.loc[list(order)[-tail], "Date"]).strftime("%a %d %b")
+                out["problems"].append(("bad", tail, f"{tail} trades need tagging",
+                                        f"Nothing hand-tagged since {since}. Until they are, setups, "
+                                        "psychology and discipline run on stale data.",
+                                        "Tag them in Notion"))
+            elif untagged:
+                out["problems"].append(("warn", untagged, f"{untagged} trade{'s' if untagged != 1 else ''} not fully tagged",
+                                        "Missing one of: " + ", ".join(c.replace("?", "") for c in tags) + ".",
+                                        "Fill the gaps in Notion"))
+    # rules ticked but a rule-type mistake logged
+    if "Rules Followed?" in g.columns and "Mistake" in g.columns:
+        rk = g["Rules Followed?"].map(_yes)
+        mk = g["Mistake"].map(_txt).str.lower()
+        clash = (rk.eq(True)) & mk.apply(lambda s: any(m in s for m in _RULE_MISTAKES))
+        if "A+ Setup?" in g.columns:
+            clash |= g["A+ Setup?"].map(_yes).eq(True) & mk.str.contains("no a+ setup", regex=False)
+        k = int(clash.sum())
+        if k:
+            out["problems"].append(("warn", k, f"{k} trade{'s' if k != 1 else ''} contradict{'s' if k == 1 else ''} itself" if k == 1
+                                    else f"{k} trades contradict themselves",
+                                    "Rules Followed says yes (or A+ says yes), but the mistake logged is a rule break "
+                                    "(no A+ setup, overtraded, revenge).", "Review them"))
+    # the double-confirmation box never ticked while both models are filled
+    if {"Entry Model 1", "Entry Model 2", "Double Confirmation?"} <= set(g.columns):
+        both = g["Entry Model 1"].map(_txt).ne("") & g["Entry Model 2"].map(_txt).ne("")
+        ticked = g["Double Confirmation?"].map(_yes).eq(True)
+        if int(both.sum()) >= 3 and not ticked.any():
+            out["problems"].append(("warn", int(both.sum()), "Double Confirmation? is never ticked",
+                                    f"Both entry models are filled on {int(both.sum())} trades, but the box is empty "
+                                    "on all of them. Make it a formula, or tick it.", "Fix the field"))
+    # MAE measured past the close on losing trades
+    if "MAE (R)" in g.columns and "Closed RR" in g.columns:
+        mae = pd.to_numeric(g["MAE (R)"], errors="coerce")
+        r = pd.to_numeric(g["Closed RR"], errors="coerce")
+        past = (r < -0.15) & (mae < r - 0.5)
+        k = int(past.sum())
+        if k:
+            out["problems"].append(("info", k, f"MAE runs past the exit on {k} loss{'es' if k != 1 else ''}",
+                                    f"Worst dips as deep as {fmt_r(float(mae[past].min()))} on trades that closed near "
+                                    f"{fmt_r(float(r[past].median()), 1)}. The MAE is measured after the close, so heat "
+                                    "stats read deeper than they were.", "Check the sync"))
+    # fields in the template that nobody fills
+    skip = {"Date", "Closed RR", "Outcome", "Result"}
+    never = [c for c in g.columns if not str(c).startswith("__") and c not in skip
+             and g[c].map(lambda v: _blank(v)).all()]
+    if len(never) >= 3:
+        out["problems"].append(("mu", len(never), f"{len(never)} fields never filled",
+                                ", ".join(str(c) for c in never[:8]) + ("…" if len(never) > 8 else "")
+                                + ". Use them or hide them from the template.", "Use or hide"))
+    # fill rate: automatic vs hand-tagged
+    auto = [c for c in ("Closed RR", "Session", "Direction", "MFE (R)", "MAE (R)") if c in g.columns]
+    for lab, cols in (("Result, session, direction, MFE/MAE", auto), ("Hand tags: " + ", ".join(c.replace("?", "") for c in tags), tags)):
+        if cols:
+            pct = float(pd.concat([~g[c].map(lambda v, _m=(c == "Mistake"): _blank(v, _m)) for c in cols], axis=1).all(axis=1).mean() * 100)
+            out["fill"].append((lab, pct))
+    return out
+
+
+def journal_health_card(h: dict) -> None:
+    t = _tokens()
+    pct = int(round(h["pct"]))
+    kinds = {"bad": RED, "warn": "#b45309", "info": "#6366f1", "mu": t["muted"]}
+    rows = ""
+    for kind, n, title, detail, action in h["problems"]:
+        c = kinds.get(kind, t["muted"])
+        rows += (f'<div class="jr"><div class="jn" style="color:{c};background:{c}1f;">{n}</div>'
+                 f'<div class="jt"><b>{_h.escape(title)}</b><div>{_h.escape(detail)}</div></div>'
+                 f'<div class="ja" style="color:{c};">{_h.escape(action)}</div></div>')
+    fill = "".join(f'<div class="fr"><div class="fl"><span>{_h.escape(a)}</span><b>{b:.0f}%</b></div>'
+                   f'<div class="fb"><div style="width:{max(b, 1.5):.0f}%;background:{GREEN if b >= 90 else ("#f59e0b" if b >= 50 else RED)};"></div></div></div>'
+                   for a, b in h["fill"])
+    head = (f"Your journal is {pct}% complete" if pct < 100 else "Every trade is fully tagged")
+    sub = (f"{h['full']} of {h['total']} trades carry every hand tag. Every number on this site is only as good as this."
+           if pct < 100 else "Nice. The checks below still look for contradictions and gaps.")
+    extra = f"""
+.ea-jh{{display:flex;gap:22px;align-items:center;flex-wrap:wrap;}}
+.ea-jh .hm{{flex:1 1 300px;min-width:0;}}
+.ea-jh .hh{{font-size:19px;font-weight:800;color:{t['ink']};}}
+.ea-jh .hs{{font-size:14px;color:{t['muted']};margin-top:3px;line-height:1.45;}}
+.ea-jh .fills{{flex:1 1 260px;}}
+.ea-jh .fr{{margin:6px 0;}} .ea-jh .fl{{display:flex;justify-content:space-between;font-size:12.5px;color:{t['ink']};gap:8px;}}
+.ea-jh .fb{{background:{t['h1']};border-radius:6px;height:8px;margin-top:3px;overflow:hidden;}} .ea-jh .fb div{{height:8px;border-radius:6px;}}
+.ea-jp{{margin-top:12px;display:flex;flex-direction:column;gap:8px;}}
+.ea-jp .jr{{display:flex;gap:14px;align-items:flex-start;border:1px solid {t['line']};border-radius:12px;padding:11px 14px;background:{t['base']};}}
+.ea-jp .jn{{flex:none;min-width:44px;height:44px;border-radius:12px;font-size:17px;font-weight:800;display:flex;align-items:center;justify-content:center;padding:0 6px;}}
+.ea-jp .jt{{flex:1;min-width:0;font-size:13.5px;color:{t['muted']};line-height:1.45;}}
+.ea-jp .jt b{{display:block;font-size:15px;color:{t['ink']};}}
+.ea-jp .ja{{flex:none;font-size:12.5px;font-weight:700;white-space:nowrap;}}
+@media (max-width:640px){{.ea-jp .ja{{display:none;}}}}
+"""
+    ring = _ring(pct, 112, what="fully tagged", name="Journal completeness")
+    body = (f'<div class="ea-rx"><div class="ea-jh">{ring}<div class="hm"><div class="hh">{_h.escape(head)}</div>'
+            f'<div class="hs">{_h.escape(sub)}</div></div><div class="fills">{fill}</div></div>'
+            + (f'<div class="ea-jp">{rows}</div>' if rows else "") + '</div>')
+    st.markdown(css(extra) + body, unsafe_allow_html=True)

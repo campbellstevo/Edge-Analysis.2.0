@@ -1928,47 +1928,6 @@ def _psych_3sl_compliance(df: pd.DataFrame, styler) -> None:
             pass
 
 
-def _journal_completeness_strip(df: pd.DataFrame) -> None:
-    """Amber banner when manual tag columns exist but are mostly unlogged."""
-    if df is None or df.empty:
-        return
-    tag_cols = [c for c in ["A+ Setup?", "Conviction (1-5)", "Mental State",
-                            "Mistake", "Rules Followed?"] if c in df.columns]
-    if len(tag_cols) < 2:
-        return
-    def _filled(row):
-        for c in tag_cols:
-            _v = row.get(c)
-            if isinstance(_v, bool):
-                continue  # checkbox state counts as logged either way
-            _s = str(_v if _v is not None else "").strip().lower()
-            # "NA" in Mistake is a logged answer: no mistake on this trade
-            if c == "Mistake" and _s in ("na", "none", "no mistake"):
-                continue
-            if _s in ("", "nan", "none", "na", "[]"):
-                return False
-        return True
-    full = int(df.apply(_filled, axis=1).sum())
-    total = len(df)
-    pct = full / max(1, total)
-    if pct >= 0.9:
-        return
-    fill_w = max(3, int(round(pct * 100)))
-    nice = ", ".join(c.replace("?", "") for c in tag_cols)
-    st.markdown(
-        f"<div style='display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;background:#fdf6e8;"
-        f"border:1px solid #ecd4a2;border-radius:12px;padding:14px 18px;margin:2px 0 10px;'>"
-        f"<div style='font-size:19px;color:#7c4a03;font-weight:800;'>\u26a0</div>"
-        f"<div style='flex:1 1 260px;min-width:0;'><div style='font-size:15.5px;font-weight:800;color:#7c4a03;'>"
-        f"Journal completeness: {full} of {total} trades fully tagged</div>"
-        f"<div style='font-size:12.5px;color:#9a6b1f;margin-top:1px;'>Cards built on these tags "
-        f"only see the tagged trades \u2014 backfill {_html.escape(nice)} in Notion and "
-        f"they sharpen fast.</div></div>"
-        f"<div style='flex:1 1 180px;max-width:240px;background:#f3e3c0;border-radius:8px;height:12px;overflow:hidden;'>"
-        f"<div style='width:{fill_w}%;height:12px;background:#b45309;'></div></div>"
-        f"</div>", unsafe_allow_html=True)
-
-
 def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
     st.markdown('<div class="section">', unsafe_allow_html=True)
 
@@ -5617,7 +5576,16 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
 
     # ── Psychology: discipline card, losses card, WHOOP card ──────────────
     if _active == "Psychology":
-        _journal_completeness_strip(df_all_safe)
+        # Mockup V8: name each gap and contradiction instead of one banner.
+        # Shown when anything needs fixing; a clean journal gets no card.
+        from edge_analysis.ui import reshape as rx
+        _jh = rx.journal_health(df_all_safe)
+        if _jh["problems"] or _jh["pct"] < 90:
+            with st.container(border=True):
+                st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
+                _card_header("Journal health", "What your journal is missing or contradicting \u2014 "
+                                               "fix these and every card here sharpens.")
+                rx.journal_health_card(_jh)
         with st.container(border=True):
             st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
             _card_header("Discipline", "One score, its trend, and the habits that build it.")

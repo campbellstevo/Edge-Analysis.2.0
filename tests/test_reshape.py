@@ -149,3 +149,39 @@ def test_share_card_is_a_png_with_r_only():
     from PIL import Image
     import io
     assert Image.open(io.BytesIO(png)).size == (1200, 630)
+
+
+def _dc_journal():
+    """Shaped like his Double Confirmations journal (counts only)."""
+    n = 10
+    return pd.DataFrame({
+        "Date": pd.date_range("2026-09-01", periods=n, freq="D"),
+        "Closed RR": [1.0, -1.1, 0.0, 2.0, -1.2, -1.0, 1.5, -1.1, 0.5, -1.2],
+        "MAE (R)": [-0.3, -1.1, -0.4, -0.2, -3.5, -1.0, -0.5, -2.2, -0.3, -1.2],
+        "A+ Setup?": ["Yes", "Yes", "No", "Yes", "No", "Yes", "Yes", None, None, None],
+        "Mental State": ["Clear & Calm"] * 7 + [None] * 3,
+        "Mistake": ["NA", "No A+ setup", "NA", "NA", "Overtraded", "NA", "NA", None, None, None],
+        "Rules Followed?": [True, True, True, True, True, False, True, False, False, False],
+        "Entry Model 1": ["Internal NC+S"] * 7 + [None] * 3,
+        "Entry Model 2": ["Internal NC+S"] * 7 + [None] * 3,
+        "Double Confirmation?": [False] * n,
+        "Execution/Bias": [None] * n, "Volatility": [None] * n, "Target": [None] * n,
+    })
+
+
+def test_journal_health_names_each_problem():
+    h = rx.journal_health(_dc_journal())
+    titles = [p[2] for p in h["problems"]]
+    assert h["full"] == 7 and round(h["pct"]) == 70          # "NA" is a logged answer
+    assert "3 trades need tagging" in titles                  # tagging stopped at the end
+    assert "2 trades contradict themselves" in titles         # rules ticked + rule-break mistake
+    assert "Double Confirmation? is never ticked" in titles
+    assert "MAE runs past the exit on 2 losses" in titles     # -3.5 and -2.2 on ~-1.1R stops
+    assert "3 fields never filled" in titles
+
+
+def test_journal_health_is_quiet_on_a_clean_journal():
+    g = pd.DataFrame({"Date": pd.date_range("2026-09-01", periods=4), "Closed RR": [1.0, -1.0, 0.0, 2.0],
+                      "A+ Setup?": ["Yes"] * 4, "Mistake": ["NA"] * 4, "Rules Followed?": ["Yes"] * 4})
+    h = rx.journal_health(g)
+    assert h["pct"] == 100.0 and h["problems"] == []
