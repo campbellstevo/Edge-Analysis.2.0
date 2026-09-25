@@ -2510,6 +2510,12 @@ def _enter_demo() -> None:
     st.session_state["ea_m_cap_on"] = True   # the demo shows the optional cap in use
     st.session_state["ea_cap_on_now"] = True
     st.session_state["ea_cap_now"] = 20
+    # ...and the same plan as a SAVED plan. ea_m_tgt etc. are the ✎ sliders'
+    # widget keys, which Streamlit drops on any run that doesn't draw them
+    # (phones hit one), so the demo fell back to the auto target (+3.3R on
+    # one phone, +5.0R on another). _perf_settings re-applies a saved plan
+    # every run until the visitor edits it.
+    st.session_state["ea_mplan_saved"] = {"t": 5.0, "s": -6.0, "c": 20, "co": 1}
     st.session_state[SessionKeys.NAV_TARGET] = PageNames.DASHBOARD
 
 
