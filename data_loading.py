@@ -38,6 +38,28 @@ def _pq_path(token, dbid) -> str:
     return f"/tmp/ea_journal_{key}.parquet"
 
 
+# Journal text is rendered into raw HTML in hundreds of places. A tag can only
+# start with "<" followed by a letter, "!", "/" or "?", so that "<" becomes a
+# look-alike "‹" once, here, before anything renders it (SEC-10). Journal
+# values such as "<30m" or ">2hs" are untouched.
+_TAG_START = re.compile(r"<(?=[A-Za-z!/?])")
+
+
+def _neutralise_markup(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
+    out = df.copy()
+    out.columns = [_TAG_START.sub("‹", c) if isinstance(c, str) else c
+                   for c in out.columns]
+    for c in out.columns:
+        if out[c].dtype == object:
+            out[c] = out[c].map(
+                lambda v: _TAG_START.sub("‹", v) if isinstance(v, str) and "<" in v
+                else ([_TAG_START.sub("‹", x) if isinstance(x, str) else x for x in v]
+                      if isinstance(v, list) else v))
+    return out
+
+
 # The warm-boot copy on disk is a speed cache, not an archive: older than
 # this, it is deleted rather than served (DATA-19).
 _PQ_MAX_AGE_S = 24 * 3600
@@ -77,7 +99,7 @@ def forget_journal_cache(token, dbid) -> None:
 def _load_live_df_cached(token: Optional[str], dbid: Optional[str]):
     """Returns (df, fetched_at_epoch) — the stamp lives with the cache entry, so
     cache hits report the true age of the data, not the age of the rerun."""
-    df = _load_live_df_impl(token, dbid)
+    df = _neutralise_markup(_load_live_df_impl(token, dbid))
     _FETCHED_THIS_PROCESS.add((str(token)[:12], str(dbid)))
     try:  # warm-boot copy: cold starts serve this instantly, then refresh
         if df is not None and not df.empty:
@@ -97,7 +119,7 @@ def load_live_df(token: Optional[str], dbid: Optional[str]) -> pd.DataFrame:
     if (cache_cold and not st.session_state.get("ea_warm_served")
             and _os.path.exists(pq)):
         try:
-            df = pd.read_parquet(pq)
+            df = _neutralise_markup(pd.read_parquet(pq))
             if df is not None and not df.empty:
                 st.session_state["ea_warm_served"] = True
                 st.session_state["ea_needs_fresh"] = True

@@ -252,14 +252,30 @@ def _oauth_store() -> dict:
     return {}
 
 
+# The verifier store is one process-wide dict shared by every visitor (SEC-08):
+# entries expire after the time a sign-in can plausibly take, and the store is
+# capped, so abandoned sign-ins can't pile up or be replayed later.
+_OAUTH_TTL_S = 600
+_OAUTH_STORE_MAX = 500
+
+
 def _oauth_put(state: str, code_verifier: str):
     """Store OAuth state and PKCE verifier."""
-    _oauth_store()[state] = {"code_verifier": code_verifier, "ts": time.time()}
+    store = _oauth_store()
+    now = time.time()
+    for k in [k for k, v in list(store.items()) if now - v.get("ts", 0) > _OAUTH_TTL_S]:
+        store.pop(k, None)
+    while len(store) >= _OAUTH_STORE_MAX:
+        store.pop(min(store, key=lambda k: store[k].get("ts", 0)), None)
+    store[state] = {"code_verifier": code_verifier, "ts": now}
 
 
 def _oauth_pop(state: str) -> Optional[dict]:
-    """Retrieve and remove OAuth state."""
-    return _oauth_store().pop(state, None)
+    """Retrieve and remove OAuth state; an expired one counts as missing."""
+    rec = _oauth_store().pop(state, None)
+    if rec and time.time() - rec.get("ts", 0) > _OAUTH_TTL_S:
+        return None
+    return rec
 
 
 def _pkce_pair() -> Tuple[str, str]:
