@@ -2014,7 +2014,14 @@ def inject_dark_overlay():
         background: #141926 !important;
         border-color: rgba(255,255,255,0.09) !important;
     }
-    div[data-testid="stExpander"] summary { color: #c9d0dc !important; }
+    /* the light sheet paints every expander header #f3f4f6 with !important;
+       without a dark background here the header was a white bar of pale text */
+    div[data-testid="stExpander"] summary {
+        color: #c9d0dc !important;
+        background: #161b27 !important;
+        border-bottom-color: rgba(255,255,255,0.09) !important;
+    }
+    div[data-testid="stExpander"] > details[open] > div { background: #141926 !important; }
     [data-testid="stPopover"] > div > button, [data-testid="stPopoverButton"],
     .stButton button {
         background: #161b27 !important;

@@ -44,3 +44,35 @@ def test_metric_text():
     assert rx._metric_txt(42.4, "Win rate") == "42%"
     assert rx._metric_txt(None, "Expectancy") == "—"
     assert rx._metric_txt(-0.001, "Expectancy") == "0.00R"
+
+
+def _capture(monkeypatch):
+    out = []
+    monkeypatch.setattr(rx.st, "markdown", lambda body, **k: out.append(body))
+    return out
+
+
+def test_pair_grid_reads_double_confirmation_journals(monkeypatch):
+    out = _capture(monkeypatch)
+    g = pd.DataFrame({
+        "Outcome": ["Win"] * 3 + ["Loss"] * 3 + ["BE"],
+        "Closed RR": [2.0, 3.0, 1.5, -1.0, -1.0, -1.1, 0.0],
+    })
+    m1 = pd.Series(["Internal NC+S"] * 6 + ["External NC+S"])
+    m2 = pd.Series(["Internal NC+S"] * 7)
+    assert rx.pair_grid(g, m1, m2, "Expectancy", min_n=5)
+    html = "".join(out)
+    assert "Internal NC+S" in html and "External NC+S" in html
+    assert 'class="few' in html          # the 1-trade pair is hatched, not coloured
+    assert "+0.57R" in html              # 6 trades: (2+3+1.5-3.1)/6
+
+
+def test_grids_drop_blocks_nobody_trades(monkeypatch):
+    out = _capture(monkeypatch)
+    g = pd.DataFrame({
+        "Outcome": ["Win", "Loss"] * 5, "Closed RR": [1.0, -1.0] * 5,
+        "Hour (Melb)": [19, 20] * 5, "DayName": ["Monday", "Tuesday"] * 5,
+    })
+    assert rx.day_time_grid(g, "Expectancy")
+    html = "".join(out)
+    assert "16–20" in html and "04–08" not in html

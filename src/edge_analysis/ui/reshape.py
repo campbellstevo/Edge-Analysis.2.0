@@ -60,14 +60,16 @@ def css() -> str:
 .ea-hm tr,.ea-hm th,.ea-hm td{{border:0 !important;}}
 .ea-hm tr{{background:none !important;}}
 .ea-hm th{{background:none !important;}}
-.ea-hm th.l{{width:72px;}}
+.ea-hm th.l{{width:var(--nw,72px);}}
+@media (max-width:640px){{.ea-hm th.l{{width:min(var(--nw,72px),116px);}}
+  .ea-hm td{{font-size:13.5px;padding:7px 3px;}} .ea-hm td.name{{font-size:12px;}}}}
 .ea-hm td.name{{padding-right:10px !important;}}
 .ea-hm th{{font-size:12px;font-weight:700;color:{t['muted']};text-align:center;padding:2px 4px;white-space:nowrap;}}
 .ea-hm th.l{{text-align:left;}}
 .ea-hm td{{border-radius:8px;text-align:center;padding:8px 4px;font-size:15px;font-weight:800;
   font-variant-numeric:tabular-nums;background:{t['h1']};color:{t['ink']};}}
 .ea-hm td small{{display:block;font-size:11px;font-weight:600;opacity:.8;}}
-.ea-hm td.name{{text-align:left;background:none;font-size:13.5px;font-weight:700;padding-left:0;white-space:nowrap;color:{t['ink']};}}
+.ea-hm td.name{{text-align:left;background:none;font-size:13.5px;font-weight:700;padding-left:0;line-height:1.25;overflow-wrap:anywhere;color:{t['ink']};}}
 .ea-hm td.few{{background:repeating-linear-gradient(135deg,{t['h1']} 0 6px,{t['h2']} 6px 12px);color:{t['few']};font-weight:700;}}
 .ea-hm td.none{{background:{t['soft']};color:{t['few']};font-weight:600;font-size:12px;}}
 .ea-hm td.tot{{box-shadow:inset 0 0 0 2px {t['base']};}}
@@ -232,7 +234,8 @@ def hour_bars(df: pd.DataFrame, metric: str = "Expectancy", min_n: int = 8) -> b
 def heat_grid(g: pd.DataFrame, row_col: str, col_col: str, rows: list, cols: list,
               metric: str = "Expectancy", min_n: int = 5, row_head: str = "",
               col_labels: dict | None = None, row_labels: dict | None = None, totals: bool = True,
-              total_row_label: str = "All", total_col_label: str = "All") -> None:
+              total_row_label: str = "All", total_col_label: str = "All",
+              name_w: str = "72px", col_order_by_n: bool = False) -> None:
     """Rows × columns of `metric`, coloured around zero (win rate around your
     overall rate). Cells under `min_n` trades are hatched and never coloured;
     empty cells say so. With `totals`, the last column and row are the old
@@ -265,6 +268,8 @@ def heat_grid(g: pd.DataFrame, row_col: str, col_col: str, rows: list, cols: lis
 
     # a column nobody trades in is noise (a 04–08 block for a London trader)
     cols = [c for c in cols if (g[col_col] == c).any()] or cols
+    if col_order_by_n:
+        cols = sorted(cols, key=lambda c: -int((g[col_col] == c).sum()))
     labels = col_labels or {}
     head = "".join(f"<th>{_h.escape(str(labels.get(c, c)))}</th>" for c in cols)
     if totals:
@@ -279,7 +284,7 @@ def heat_grid(g: pd.DataFrame, row_col: str, col_col: str, rows: list, cols: lis
     if totals:
         tds = "".join(_cell(g[(g[col_col] == c) & g[row_col].isin(rows)], True) for c in cols)
         body += f'<tr class="tot"><td class="name">{_h.escape(total_row_label)}</td>{tds}<td class="name"></td></tr>'
-    st.markdown(css() + f'<div class="ea-rx ea-rx-scroll"><table class="ea-hm"><tr><th class="l">{_h.escape(row_head)}</th>'
+    st.markdown(css() + f'<div class="ea-rx ea-rx-scroll"><table class="ea-hm"><tr><th class="l" style="--nw:{name_w};">{_h.escape(row_head)}</th>'
                 f'{head}</tr>{body}</table></div>', unsafe_allow_html=True)
 
 
@@ -308,4 +313,43 @@ def day_time_grid(df: pd.DataFrame, metric: str = "Expectancy", min_n: int = 5) 
     heat_grid(g, "__day", "__blk", days, blocks, metric=metric, min_n=min_n,
               row_labels={d: d[:3] for d in days},
               total_row_label="All days", total_col_label="All day")
+    return True
+
+
+SESSION_ORDER = ["Asia", "London", "New York"]
+
+
+def setup_grid(counted: pd.DataFrame, model_col: str, session_col: str, models: list,
+               metric: str = "Expectancy", min_n: int = 8) -> bool:
+    """Entry model × session (mockup V2): does this setup work in this
+    session? The All sessions column is the old entry-model table, the All
+    models row the old session table."""
+    if session_col not in counted.columns:
+        return False
+    g = _counted(counted)
+    g = g.assign(__m=g[model_col].astype(str).str.strip(),
+                 __s=g[session_col].astype(str).str.strip())
+    g = g[~g["__s"].str.lower().isin(["", "nan", "none", "other"]) & g["__m"].isin(models)]
+    sessions = [s for s in SESSION_ORDER if (g["__s"] == s).any()]
+    sessions += sorted(s for s in g["__s"].unique() if s not in sessions)
+    if g.empty or len(sessions) < 1:
+        return False
+    heat_grid(g, "__m", "__s", models, sessions, metric=metric, min_n=min_n,
+              row_head="Entry model", total_row_label="All models",
+              total_col_label="All sessions", name_w="210px")
+    return True
+
+
+def pair_grid(counted: pd.DataFrame, m1: pd.Series, m2: pd.Series,
+              metric: str = "Expectancy", min_n: int = 5) -> bool:
+    """Model 1 × Model 2 for double-confirmation journals: which pairs pay."""
+    g = _counted(counted.assign(__m1=m1.values, __m2=m2.values))
+    g = g[(g["__m1"] != "") & (g["__m2"] != "")]
+    if g.empty:
+        return False
+    rows = list(g["__m1"].value_counts().index)
+    cols = list(g["__m2"].value_counts().index)
+    heat_grid(g, "__m1", "__m2", rows, cols, metric=metric, min_n=min_n,
+              row_head="Model 1 ↓  ·  Model 2 →", total_row_label="Any model 1",
+              total_col_label="Any model 2", name_w="210px")
     return True

@@ -2226,19 +2226,21 @@ def _two_model_sections(counted: pd.DataFrame) -> bool:
     m2 = counted["Entry Model 2"].map(_clean_model_cell)
     if not ((m1 != "").any() and (m2 != "").any()):
         return False
+    from edge_analysis.ui import reshape as rx
     st.markdown("### Entry models — double confirmation")
-    st.caption("Model 1 sets the structure, Model 2 confirms the trigger — "
-               "and the pair is the setup. Ranked by win rate.")
+    st.caption("Model 1 sets the structure, Model 2 confirms the trigger — and the pair "
+               "is the setup. Each cell is one pair; hatched cells have under 5 trades.")
     both = (m1 != "") & (m2 != "")
-    pair_labels = m1.where(both, "") + " \u2192 " + m2.where(both, "")
-    pair_df = _label_stats(counted[both], pair_labels[both])
-    render_entry_model_table(pair_df, title="Pairs \u2014 model 1 \u2192 model 2",
-                             first_col_label="Pair")
-    c1, c2 = st.columns(2)
-    with c1:
+    metric = rx.metric_picker("ea_setup_metric")
+    if not rx.pair_grid(counted, m1, m2, metric):
+        _empty_note("Appears once trades carry both models.")
+    with st.expander("Every number, as tables"):
+        pair_labels = m1.where(both, "") + " \u2192 " + m2.where(both, "")
+        pair_df = _label_stats(counted[both], pair_labels[both])
+        render_entry_model_table(pair_df, title="Pairs \u2014 model 1 \u2192 model 2",
+                                 first_col_label="Pair")
         render_entry_model_table(_label_stats(counted, m1),
                                  title="Model 1 \u2014 structure", first_col_label="Model")
-    with c2:
         render_entry_model_table(_label_stats(counted, m2),
                                  title="Model 2 \u2014 trigger", first_col_label="Model")
     return True
@@ -2288,7 +2290,7 @@ def _entry_models_tab(f: pd.DataFrame, show_table):
         st.markdown("### Entry model expectancy")
         _two = bool(f_norm["Entry Models List"].apply(
             lambda x: isinstance(x, (list, tuple)) and len(x) > 1).any())
-        st.caption("Average R per trade by entry model, best first"
+        st.caption("Your entry models, best first, each split by session"
                    + (" — a trade logged with two models counts under each." if _two else "."))
         # verdict first, evidence under it; read only between models with 8+
         # trades, and say how many (the card's own measure: expectancy)
@@ -2302,9 +2304,25 @@ def _entry_models_tab(f: pd.DataFrame, show_table):
                     f"<b>{best_em['Expectancy (R)']:+.2f}R</b> a trade over {int(best_em['Trades'])} trades; "
                     f"<b>{_html.escape(str(worst_em['Entry_Model']))}</b> "
                     f"<b>{worst_em['Expectancy (R)']:+.2f}R</b> over {int(worst_em['Trades'])}.", "info")
-        _flip("em_flip",
-              lambda: _edge_tiles(df_em, "Entry_Model", "Expectancy (R)"),
-              lambda: render_entry_model_table(df_em, title=None))
+        # Mockup V2: one entry model × session grid; its All sessions column
+        # is this table and its All models row the session table, so Timing
+        # drops its session table when the grid drew (one stat, once).
+        from edge_analysis.ui import reshape as rx
+        _sc = "Session Norm" if "Session Norm" in counted.columns else None
+        _drew = False
+        if _sc is not None and counted[_sc].notna().any():
+            metric = rx.metric_picker("ea_setup_metric")
+            _drew = rx.setup_grid(counted, "Entry Models List", _sc,
+                                  list(df_em["Entry_Model"].astype(str)), metric)
+        if _drew:
+            st.session_state["_ea_sess_in_grid"] = True
+            st.caption("Hatched cells have under 8 trades, too few to read.")
+            with st.expander("Every number, as a table"):
+                render_entry_model_table(df_em, title=None)
+        else:
+            _flip("em_flip",
+                  lambda: _edge_tiles(df_em, "Entry_Model", "Expectancy (R)"),
+                  lambda: render_entry_model_table(df_em, title=None))
     else:
         _empty_note("Appears once trades have a Win/Loss/BE result.")
     st.markdown("</div>", unsafe_allow_html=True)
@@ -5531,6 +5549,7 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
 
     # ── Entry: three cards — setups, timing, managing ─────────────────────
     if _active == "Entry":
+        st.session_state["_ea_sess_in_grid"] = False
         with st.container(border=True):
             st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
             _card_header("Setups", "Which entries earn and which cost \u2014 ranked from your own trades.")
@@ -5555,8 +5574,9 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
             _card_header("Timing", "When your edge shows up \u2014 hours, sessions and days.")
             with _budget(1):
                 _timing_reshaped(f_perf, df_all_safe, show_table)
-                _gap(18)
-                _sessions_tab(f_perf, show_table)
+                if not st.session_state.get("_ea_sess_in_grid"):
+                    _gap(18)
+                    _sessions_tab(f_perf, show_table)
                 if _mt5:
                     _gap(18)
                     _holdtime_section(_data, styler)
