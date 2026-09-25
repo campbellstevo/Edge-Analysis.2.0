@@ -1,9 +1,16 @@
 """Demo journal: realistic simulated gold trades for the try-before-you-connect mode.
 
-v2 — mirrors Campbell's real MT5 Trade Log schema exactly (entry models, sessions,
+v3 — mirrors Campbell's real MT5 Trade Log schema exactly (entry models, sessions,
 mental states, mistakes, news/volatility/GAP externals, OBOS, missed runners,
-entry timeframes), lands roughly +5% every month, and always shows a populated
-current month. Deterministic per (month, attempt): past months never reshuffle.
+entry timeframes) and always shows a populated current month. Deterministic per
+(month, attempt): past months never reshuffle.
+
+v3 (25 Sep 2026, launch review): believable, not perfect. Most months land
++3.6R to +6.2R, but February 2026 is a losing month and July 2026 a flat one,
+so the curve has a real drawdown; a second entry in a session already traded
+that day wins less often, so breaking the session lock visibly costs; and a
+trade with no mistake says "NA", as a real journal does, so every demo trade
+counts as fully tagged.
 """
 from __future__ import annotations
 
@@ -68,8 +75,11 @@ def _gen_month(ms: pd.Timestamp, days, seed: int, attempt: int, balance: float):
     rows = []
     for d in days:
         n = int(rng.choice([0, 1, 1, 1, 2, 2], p=[.24, .26, .18, .10, .14, .08]))
+        _day_sess = set()
         for _ in range(n):
             sess = str(rng.choice(_SESS, p=_SESS_P))
+            _second = sess in _day_sess      # breaks the one-entry-per-session rule
+            _day_sess.add(sess)
             model = str(rng.choice(_MODELS, p=_MODEL_P))
             second = str(rng.choice([m for m in _MODELS if m != model]))
             multi = rng.random() < 0.18
@@ -82,7 +92,8 @@ def _gen_month(ms: pd.Timestamp, days, seed: int, attempt: int, balance: float):
                 mental = str(rng.choice(_MENTAL, p=[.52, .26, .22]))
             wr = 0.35 + _SESS_EDGE[sess] + _MODEL_EDGE[model] \
                  + (0.07 if aplus else -0.02) + (0.0 if rules else -0.13) \
-                 + (0.03 if mental == "Clear & Calm" else -0.05)
+                 + (0.03 if mental == "Clear & Calm" else -0.05) \
+                 + (-0.14 if _second else 0.0)
             u = rng.random()
             planned = float(rng.choice([2.0, 2.5, 3.0], p=[.45, .35, .20]))
             early_exit = False
@@ -153,7 +164,7 @@ def _gen_month(ms: pd.Timestamp, days, seed: int, attempt: int, balance: float):
                 "Rules Followed?": "Yes" if rules else "No",
                 "Conviction (1-5)": str(conviction),
                 "Mental State": mental,
-                "Mistake": mistake,
+                "Mistake": mistake or "NA",
                 "Reason of loss": str(rng.choice(_LOSS_NOTES)) if (is_loss and rng.random() < 0.7) else "",
                 "Hour (Melb)": hour,
             })
@@ -172,6 +183,10 @@ def demo_df(today: pd.Timestamp | None = None, seed: int = 9) -> pd.DataFrame:
         full = me <= today
         frac = len(days) / max(1, len(pd.bdate_range(ms, me)))
         lo, hi = (3.6, 6.2) if full else (max(0.5, 3.2 * frac - 1.0), 6.8 * frac + 2.0)
+        if full and (ms.year, ms.month) == (2026, 2):
+            lo, hi = -5.0, -2.2          # the losing month
+        elif full and (ms.year, ms.month) == (2026, 7):
+            lo, hi = -0.8, 1.2           # the flat month
         chosen = None
         for attempt in range(60):
             rows, end_bal = _gen_month(ms, days, seed, attempt, balance)

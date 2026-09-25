@@ -1941,7 +1941,11 @@ def _journal_completeness_strip(df: pd.DataFrame) -> None:
             _v = row.get(c)
             if isinstance(_v, bool):
                 continue  # checkbox state counts as logged either way
-            if str(_v if _v is not None else "").strip().lower() in ("", "nan", "none", "na", "[]"):
+            _s = str(_v if _v is not None else "").strip().lower()
+            # "NA" in Mistake is a logged answer: no mistake on this trade
+            if c == "Mistake" and _s in ("na", "none", "no mistake"):
+                continue
+            if _s in ("", "nan", "none", "na", "[]"):
                 return False
         return True
     full = int(df.apply(_filled, axis=1).sum())

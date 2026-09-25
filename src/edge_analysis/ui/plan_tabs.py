@@ -602,7 +602,10 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
             _v = row.get(c)
             if isinstance(_v, bool):
                 continue  # a checkbox state is a logged value either way
-            if str(_v if _v is not None else "").strip().lower() in ("", "nan", "none", "na", "[]"):
+            _s = str(_v if _v is not None else "").strip().lower()
+            if c == "Mistake" and _s in ("na", "none", "no mistake"):
+                continue  # "NA" is an answer: no mistake on this trade
+            if _s in ("", "nan", "none", "na", "[]"):
                 return False
         return True
 
