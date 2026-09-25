@@ -428,3 +428,137 @@ def discipline_hero(score: int, n_clean: int, n_total: int, causes: list, checke
             f'{worth}<div>{pills}</div><div class="ea-dh-c">Checked on every trade: {_h.escape(checked)}</div></div>'
             f'{strip}</div>')
     st.markdown(css(s) + body, unsafe_allow_html=True)
+
+
+# ── trade management (mockup V6) ─────────────────────────────────────────────
+def _mgmt_frame(df: pd.DataFrame) -> pd.DataFrame | None:
+    if df is None or df.empty or "MFE (R)" not in df.columns or "Closed RR" not in df.columns:
+        return None
+    g = pd.DataFrame({
+        "mfe": pd.to_numeric(df["MFE (R)"], errors="coerce"),
+        "r": pd.to_numeric(df["Closed RR"], errors="coerce"),
+        "mae": (pd.to_numeric(df["MAE (R)"], errors="coerce") if "MAE (R)" in df.columns
+                else pd.Series(float("nan"), index=df.index)),
+    }, index=df.index)
+    if "Date" in df.columns:
+        g["when"] = pd.to_datetime(df["Date"], errors="coerce").dt.strftime("%a %d %b %Y")
+    g = g[g["mfe"].notna() & g["r"].notna()]
+    return g if len(g) >= 10 else None
+
+
+def exit_whatif(g: pd.DataFrame) -> tuple[pd.DataFrame, float]:
+    """The exit simulator's own model (pro_tabs._exit_optimizer): a target
+    fills when MFE reached it, else a −1R stop if MAE got there, else the
+    real exit. Returns (targets, actual net R)."""
+    import numpy as np
+    top = float(min(6.0, max(2.0, np.nanpercentile(g["mfe"], 95))))
+    rows = []
+    for T in np.round(np.arange(1.0, top + 0.01, 0.5), 2):
+        sim = np.where(g["mfe"] >= T, T, np.where(g["mae"].fillna(0) <= -1, -1.0, g["r"]))
+        rows.append({"T": float(T), "net": float(np.sum(sim)), "exp": float(np.mean(sim)),
+                     "hit": float((g["mfe"] >= T).mean() * 100)})
+    return pd.DataFrame(rows), float(g["r"].sum())
+
+
+def management_overview(df: pd.DataFrame, styler) -> bool:
+    """Four numbers, every trade as a dot (best price reached vs exit), and the
+    exit simulator as bars against what you actually did. False when the
+    journal has no MFE."""
+    import altair as alt
+    from edge_analysis.ui.mt5_tabs import _kpi
+    g = _mgmt_frame(df)
+    if g is None:
+        return False
+    t = _tokens()
+    wins = g[g["r"] > 0.15]
+    wpos = wins[wins["mfe"] > 0]
+    cap = float((wpos["r"] / wpos["mfe"]).clip(0, 1).mean() * 100) if len(wpos) else float("nan")
+    left = float((wins["mfe"] - wins["r"]).clip(lower=0).sum()) if len(wins) else 0.0
+    gave = g[(g["mfe"] >= 1) & (g["r"] <= 0.15)]
+    gave_r = float((gave["mfe"] - gave["r"]).sum())
+    heat = float(wins["mae"].median()) if wins["mae"].notna().any() else float("nan")
+    deep = int((wins["mae"] <= -0.8).sum())
+
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        _kpi("Captured on winners", "—" if cap != cap else f"{cap:.0f}%", "of the best price, on average")
+    with c2:
+        _kpi("Left on winners", f"{left:.1f}R", f"across {len(wins)} winners", "#b45309")
+    with c3:
+        _kpi("Gave it back", f"{len(gave)} trade{'s' if len(gave) != 1 else ''}",
+             f"hit +1R, closed at BE or worse · {gave_r:.1f}R", RED if len(gave) else PURPLE)
+    with c4:
+        _kpi("Heat on winners", "—" if heat != heat else fmt_r(heat),
+             f"median dip first · {deep} went past −0.8R")
+
+    left_col, right_col = st.columns([1.35, 1])
+    with left_col:
+        st.markdown("#### Best price reached vs where you got out")
+        xmax = float(max(2.0, min(g["mfe"].quantile(0.99) * 1.05, 12.0)))
+        ymin = float(min(-1.3, g["r"].min() - 0.1))
+        ymax = float(max(xmax, g["r"].max() + 0.2))
+        pts = g.assign(x=g["mfe"].clip(upper=xmax),
+                       kind=pd.cut(g["r"], [-1e9, -0.15, 0.15, 1e9], labels=["Loss", "BE", "Win"]).astype(str))
+        vals = [dict(x=round(float(a), 2), y=round(float(b), 2), k=k, w=str(w))
+                for a, b, k, w in zip(pts["x"], pts["r"], pts["kind"], pts.get("when", pd.Series("", index=pts.index)))]
+        base = alt.Chart(alt.Data(values=vals))
+        X = alt.X("x:Q", title="Best point the trade reached (MFE, R)", scale=alt.Scale(domain=[0, xmax]),
+                  axis=alt.Axis(values=list(range(0, int(xmax) + 1)), format="d"))
+        Y = alt.Y("y:Q", title="Closed (R)", scale=alt.Scale(domain=[ymin, ymax]),
+                  axis=alt.Axis(values=list(range(int(ymin), int(ymax) + 1)), format="d"))
+        zone = alt.Chart(alt.Data(values=[dict(x=1.0, x2=xmax, y=ymin, y2=0.15)])).mark_rect(
+            color=RED, opacity=0.08).encode(x=X, x2="x2:Q", y=Y, y2="y2:Q")
+        diag = alt.Chart(alt.Data(values=[dict(x=0.0, y=0.0), dict(x=xmax, y=xmax)])).mark_line(
+            color=PURPLE, strokeDash=[5, 4], opacity=0.6).encode(x=X, y=Y)
+        dots = base.mark_circle(size=46, opacity=0.62).encode(
+            x=X, y=Y,
+            color=alt.Color("k:N", legend=None, scale=alt.Scale(domain=["Win", "BE", "Loss"],
+                                                                range=[GREEN, "#94a3b8", RED])),
+            tooltip=[alt.Tooltip("w:N", title="Trade"), alt.Tooltip("x:Q", title="Best (R)"),
+                     alt.Tooltip("y:Q", title="Closed (R)")])
+        # between the scratch row (0R) and the stop row (−1R), clear of both
+        lab = alt.Chart(alt.Data(values=[dict(x=xmax * 0.98, y=-0.5,
+                                              t="went +1R, then closed at BE or worse")])).mark_text(
+            align="right", fontSize=12, fontWeight="bold", color=RED).encode(x=X, y=Y, text="t:N")
+        st.altair_chart(styler(alt.layer(zone, diag, dots, lab).properties(height=330)),
+                        use_container_width=True)
+        st.caption("One dot per trade. On the dashed line you got out at the best price; "
+                   "the red zone is every trade that reached +1R and still closed at break-even or worse.")
+    with right_col:
+        st.markdown("#### What if you'd used a fixed target?")
+        wf, actual = exit_whatif(g)
+        mx = max([abs(x) for x in wf["net"]] + [abs(actual), 1e-9])
+        rows = ""
+        for _, w in wf.iterrows():
+            pct = abs(w["net"]) / mx * 100
+            rows += (f'<div class="ea-wf-r"><div class="ea-wf-l">Fixed {w["T"]:g}R</div>'
+                     f'<div class="ea-wf-t"><div style="width:{pct:.0f}%;background:{"#94a3b8" if w["net"] >= 0 else RED};"></div></div>'
+                     f'<div class="ea-wf-v"><b>{_h.escape(fmt_r(w["net"], 1))}</b> <span>hits {w["hit"]:.0f}%</span></div></div>')
+        rows += (f'<div class="ea-wf-r you"><div class="ea-wf-l">What you did</div>'
+                 f'<div class="ea-wf-t"><div style="width:{abs(actual) / mx * 100:.0f}%;background:{PURPLE};"></div></div>'
+                 f'<div class="ea-wf-v"><b>{_h.escape(fmt_r(actual, 1))}</b></div></div>')
+        best = wf.loc[wf["net"].idxmax()]
+        if best["net"] > actual + 0.5:
+            verdict = (f"A flat <b>{best['T']:g}R</b> target would have made <b>{_h.escape(fmt_r(best['net'], 1))}</b> "
+                       f"on these trades, against your <b>{_h.escape(fmt_r(actual, 1))}</b>.")
+        else:
+            verdict = (f"No fixed target beats your own exits on these trades; the closest, "
+                       f"<b>{best['T']:g}R</b>, fills on {best['hit']:.0f}% of them."
+                       + (f" The leak is the <b>{len(gave)}</b> give-backs, not the target." if len(gave) else ""))
+        extra = f"""
+.ea-wf-r{{display:flex;align-items:center;gap:10px;margin:7px 0;}}
+.ea-wf-r.you{{border-top:1px dashed {t['line']};padding-top:9px;margin-top:10px;}}
+.ea-wf-l{{flex:0 0 92px;font-size:13.5px;font-weight:700;color:{t['ink']};}}
+.ea-wf-r.you .ea-wf-l,.ea-wf-r.you .ea-wf-v b{{color:{PURPLE if not _dark() else '#a78bfa'};}}
+.ea-wf-t{{flex:1;background:{t['h1']};border-radius:6px;height:16px;overflow:hidden;}}
+.ea-wf-t div{{height:16px;border-radius:6px;}}
+.ea-wf-v{{flex:0 0 118px;text-align:right;font-size:13.5px;color:{t['ink']};}}
+.ea-wf-v span{{color:{t['muted']};font-size:12px;}}
+.ea-wf-s{{font-size:13.5px;color:{t['muted']};margin-top:12px;line-height:1.5;}}
+.ea-wf-s b{{color:{t['ink']};}}
+"""
+        st.markdown(css(extra) + f'<div class="ea-rx">{rows}<div class="ea-wf-s">{verdict}</div></div>',
+                    unsafe_allow_html=True)
+        st.caption("Same trades, same model as the exit simulator: a target fills if the trade "
+                   "reached it before it closed, otherwise a −1R stop if it went there first.")
+    return True

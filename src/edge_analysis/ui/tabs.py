@@ -5542,19 +5542,35 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                              "What happens after entry \u2014 efficiency, exits, stops and what got away.")
                 with _budget(1):
                     if _mt5:
-                        _mae_mfe_section(_data, styler)
-                        _gap(18)
-                        _close_style_section(
-                            _data if (_data is not None and "Targeted RR" in _data.columns)
-                            else df_all_safe, styler)
-                        _gap(18)
-                        _execution_section(_data, styler)
-                        _gap(18)
-                        _exit_optimizer(_data, styler)
-                        _gap(18)
-                        _mae_stop_optimizer(_data, styler)
-                        _gap(18)
-                        _missed_runner_section(_data, styler)
+                        # Mockup V6: four numbers, every trade as a dot and the exit
+                        # simulator as bars; the detail sits one click deeper
+                        from edge_analysis.ui import reshape as rx
+                        if rx.management_overview(_data, styler):
+                            _gap(10)
+                            with st.expander("Closes, execution, stops and missed runners"):
+                                _close_style_section(
+                                    _data if (_data is not None and "Targeted RR" in _data.columns)
+                                    else df_all_safe, styler)
+                                _gap(18)
+                                _execution_section(_data, styler)
+                                _gap(18)
+                                _mae_stop_optimizer(_data, styler)
+                                _gap(18)
+                                _missed_runner_section(_data, styler)
+                        else:
+                            _mae_mfe_section(_data, styler)
+                            _gap(18)
+                            _close_style_section(
+                                _data if (_data is not None and "Targeted RR" in _data.columns)
+                                else df_all_safe, styler)
+                            _gap(18)
+                            _execution_section(_data, styler)
+                            _gap(18)
+                            _exit_optimizer(_data, styler)
+                            _gap(18)
+                            _mae_stop_optimizer(_data, styler)
+                            _gap(18)
+                            _missed_runner_section(_data, styler)
                     if _salty:
                         _salty_execution_quality_tab(f_perf)
 

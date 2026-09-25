@@ -88,3 +88,12 @@ def test_discipline_hero_never_claims_a_gap_that_is_not_there(monkeypatch):
     out.clear()
     rx.discipline_hero(76, 178, 233, [], "x", clean_r=0.44, flag_r=-0.43)
     assert "That gap is what discipline is worth" in "".join(out)
+
+
+def test_exit_whatif_uses_the_simulator_model():
+    g = pd.DataFrame({"mfe": [2.5, 0.4, 1.2, 3.0], "r": [2.4, -1.0, 0.0, 1.0], "mae": [-0.2, -1.0, -0.5, -0.3]})
+    wf, actual = rx.exit_whatif(g)
+    assert actual == 2.4
+    at2 = wf.set_index("T").loc[2.0]
+    # 2.5 and 3.0 reached 2R -> +2 each; 0.4 hit its stop -> -1; 1.2 keeps its 0.0
+    assert at2["net"] == 3.0 and at2["hit"] == 50.0
