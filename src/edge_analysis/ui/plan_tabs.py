@@ -630,33 +630,83 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
         _sc = sum(comps) / len(comps) * 100
         grade = "A" if _sc >= 85 else "B" if _sc >= 70 else "C" if _sc >= 55 else "D" if _sc >= 40 else "F"
 
-    cards = []
-    if full_n is not None:
-        cards.append(card("LOGGED IN FULL", f"{full_n} of {n}",
-                          " · ".join(c.replace("?", "") for c in manual)[:36],
-                          "#0f172a" if full_n == n else "#b45309"))
+    # ── Mockup V7: the week as one report. The conclusion first, four
+    # numbers against your own last four weeks, the week day by day, and
+    # what to keep and what to fix. Process stays the frame (the grade).
+    from edge_analysis.ui import reshape as rx
+    _p4 = g[(g["__dt"].dt.to_period("W-SUN") < sel_p) & (g["__dt"].dt.to_period("W-SUN") >= sel_p - 4)]
+    _avg4 = float(_p4["__rr"].sum()) / 4 if len(_p4) else None
+    _carried = n > 1 and net >= 0 and ex_best < -0.5
+    _all_rules = bool(rules_known) and rules_kept == rules_known and rules_known == n
+    if n < 3:
+        headline = f"A quiet week: {n} trade{'s' if n != 1 else ''}."
+    elif _carried:
+        headline = "A green week, made by one trade."
+    elif net > 0:
+        headline = "A green week, and every trade followed your rules." if _all_rules else "A green week."
+    elif _all_rules:
+        headline = "A red week, but every trade followed your rules."
+    else:
+        headline = "A red week." if net < 0 else "A flat week."
+    _em_col = next((c for c in ("Entry Model", "Entry Model 1") if c in wk.columns), None)
+    _best_row = wk.loc[best_i]
+    _best_em = t._clean_text(_best_row.get(_em_col)) if _em_col else ""
+    if _carried:
+        sub = (f"{_best_row['__dt'].strftime('%A')}'s <b>{_fmt_r(float(rr.max()))}</b>"
+               + (f" {rx._h.escape(_best_em)}" if _best_em else "")
+               + f" carried it. Without it: <b>{_fmt_r(ex_best)}</b>.")
+    else:
+        sub = f"{n_w} won \u00b7 {n_be} break-even \u00b7 {n_l} lost."
+    stats = [("Net", rx.fmt_r(net), (f"last 4 weeks: {rx.fmt_r(_avg4)} a week" if _avg4 is not None else "first weeks logged"),
+              GREEN if net >= 0 else RED),
+             ("Trades", f"{n}", f"{n_w}W \u00b7 {n_be}BE \u00b7 {n_l}L", "#4800ff")]
     if rules_known:
-        cards.append(card("RULES FOLLOWED", f"{rules_kept} of {rules_known}", "by your own tag",
-                          "#0f172a" if rules_kept == rules_known else "#b45309"))
-    if apl is not None:
-        cards.append(card("A+ SETUPS", f"{apl}", f"of {n} trades · {n_w}W {n_be}BE {n_l}L", "#0f172a"))
+        stats.append(("Rules followed", f"{rules_kept} of {rules_known}", "by your own tag",
+                      GREEN if rules_kept == rules_known else "#b45309"))
+    elif full_n is not None:
+        stats.append(("Logged in full", f"{full_n} of {n}", "every tag filled", GREEN if full_n == n else "#b45309"))
     if give == give:
-        cards.append(card("GIVEN BACK", f"{give:.1f}R", "MFE not banked", RED if give > 2 else "#0f172a"))
-    if grade:
-        cards.append(card("WEEK GRADE", grade, "process, not profit", PURPLE))
-    elif comps:
-        cards.append(card("WEEK GRADE", "—", f"{n} trade{'s' if n != 1 else ''} — too few to grade",
-                          "#64748b"))
-    if not cards:
-        cards = [card("TRADES", f"{n}", f"{n_w}W · {n_be}BE · {n_l}L", "#0f172a"),
-                 card("NET R", _fmt_r(net), f"ex-best: {_fmt_r(ex_best)}", GREEN if net >= 0 else RED)]
-    st.markdown("<div style='display:flex;gap:12px;flex-wrap:wrap;margin:6px 0 12px;'>"
-                + "".join(cards) + "</div>", unsafe_allow_html=True)
-
-    if n > 1 and net >= 0 and ex_best < -0.5:
-        t._insight_box(
-            f"<b>One trade wide.</b> Your best trade ({_fmt_r(float(rr.max()))}) carried the week — "
-            f"without it you're at <b>{_fmt_r(ex_best)}</b>. The week rests on one result.", "warn")
+        stats.append(("Given back", f"{give:.1f}R", "best price not banked", RED if give > 2 else "#4800ff"))
+    _dn = wk.assign(__d=wk["__dt"].dt.day_name())
+    _days = []
+    for _d in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]:
+        _x = _dn[_dn["__d"] == _d]
+        if _d in ("Saturday", "Sunday") and _x.empty:
+            continue
+        _days.append((_d[:3], float(_x["__rr"].sum()) if len(_x) else None, len(_x)))
+    keep = []
+    if _em_col and wk[_em_col].notna().any():
+        _mm = wk[_em_col].map(t._clean_text)
+        _by = wk[_mm != ""].assign(__m=_mm[_mm != ""]).groupby("__m")["__rr"].agg(["sum", "size"])
+        if len(_by) and float(_by["sum"].max()) > 0:
+            _m = _by["sum"].idxmax()
+            _k = int(_by.loc[_m, "size"])
+            keep.append(f"<b>{rx._h.escape(str(_m))}</b> made {_fmt_r(float(_by.loc[_m, 'sum']))} "
+                        f"over {_k} trade{'s' if _k != 1 else ''}.")
+    if _all_rules:
+        keep.append(f"Rules followed on all {n} trades.")
+    if full_n is not None and full_n == n and n:
+        keep.append("Every trade logged in full.")
+    if give == give and n_w and give <= 0.5:
+        keep.append(f"Exits held: only {give:.1f}R of the best prices given back.")
+    fix = []
+    if "Mistake" in wk.columns:
+        _mk = wk["Mistake"].map(t._clean_text).str.split(r"\s*,\s*").explode().str.strip()
+        _mk = _mk[~_mk.str.lower().isin(["", "na", "none", "no mistake"])]
+        if len(_mk):
+            fix.append(("Mistakes logged", ", ".join(f"{k} \u00d7{v}" for k, v in _mk.value_counts().items())))
+    if rules_known and rules_kept < rules_known:
+        fix.append((f"Rules broken on {rules_known - rules_kept} of {rules_known}", "by your own tag"))
+    if give == give and give > 2 and t._verdicts_on():
+        fix.append(("Define the +1R action before entry",
+                    f"{give:.1f}R given back vs {_fmt_r(net)} banked \u2014 partial or trail, executed mechanically"))
+    if full_n is not None and full_n < n:
+        fix.append((f"Backfill the journal \u2014 {n - full_n} of {n} trades not fully tagged",
+                    "the discipline score can't see unlogged trades"))
+    rx.week_report("", headline, sub, grade if grade else None, stats, _days, keep, fix)
+    if not grade and comps:
+        st.caption(f"{n} trade{'s' if n != 1 else ''} \u2014 too few to grade the week's process.")
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
     # scoreboard — a column the journal never fills (P&L, MFE, lots on an
     # R-only template) is left out, not shown as a column of dashes
@@ -664,7 +714,7 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
         return col in wk.columns and pd.to_numeric(wk[col], errors="coerce").notna().any()
 
     _show_pnl, _show_mfe, _show_lots = _any_num("PnL"), _any_num("MFE (R)"), _any_num("Lot Size")
-    st.markdown("#### Scoreboard — trade by trade")
+    st.markdown("#### Trade by trade")
     rows = ""
     for _, r in wk.iterrows():
         rv = float(r["__rr"])
@@ -731,60 +781,6 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
     # No "Stop trading <session>" fix: one week's session total is one or two
     # trades — it fired on a single stop-out in 37 of 46 demo weeks (STAT-06).
     # The week's sessions are on the scoreboard above.
-    wk_fixes = []
-
-    # management leaks
-    if mfe is not None and mfe.notna().any():
-        leaks = []
-        for _, r in wk.iterrows():
-            mv = pd.to_numeric(pd.Series([r.get("MFE (R)")]), errors="coerce").iloc[0]
-            if pd.isna(mv):
-                continue
-            gv = max(0.0, float(mv) - float(r["__rr"]))
-            if gv >= 0.5:
-                leaks.append((f"{r['__dt'].strftime('%a')} · {str(r.get('Session',''))[:14]}", gv))
-        if leaks:
-            leaks.sort(key=lambda x: -x[1])
-            st.markdown("#### Management leaks — MFE vs closed R")
-            st.markdown("<div style='display:flex;gap:10px;flex-wrap:wrap;margin:4px 0 8px;'>" + "".join(
-                f"<div style='background:#fff;border:1px solid rgba(0,0,0,0.06);border-radius:10px;"
-                f"padding:9px 14px;box-shadow:0 2px 8px rgba(0,0,0,0.03);font-size:13px;'>"
-                f"<span style='color:#64748b;'>{lab}</span> "
-                f"<span style='color:{RED};font-weight:800;'>gave back {gv:.2f}R</span></div>"
-                for lab, gv in leaks[:6]) + "</div>", unsafe_allow_html=True)
-            if give == give and net == net and t._verdicts_on():
-                wk_fixes.append((float(give), "Define the +1R action before entry",
-                                 f"{give:.2f}R given back vs {_fmt_r(net)} banked — "
-                                 "partial or trail, executed mechanically"))
-
-    # discipline: blank manual fields
-    manual = [c for c in ["A+ Setup?", "Conviction (1-5)", "Mental State", "Mistake"] if c in wk.columns]
-    if manual:
-        blank = 0
-        for _, r in wk.iterrows():
-            if all(str(r.get(c, "") or "").strip().lower() in ("", "nan", "none", "na") for c in manual):
-                blank += 1
-        if blank:
-            wk_fixes.append((0.1, f"Backfill the journal — {blank} of {n} trades blank",
-                             "A+, Conviction, Mental State and Mistake are empty; "
-                             "discipline scores can't see unlogged trades"))
-    if wk_fixes:
-        wk_fixes.sort(key=lambda x: -x[0])
-        items = "".join(
-            f"<div style='display:flex;gap:14px;align-items:flex-start;padding:10px 18px;"
-            f"border-bottom:1px solid rgba(148,163,184,0.12);'>"
-            f"<div style='min-width:28px;height:28px;border-radius:50%;background:{PURPLE};"
-            f"color:#fff;font-size:14px;font-weight:800;display:flex;align-items:center;"
-            f"justify-content:center;'>{i}</div>"
-            f"<div><div style='font-size:15px;font-weight:800;color:#0f172a;'>{title}</div>"
-            f"<div style='font-size:13px;color:#64748b;margin-top:1px;'>{sub}</div></div></div>"
-            for i, (_, title, sub) in enumerate(wk_fixes, 1))
-        st.markdown(
-            "<div style='background:#fff;border:1px solid rgba(0,0,0,0.06);border-radius:12px;"
-            "box-shadow:0 2px 10px rgba(0,0,0,0.04);overflow:hidden;margin:14px 0 6px;'>"
-            "<div style='padding:13px 18px 7px;font-size:17px;font-weight:800;color:#0f172a;'>"
-            f"This week's {['','one fix','two fixes','three fixes'][min(len(wk_fixes),3)] if len(wk_fixes)<=3 else str(len(wk_fixes)) + ' fixes'}</div>"
-            + items + "</div>", unsafe_allow_html=True)
 
     # vs last week
     if not pw.empty:

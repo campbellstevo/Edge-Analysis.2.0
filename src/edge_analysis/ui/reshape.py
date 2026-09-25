@@ -562,3 +562,72 @@ def management_overview(df: pd.DataFrame, styler) -> bool:
         st.caption("Same trades, same model as the exit simulator: a target fills if the trade "
                    "reached it before it closed, otherwise a −1R stop if it went there first.")
     return True
+
+
+# ── weekly report card (mockup V7) ───────────────────────────────────────────
+def week_report(label: str, headline: str, sub: str, grade: str | None, stats: list,
+                days: list, keep: list, fix: list) -> None:
+    """One card for the week: the conclusion as a sentence, four numbers,
+    the week day by day, and what to keep and what to fix.
+    stats: [(label, value, sub, colour)]; days: [(Mon, net R or None, n)];
+    keep: [html]; fix: [(title, sub)]."""
+    t = _tokens()
+    tiles = "".join(f'<div class="ea-wk-k"><div class="l">{_h.escape(a)}</div>'
+                    f'<div class="v" style="color:{c};">{_h.escape(str(v))}</div>'
+                    f'<div class="s">{_h.escape(s)}</div></div>' for a, v, s, c in stats)
+    mx = max([abs(r) for _, r, _ in days if r is not None] + [1e-9])
+    cols = ""
+    for d, r, n in days:
+        up = dn = ""
+        if r is not None:
+            hgt = max(3.0, abs(r) / mx * 100)
+            bar = f'<div class="b" style="height:{hgt:.0f}%;background:{GREEN if r >= 0 else RED};"></div>'
+            if r >= 0:
+                up = bar
+            else:
+                dn = bar
+        val = "—" if r is None else fmt_r(r, 1)
+        vc = t["few"] if r is None else (GREEN if r >= 0 else RED)
+        cols += (f'<div class="ea-wk-d"><div class="u">{up}</div><div class="w">{dn}</div>'
+                 f'<div class="x" style="color:{vc};">{_h.escape(val)}</div>'
+                 f'<div class="y">{d} · {n}</div></div>')
+    keep_html = "".join(f"<li>{k}</li>" for k in keep) or "<li>Nothing stood out either way.</li>"
+    fix_html = "".join(f"<li><b>{_h.escape(a)}</b>{(' — ' + _h.escape(b)) if b else ''}</li>"
+                       for a, b in fix) or "<li>Nothing to fix from this week's tags.</li>"
+    badge = (f'<div class="ea-wk-g"><div class="l">PROCESS</div><div class="v">{_h.escape(grade)}</div></div>'
+             if grade else "")
+    extra = f"""
+.ea-wk-top{{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;}}
+.ea-wk-e{{font-size:11.5px;font-weight:700;letter-spacing:.08em;color:{t['muted']};}}
+.ea-wk-h{{font-size:23px;font-weight:800;color:{t['ink']};margin-top:3px;line-height:1.2;}}
+.ea-wk-sub{{font-size:14.5px;color:{t['muted']};margin-top:4px;}}
+.ea-wk-g{{text-align:center;background:{'#3a2a0c' if _dark() else '#fef3c7'};border-radius:14px;padding:8px 16px;flex:none;}}
+.ea-wk-g .l{{font-size:10.5px;font-weight:800;letter-spacing:.08em;color:{'#fbbf24' if _dark() else '#92400e'};}}
+.ea-wk-g .v{{font-size:30px;font-weight:800;line-height:1.1;color:{'#fbbf24' if _dark() else '#92400e'};}}
+.ea-wk-ks{{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:14px 0 10px;}}
+.ea-wk-k{{background:{t['soft']};border:1px solid {t['line']};border-radius:12px;padding:11px 14px;}}
+.ea-wk-k .l{{font-size:11px;font-weight:700;letter-spacing:.06em;color:{t['muted']};text-transform:uppercase;}}
+.ea-wk-k .v{{font-size:23px;font-weight:800;margin-top:1px;}}
+.ea-wk-k .s{{font-size:12px;color:{t['muted']};}}
+.ea-wk-ds{{display:flex;gap:6px;margin-top:4px;}}
+.ea-wk-d{{flex:1;text-align:center;min-width:0;}}
+.ea-wk-d .u,.ea-wk-d .w{{height:58px;display:flex;justify-content:center;}}
+.ea-wk-d .u{{align-items:flex-end;border-bottom:1px solid {t['zero']};}}
+.ea-wk-d .w{{align-items:flex-start;}}
+.ea-wk-d .b{{width:38%;max-width:38px;border-radius:5px;}}
+.ea-wk-d .x{{font-size:13px;font-weight:800;margin-top:2px;}}
+.ea-wk-d .y{{font-size:11.5px;color:{t['muted']};}}
+.ea-wk-kf{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-top:14px;}}
+.ea-wk-kf>div{{border:1px solid {t['line']};border-radius:12px;padding:12px 16px;background:{t['base']};}}
+.ea-wk-kf h5{{margin:0 0 6px;font-size:15px;font-weight:800;color:{t['ink']};}}
+.ea-wk-kf ul{{margin:0;padding-left:18px;font-size:14px;line-height:1.5;color:{t['ink']};}}
+.ea-wk-kf li{{margin:2px 0;}}
+.ea-wk-kf li b{{font-weight:700;}}
+"""
+    eyebrow = (" \u00b7 " + _h.escape(label.upper())) if label else ""
+    html = (f'<div class="ea-rx"><div class="ea-wk-top"><div><div class="ea-wk-e">YOUR WEEK{eyebrow}</div>'
+            f'<div class="ea-wk-h">{_h.escape(headline)}</div><div class="ea-wk-sub">{sub}</div></div>{badge}</div>'
+            f'<div class="ea-wk-ks">{tiles}</div><div class="ea-wk-ds">{cols}</div>'
+            f'<div class="ea-wk-kf"><div><h5 style="color:{GREEN};">✓ Keep doing</h5><ul>{keep_html}</ul></div>'
+            f'<div><h5 style="color:{RED};">✗ Fix next week</h5><ul>{fix_html}</ul></div></div></div>')
+    st.markdown(css(extra) + html, unsafe_allow_html=True)

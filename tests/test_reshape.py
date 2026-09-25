@@ -97,3 +97,14 @@ def test_exit_whatif_uses_the_simulator_model():
     at2 = wf.set_index("T").loc[2.0]
     # 2.5 and 3.0 reached 2R -> +2 each; 0.4 hit its stop -> -1; 1.2 keeps its 0.0
     assert at2["net"] == 3.0 and at2["hit"] == 50.0
+
+
+def test_week_report_says_the_conclusion_first(monkeypatch):
+    out = _capture(monkeypatch)
+    rx.week_report("", "A green week, made by one trade.", "Wednesday's <b>+3.80R</b> carried it.", "C",
+                   [("Net", "+4.6R", "last 4 weeks: −0.5R a week", "#16a34a")],
+                   [("Mon", 1.8, 1), ("Tue", None, 0)], [], [("Mistakes logged", "Overtraded ×1")])
+    html = "".join(out)
+    assert html.index("A green week") < html.index("+4.6R")      # sentence before numbers
+    assert "PROCESS" in html and "Overtraded" in html
+    assert "Nothing stood out either way." in html               # empty keep list says so
