@@ -119,10 +119,11 @@ def _stats_context(df: pd.DataFrame) -> str:
             m_rr = rr[rr.index.isin(dt[m_mask].index)]
             tgt = float(st.session_state.get("ea_m_tgt", 5.0))
             stp = float(st.session_state.get("ea_m_stop", -6.0))
-            cap = int(st.session_state.get("ea_m_cap", 12))
+            cap = int(st.session_state.get("ea_cap_now") or st.session_state.get("ea_m_cap", 12))
+            _capt = f", trade cap {cap}" if st.session_state.get("ea_cap_on_now") else ", no trade cap"
             lines.append(
                 f"THIS MONTH: net {_fmt(float(m_rr.sum()))} over {len(m_rr)} trades "
-                f"(target {tgt:+.1f}R, max loss {stp:+.1f}R, trade cap {cap}). "
+                f"(target {tgt:+.1f}R, max loss {stp:+.1f}R{_capt}). "
                 f"Circuit-breaker rule: stop for the month at {stp:+.0f}R.")
     except Exception:
         pass
@@ -405,12 +406,13 @@ def _builtin_answer(q: str, df: pd.DataFrame):
             m_rr = rr[rr.index.isin(dt[m_mask].index)]
             tgt = float(st.session_state.get("ea_m_tgt", 5.0))
             stp = float(st.session_state.get("ea_m_stop", -6.0))
-            cap = int(st.session_state.get("ea_m_cap", 12))
+            cap = int(st.session_state.get("ea_cap_now") or st.session_state.get("ea_m_cap", 12))
             net_m = float(m_rr.sum())
             out = (f"This month: {_fmt(net_m)} over {len(m_rr)} trades. Target {tgt:+.1f}R "
-                   f"({_fmt(tgt - net_m)} away), stop {stp:+.1f}R ({net_m - stp:.1f}R of room). "
-                   f"Trades: {len(m_rr)} of your {cap} cap")
-            out += " — over it, pace discipline first." if len(m_rr) > cap else "."
+                   f"({_fmt(tgt - net_m)} away), stop {stp:+.1f}R ({net_m - stp:.1f}R of room).")
+            if st.session_state.get("ea_cap_on_now"):
+                out = out[:-1] + f". Trades: {len(m_rr)} of your {cap} cap"
+                out += " — over it, pace discipline first." if len(m_rr) > cap else "."
             return out
 
         if has("breaker", "circuit", "max loss"):

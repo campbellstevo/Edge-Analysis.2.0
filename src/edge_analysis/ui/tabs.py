@@ -885,6 +885,7 @@ def _perf_settings(g: pd.DataFrame):
             st.session_state["ea_m_stop"] = float(_saved["s"])
             if "c" in _saved:
                 st.session_state["ea_m_cap"] = int(_saved["c"])
+            st.session_state["ea_m_cap_on"] = bool(_saved.get("co"))
             if "r" in _saved:
                 st.session_state["ea_m_risk"] = float(_saved["r"])
             if "b" in _saved:
@@ -907,6 +908,8 @@ def _perf_settings(g: pd.DataFrame):
         st.session_state["ea_m_stop"] = float(auto_stop)
     if "ea_m_cap" not in st.session_state:
         st.session_state["ea_m_cap"] = 12
+    if "ea_m_cap_on" not in st.session_state:
+        st.session_state["ea_m_cap_on"] = False   # optional — off until the trader sets one
     if "ea_m_risk" not in st.session_state:
         st.session_state["ea_m_risk"] = 1.0  # the standard, and what most plans say
     _from_journal = _balance_from_journal(g)
@@ -920,6 +923,10 @@ def _perf_settings(g: pd.DataFrame):
     st.session_state["ea_m_tgt"] = float(min(20.0, max(0.5, st.session_state["ea_m_tgt"])))
     st.session_state["ea_m_stop"] = float(min(-1.0, max(-15.0, st.session_state["ea_m_stop"])))
     st.session_state["ea_m_cap"] = int(min(40, max(1, st.session_state["ea_m_cap"])))
+    # plain (non-widget) mirrors: a widget's key is dropped on views that don't
+    # draw it, and Psychology/chat read the cap from other views
+    st.session_state["ea_cap_on_now"] = bool(st.session_state.get("ea_m_cap_on"))
+    st.session_state["ea_cap_now"] = int(st.session_state["ea_m_cap"])
     st.session_state["ea_m_bal"] = float(min(1000000.0, max(1.0, float(st.session_state["ea_m_bal"]))))
     return (float(st.session_state["ea_m_tgt"]),
             float(st.session_state["ea_m_stop"]), auto_tgt)
@@ -1087,9 +1094,15 @@ def _month_card(f: pd.DataFrame, styler) -> None:
                         st.slider("Max monthly loss (R)", min_value=-15.0, max_value=-1.0,
                                   value=float(st.session_state.get("ea_m_stop", -6.0)),
                                   step=0.5, format="%.1f", key="ea_m_stop")
-                        st.slider("Trades per month", min_value=1, max_value=40,
+                        st.toggle("Cap my trades per month",
+                                  value=bool(st.session_state.get("ea_m_cap_on", False)),
+                                  key="ea_m_cap_on",
+                                  help="Optional. When on, trades past the cap count against "
+                                       "your discipline score and the pace shows a warning.")
+                        st.slider("Monthly trade cap", min_value=1, max_value=40,
                                   value=int(st.session_state.get("ea_m_cap", 12)),
-                                  step=1, key="ea_m_cap")
+                                  step=1, key="ea_m_cap",
+                                  help="Used only while the cap above is on.")
                         st.slider("Risk per trade (%)", min_value=0.1, max_value=5.0,
                                   value=float(st.session_state.get("ea_m_risk", 1.0)),
                                   step=0.05, format="%.2f", key="ea_m_risk",
@@ -1181,7 +1194,9 @@ def _month_card(f: pd.DataFrame, styler) -> None:
 
             maxdd = float((md["Cum"].cummax() - md["Cum"]).max())
             cap = int(st.session_state.get("ea_m_cap", 12))
-            pace_c = "#ef4444" if n_tr > cap else "#0f172a"
+            _cap_on = bool(st.session_state.get("ea_m_cap_on"))
+            _over = _cap_on and n_tr > cap
+            pace_c = "#ef4444" if _over else "#0f172a"
             _month_closed = (_now_pct - _stop_pct) <= 0
             chips = [("TO TARGET",
                       "\u2014" if _month_closed
@@ -1193,8 +1208,8 @@ def _month_card(f: pd.DataFrame, styler) -> None:
                      ("STOP ROOM", f"{max(0.0, _now_pct - _stop_pct):.2f}%",
                       "#ef4444" if _now_pct - _stop_pct <= 0
                       else ("#ef4444" if cur - STOP_R < 2 else "#0f172a")),
-                     ("TRADES · PACE", f"{n_tr} of {cap}" + (" ⚠" if n_tr > cap else ""),
-                      "#ef4444" if n_tr > cap else pace_c)]
+                     (("TRADES · PACE", f"{n_tr} of {cap}" + (" ⚠" if _over else ""), pace_c)
+                      if _cap_on else ("TRADES", f"{n_tr}", "#0f172a"))]
             st.markdown(
                 "<div style='display:flex;gap:12px;flex-wrap:wrap;margin-top:12px;'>" + "".join(
                     f"<div style='flex:1;min-width:140px;background:#f8f9fc;border-radius:12px;"
@@ -1994,10 +2009,10 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
     # trades"). The score used to count only overtrading days and revenge
     # entries, so it read 100% beside 14 of 23 rules followed and 18 of 12.
     g = g.sort_values("__ts").reset_index(drop=True)
+    # the monthly cap is optional: it counts only when the trader switched it on
     _saved_plan = st.session_state.get("ea_mplan_saved") or {}
-    _cap_is_theirs = bool(_saved_plan.get("c") or st.session_state.get("ea_plan_user_edited")
-                          or st.session_state.get("ea_demo"))
-    _cap = int(_saved_plan.get("c") or st.session_state.get("ea_m_cap", 12))
+    _cap_is_theirs = bool(st.session_state.get("ea_cap_on_now", _saved_plan.get("co")))
+    _cap = int(st.session_state.get("ea_cap_now") or _saved_plan.get("c") or 12)
 
     # 1. more than OVERTRADE_LIMIT trades in a day — the extra ones
     g["__overtrade"] = (g.groupby("__date").cumcount() + 1) > OVERTRADE_LIMIT
@@ -2084,13 +2099,20 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
               <div class='muted'>add a Rules Followed? tag in Notion</div>
             </div>""", unsafe_allow_html=True)
     with k3:
-        _cc = "#ef4444" if (_month_n > _cap and _cap_is_theirs) else "#4800ff"
-        st.markdown(f"""
+        if _cap_is_theirs:
+            _cc = "#ef4444" if _month_n > _cap else "#4800ff"
+            st.markdown(f"""
             <div class='kpi'>
               <div class='label'>Cap Discipline</div>
               <div class='value' style='color:{_cc}'>{_month_n} of {_cap}</div>
-              <div class='muted'>{"trades this month vs your cap" if _cap_is_theirs
-                                  else "vs the default cap · set yours in ✎ on Performance"}</div>
+              <div class='muted'>trades this month vs your cap</div>
+            </div>""", unsafe_allow_html=True)
+        else:
+            st.markdown(f"""
+            <div class='kpi'>
+              <div class='label'>Trades This Month</div>
+              <div class='value' style='color:#4800ff'>{_month_n}</div>
+              <div class='muted'>no monthly cap · optional, in ✎ on Performance</div>
             </div>""", unsafe_allow_html=True)
     with k4:
         st.markdown(f"""
@@ -2126,7 +2148,7 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
                      "A trade can break more than one.", _kind)
         st.caption("Checked on every trade: " + _checked_txt
                    + ("" if _has_times else " · re-entry after a loss needs entry times in your journal")
-                   + ("" if _cap_is_theirs else " · the monthly cap counts once you set yours"))
+                   + ("" if _cap_is_theirs else " · no monthly cap set (optional)"))
 
         st.markdown("### Discipline score over time")
         _daily = (g.groupby(pd.to_datetime(g["__date"]))

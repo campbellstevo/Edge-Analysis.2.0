@@ -1165,52 +1165,135 @@ def _wallcard_css() -> None:
         </style>""", unsafe_allow_html=True)
 
 
+_GATE_CSS = """
+[data-testid="stElementContainer"]:has(.ea-gate-css) { display: none !important; }
+header[data-testid="stHeader"], [data-testid="stSidebar"] { display: none !important; }
+[data-testid="stAppViewContainer"] {
+    background: radial-gradient(900px 500px at 50% -10%, #ece6ff 0%, rgba(236,230,255,0) 70%),
+                linear-gradient(180deg, #f7f7fc 0%, #eef0f8 100%) !important; }
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-gate) {
+    background: #ffffff; max-width: 440px; margin: 9vh auto 24px; padding: 40px 36px 28px;
+    border-radius: 20px; border: 1px solid #e6e8f0; text-align: center; gap: 12px !important;
+    box-shadow: 0 1px 2px rgba(15,23,42,.04), 0 24px 60px rgba(40,20,120,.10); }
+.ea-gate-logo img { height: 46px; width: auto; display: block; margin: 0 auto 26px; }
+.ea-gate-title { font-size: 25px; font-weight: 800; letter-spacing: -0.015em; color: #0f172a;
+                 line-height: 1.2; margin: 0 0 8px; }
+.ea-gate-sub { font-size: 15px; color: #475569; line-height: 1.55; margin: 0 0 6px; }
+.ea-gate-cta { display: flex; align-items: center; justify-content: center; gap: 10px; height: 50px;
+               border-radius: 12px; background: #4800ff; color: #ffffff !important; font-size: 16px;
+               font-weight: 700; text-decoration: none !important; margin-top: 8px;
+               box-shadow: 0 6px 18px rgba(72,0,255,.25); transition: background 150ms ease; }
+.ea-gate-cta:hover { background: #3a00d1; }
+.ea-gate-cta .n { width: 22px; height: 22px; border-radius: 5px; background: #ffffff; color: #111;
+                  font: 800 14px/22px Georgia, serif; }
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-gate) .stButton button {
+    width: 100% !important; height: 48px !important; border-radius: 12px !important; font-size: 15.5px !important; font-weight: 700 !important;
+    transition: background 150ms ease, border-color 150ms ease !important; }
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-gate) .stButton button[kind="primary"] {
+    background: #4800ff !important; border: none !important; color: #ffffff !important; box-shadow: 0 6px 18px rgba(72,0,255,.25) !important; }
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-gate) .stButton button[kind="primary"]:hover {
+    background: #3a00d1 !important; }
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-gate) .stButton button[kind="secondary"] {
+    background: #ffffff !important; border: 1px solid #d7dbe7 !important; color: #0f172a !important; }
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-gate) .stButton button[kind="secondary"]:hover {
+    border-color: #4800ff !important; color: #4800ff !important; background: #faf8ff !important; }
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-gate) .stButton button[kind="tertiary"] {
+    height: 38px !important; background: transparent !important; border: none !important; color: #4800ff !important; font-weight: 600 !important; font-size: 14.5px !important; }
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-gate) .stButton button :is([data-testid="stMarkdownContainer"], p) {
+    font-size: 15px !important; font-weight: inherit !important; }
+.ea-gate-small { font-size: 13px; color: #64748b; line-height: 1.5; margin: 0; }
+.ea-gate-small a { color: #4800ff; font-weight: 700; text-decoration: none; }
+.ea-gate-who { display: inline-flex; align-items: center; gap: 8px; background: #f1f5f9; color: #475569;
+               font-size: 13px; border-radius: 999px; padding: 6px 12px; margin: 2px auto 4px; }
+.ea-gate-who i { width: 7px; height: 7px; border-radius: 50%; background: #16a34a; display: inline-block; }
+.ea-gate-code { text-align: left; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px;
+                padding: 12px 14px; font: 600 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+                color: #0f172a; user-select: all; word-break: break-all; }
+.ea-gate-note { display: flex; gap: 10px; align-items: flex-start; text-align: left; font-size: 12.5px;
+                color: #64748b; line-height: 1.5; border-top: 1px solid #eef0f5; padding-top: 16px; margin-top: 6px; }
+.ea-gate-note svg { flex: none; width: 16px; height: 16px; margin-top: 1px; stroke: #64748b; fill: none;
+                    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-gate) [data-testid="stExpander"] details {
+    border: none !important; background: transparent !important; }
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-gate) [data-testid="stExpander"] summary {
+    font-size: 13px; color: #64748b; padding: 6px 0 !important; background: transparent !important; }
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-gate) [data-testid="stExpander"] summary p {
+    font-size: 13px !important; color: #64748b !important; }
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-gate) [data-testid="stExpanderDetails"] {
+    text-align: left; font-size: 13.5px; }
+@media (max-width: 480px) {
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-gate) {
+        margin: 4vh 4px 16px; padding: 30px 20px 22px; border-radius: 18px; }
+    .ea-gate-title { font-size: 22px; }
+}
+"""
+
+_LOCK_SVG = ('<svg viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/>'
+             '<path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>')
+
+
+def _gate_css() -> None:
+    """The sign-in / access card. No blank lines inside the <style>: markdown
+    ends a raw-HTML block at the first one and silently drops the rest (the
+    old sign-in CSS lost most of its rules that way)."""
+    css = re.sub(r"\n\s*\n", "\n", _GATE_CSS)
+    st.markdown(f"<div class='ea-gate-css'></div><style>{css}</style>", unsafe_allow_html=True)
+
+
+def _gate_logo_html() -> str:
+    try:
+        from edge_analysis.ui.theme import BAR_LOGO_LIGHT
+        if BAR_LOGO_LIGHT.exists():
+            b64 = base64.b64encode(BAR_LOGO_LIGHT.read_bytes()).decode()
+            return (f"<div class='ea-gate-logo'><img src='data:image/png;base64,{b64}' "
+                    f"alt='Edge Analysis'/></div>")
+    except Exception:
+        pass
+    return f"<div class='ea-gate-logo'>{_wall_logo_html()}</div>"
+
+
 def _render_login_page():
     """Render the login/sign-in page using pure Streamlit components."""
-    _inject_signin_css()
-
     # Get OAuth URL from existing helper
     auth_url = _prepare_oauth_url()
-    # Without OAuth secrets the card still renders (logo, demo) — only the
-    # sign-in link is replaced by a line saying why.
-    _signin_html = (f'<a href="{auth_url}" class="ea-link-btn">Sign in with Notion</a>'
-                    if auth_url else
-                    '<div style="font-size:13px;color:#b45309;margin:4px 0;">'
-                    'Notion sign-in isn\'t set up on this server yet.</div>')
-
-    logo_html = _wall_logo_html()
-    _wallcard_css()
+    _gate_css()
+    _tpl = _runtime_secret("TEMPLATE_URL")
     with st.container():
         st.markdown(
-            f"""<div class="ea-wallcard"></div>{logo_html}
-            <p style="margin:0 0 18px;">Connect your trading journal to unlock insights.</p>""",
+            f"""<div class="ea-gate"></div>{_gate_logo_html()}
+            <div class="ea-gate-title">Your trading journal, analysed</div>
+            <div class="ea-gate-sub">Sign in with Notion and pick your trade journal — see your
+            edge by session, setup and hour, and how well you follow your own rules.</div>""",
             unsafe_allow_html=True)
-        st.button("▶ View the live demo", key="ea_demo_enter_wall",
+        # Without OAuth secrets the card still renders — the sign-in button is
+        # replaced by a line saying why.
+        if auth_url:
+            st.markdown(f'<a href="{auth_url}" class="ea-gate-cta" target="_self">'
+                        f'<span class="n">N</span>Sign in with Notion</a>', unsafe_allow_html=True)
+        else:
+            st.markdown('<p class="ea-gate-small" style="color:#b45309;">Notion sign-in '
+                        'isn\'t set up on this server yet.</p>', unsafe_allow_html=True)
+        st.button("Explore the demo", key="ea_demo_enter_wall", type="secondary",
                   use_container_width=True, on_click=_enter_demo)
-        _tpl = _runtime_secret("TEMPLATE_URL")
-        _tpl_html = (f'<a href="{_tpl}" target="_blank" style="color:#4800ff;'
-                     f'font-weight:700;">Get the free template</a> · ' if _tpl else "")
+        _tpl_html = (f'<a href="{_tpl}" target="_blank">Get the free template</a> · ' if _tpl else "")
         st.markdown(
-            f"""<div style="font-size:12.5px;color:#64748b;margin:6px 0 16px;">
-              Realistic simulated journal — nothing to connect</div>
-            {_signin_html}
-            <div style="font-size:12.5px;color:#64748b;margin:10px 0 0;">
-              {_tpl_html}Notion will show a checklist of your pages —
-              <b>tick your Trade Journal</b> and we find it automatically.</div>
-            <div class="ea-login-note">
-              🔒 You sign in on Notion's own page — the app never sees your Notion password. This browser remembers the sign-in until you disconnect.
-            </div>""",
+            f'<p class="ea-gate-small">{_tpl_html}Notion shows a list of your pages — '
+            f'<b>tick your trade journal</b> and it\'s found automatically.</p>',
             unsafe_allow_html=True)
-    with st.expander("On your phone and it opens the Notion app instead?"):
+        with st.expander("On a phone and it opens the Notion app instead?"):
+            st.markdown(
+                "That happens when your phone's **browser** isn't signed in to Notion — "
+                "the sign-in detour is what switches you to the app. One-time fix:\n\n"
+                "1. In this browser, go to **notion.so** and log in "
+                "(if it offers to open the app, choose *Continue in browser*).\n"
+                "2. Come back here and tap **Sign in with Notion** — you'll get the "
+                "normal page to select your journal.\n\n"
+                "After that, this device stays signed in automatically."
+            )
         st.markdown(
-            "That happens when your phone's **browser** isn't signed in to Notion — "
-            "the sign-in detour is what switches you to the app. One-time fix:\n\n"
-            "1. In this browser, go to **notion.so** and log in "
-            "(if it offers to open the app, choose *Continue in browser*).\n"
-            "2. Come back here and tap **Sign in with Notion** — you'll get the "
-            "normal page to select your template.\n\n"
-            "After that, this device stays signed in automatically."
-        )
+            f'<div class="ea-gate-note">{_LOCK_SVG}<span>You sign in on Notion\'s own page — '
+            'Edge Analysis never sees your Notion password. This browser remembers the '
+            'sign-in until you disconnect.</span></div>', unsafe_allow_html=True)
 
 
 # ------------------------------ Error reports ---------------------------------
@@ -1297,9 +1380,10 @@ _ACCESS_COPY = {
     "not_open": ("Edge Analysis isn't open yet",
                  "It's in a closed beta for the TradingPool community. "
                  "Nothing about your account was saved."),
-    "no_owner": ("Edge Analysis isn't open yet",
-                 "Access is owner-only and no owner is set. Owner: add EA_OWNER "
-                 "(your Notion sign-in email) to the app's secrets."),
+    "no_owner": ("Almost there",
+                 "This site only lets its owner in, and doesn't know who that is yet. "
+                 "If that's you, add this line to the app's Secrets in Streamlit "
+                 "(your app → Settings → Secrets), then reload:"),
     "unverified": ("We couldn't confirm your Notion account",
                    "Notion didn't answer in time. Nothing was saved — please sign in again."),
 }
@@ -1312,23 +1396,27 @@ def _use_other_account() -> None:
 
 def _render_access_page(denied: dict) -> None:
     """Shown instead of the app to anyone the access switch does not admit."""
-    _inject_signin_css()
-    _wallcard_css()
+    _gate_css()
     why = (denied or {}).get("why") or "not_open"
     title, body = _ACCESS_COPY.get(why, _ACCESS_COPY["not_open"])
-    who = html.escape(str((denied or {}).get("email") or ""))
-    who_html = (f'<p style="font-size:12.5px;color:#64748b;margin:0 0 16px;">'
-                f'Signed in to Notion as {who}</p>' if who else "")
+    email = str((denied or {}).get("email") or "")
+    who = html.escape(email)
     with st.container():
         st.markdown(
-            f'''<div class="ea-wallcard"></div>{_wall_logo_html()}
-            <h3 style="margin:14px 0 8px;">{title}</h3>
-            <p style="margin:0 0 14px;">{body}</p>{who_html}''',
+            f"""<div class="ea-gate"></div>{_gate_logo_html()}
+            <div class="ea-gate-title">{title}</div>
+            <div class="ea-gate-sub">{body}</div>""",
             unsafe_allow_html=True)
-        st.button("▶ View the live demo", key="ea_demo_enter_denied",
+        if why == "no_owner":
+            st.markdown(f'<div class="ea-gate-code">EA_OWNER = "{who or "you@example.com"}"</div>',
+                        unsafe_allow_html=True)
+        if who:
+            st.markdown(f'<div><span class="ea-gate-who"><i></i>Signed in to Notion as '
+                        f'{who}</span></div>', unsafe_allow_html=True)
+        st.button("Explore the demo", key="ea_demo_enter_denied", type="primary",
                   use_container_width=True, on_click=_enter_demo)
         if why != "paused":
-            st.button("Use a different Notion account", key="ea_other_account",
+            st.button("Use a different Notion account", key="ea_other_account", type="tertiary",
                       use_container_width=True, on_click=_use_other_account)
 
 
@@ -2404,7 +2492,7 @@ def _whoop_bootstrap() -> None:
         st.session_state["whoop_auth_url"] = whoop.authorize_url(cid, ruri, state)
 
 _DEMO_RESET_KEYS = ("ea_mplan_saved", "ea_filters_saved", "ea_m_tgt", "ea_m_stop",
-                    "ea_m_cap", "ea_m_bal", "ea_m_bal_auto", "ea_m_bal_src",
+                    "ea_m_cap", "ea_m_cap_on", "ea_cap_on_now", "ea_cap_now", "ea_m_bal", "ea_m_bal_auto", "ea_m_bal_src",
                     "ea_plan_user_edited", "ea_filters_applied", "proj_ran",
                     "ea_chat", "ea_last_sync")
 
@@ -2419,6 +2507,9 @@ def _enter_demo() -> None:
     st.session_state["ea_m_tgt"] = 5.0
     st.session_state["ea_m_stop"] = -6.0
     st.session_state["ea_m_cap"] = 20
+    st.session_state["ea_m_cap_on"] = True   # the demo shows the optional cap in use
+    st.session_state["ea_cap_on_now"] = True
+    st.session_state["ea_cap_now"] = 20
     st.session_state[SessionKeys.NAV_TARGET] = PageNames.DASHBOARD
 
 
@@ -2515,6 +2606,9 @@ def main() -> None:
             _pb["s"] = float(st.session_state["ea_m_stop"])
         if "ea_m_cap" in st.session_state:
             _pb["c"] = int(st.session_state["ea_m_cap"])
+        # the cap is optional: "co" says whether it's on. A plan saved before
+        # this flag existed has no "co" and reads as off.
+        _pb["co"] = 1 if st.session_state.get("ea_m_cap_on") else 0
         # b/d is a HAND-TYPED anchor for people without a synced balance.
         # When the journal stamps the balance, the journal is the source of
         # truth — never persist it as an anchor (and heal any phantom one).
