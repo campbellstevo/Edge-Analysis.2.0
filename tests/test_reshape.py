@@ -108,3 +108,15 @@ def test_week_report_says_the_conclusion_first(monkeypatch):
     assert html.index("A green week") < html.index("+4.6R")      # sentence before numbers
     assert "PROCESS" in html and "Overtraded" in html
     assert "Nothing stood out either way." in html               # empty keep list says so
+
+
+def test_record_stats_drawdown_and_streaks():
+    r = pd.Series([1.0, 2.0, -1.0, -1.0, 0.0, -1.0, 3.0, 1.0, -1.0])
+    d = pd.Series(pd.date_range("2026-09-01", periods=len(r)))
+    s = rx.record_stats(r, d)
+    assert s["net"] == 3.0 and s["n"] == 9
+    assert s["maxdd"] == -3.0                           # peak +3 after trade 2, trough 0 after trade 6
+    assert s["dd_from"] == d[1] and s["dd_to"] == d[5] and s["dd_back"] == d[6]
+    assert s["best_w"] == 2 and s["best_l"] == 3        # the scratch breaks no streak
+    assert s["cur"] == -1
+    assert round(s["win"]) == 44 and round(s["be"]) == 11

@@ -631,3 +631,175 @@ def week_report(label: str, headline: str, sub: str, grade: str | None, stats: l
             f'<div class="ea-wk-kf"><div><h5 style="color:{GREEN};">✓ Keep doing</h5><ul>{keep_html}</ul></div>'
             f'<div><h5 style="color:{RED};">✗ Fix next week</h5><ul>{fix_html}</ul></div></div></div>')
     st.markdown(css(extra) + html, unsafe_allow_html=True)
+
+
+# ── the whole record (mockup V1, added under Performance's own cards) ───────
+def tiles(stats: list) -> None:
+    """A row of number tiles that wraps on phones. stats: [(label, value, sub, colour)]."""
+    t = _tokens()
+    extra = f"""
+.ea-tl{{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:4px 0 14px;}}
+.ea-tl>div{{background:{t['soft']};border:1px solid {t['line']};border-radius:12px;padding:11px 14px;}}
+.ea-tl .l{{font-size:11px;font-weight:700;letter-spacing:.06em;color:{t['muted']};text-transform:uppercase;}}
+.ea-tl .v{{font-size:22px;font-weight:800;margin-top:1px;}}
+.ea-tl .s{{font-size:12px;color:{t['muted']};line-height:1.35;}}
+"""
+    body = "".join(f'<div><div class="l">{_h.escape(a)}</div><div class="v" style="color:{c};">{_h.escape(str(v))}</div>'
+                   f'<div class="s">{_h.escape(s)}</div></div>' for a, v, s, c in stats)
+    st.markdown(css(extra) + f'<div class="ea-rx ea-tl">{body}</div>', unsafe_allow_html=True)
+
+
+def record_stats(r: pd.Series, dates: pd.Series) -> dict:
+    """Headline numbers over every trade, in order. Wins are > +0.15R and
+    losses < −0.15R; a scratch breaks no streak."""
+    r = pd.to_numeric(r, errors="coerce").reset_index(drop=True)
+    dates = pd.to_datetime(dates).reset_index(drop=True)
+    ok = r.notna()
+    r, dates = r[ok].reset_index(drop=True), dates[ok].reset_index(drop=True)
+    wins, losses = r[r > 0.15], r[r < -0.15]
+    n = len(r)
+    cum = r.cumsum()
+    dd = cum - cum.cummax()
+    out = dict(n=n, net=float(r.sum()), exp=float(r.mean()) if n else 0.0,
+               win=100.0 * len(wins) / n if n else 0.0, be=100.0 * (n - len(wins) - len(losses)) / n if n else 0.0,
+               pf=(float(wins.sum() / -losses.sum()) if len(losses) and losses.sum() else None),
+               avg_w=float(wins.mean()) if len(wins) else None, avg_l=float(losses.mean()) if len(losses) else None,
+               maxdd=float(dd.min()) if n else 0.0, dd_from=None, dd_to=None, dd_back=None)
+    if n and out["maxdd"] < 0:
+        i_to = int(dd.idxmin())
+        i_from = int(cum.iloc[: i_to + 1].idxmax())
+        back = cum.iloc[i_to:][cum.iloc[i_to:] >= cum.iloc[i_from]]
+        out.update(dd_from=dates[i_from], dd_to=dates[i_to],
+                   dd_back=(dates[int(back.index[0])] if len(back) else None))
+    seq = [1 if x > 0.15 else (-1 if x < -0.15 else 0) for x in r]
+    bw = bl = cw = cl = 0
+    for s in seq:
+        if s == 1:
+            cw, cl = cw + 1, 0
+        elif s == -1:
+            cl, cw = cl + 1, 0
+        bw, bl = max(bw, cw), max(bl, cl)
+    cur = 0
+    for s in reversed(seq):
+        if s == 0:
+            continue
+        if cur == 0 or (s > 0) == (cur > 0):
+            cur += s
+        else:
+            break
+    out.update(best_w=bw, best_l=bl, cur=cur)
+    return out
+
+
+def _calendar(g: pd.DataFrame, month: pd.Period) -> str:
+    t = _tokens()
+    day = g.groupby(g["__d"].dt.normalize())["__r"].agg(["sum", "size"])
+    start = month.start_time.normalize()
+    days = pd.date_range(start, month.end_time.normalize())
+    today = pd.Timestamp.now().normalize()
+    head = "".join(f'<div class="h">{d}</div>' for d in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])
+    cells = '<div></div>' * int(start.weekday())
+    for x in days:
+        if x in day.index:
+            s, k = float(day.loc[x, "sum"]), int(day.loc[x, "size"])
+            bg, fg = heat(s, 3.0)
+            inner = f'<div class="v">{_h.escape(fmt_r(s, 1))}</div><div class="n">{k} trade{"s" if k != 1 else ""}</div>'
+            cells += f'<div class="c" style="background:{bg};color:{fg};"><div class="d">{x.day}</div>{inner}</div>'
+        else:
+            quiet = x.weekday() >= 5 or x > today
+            cells += (f'<div class="c e{" q" if quiet else ""}"><div class="d">{x.day}</div></div>')
+    extra = f"""
+.ea-cal{{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px;}}
+.ea-cal .h{{font-size:11.5px;font-weight:700;color:{t['muted']};text-align:center;}}
+.ea-cal .c{{border-radius:9px;min-height:62px;padding:5px 7px;border:1px solid {t['line']};}}
+.ea-cal .c.e{{background:{t['base']};color:{t['few']};}}
+.ea-cal .c.e.q{{background:{t['soft']};}}
+.ea-cal .d{{font-size:11.5px;font-weight:700;opacity:.8;}}
+.ea-cal .v{{font-size:15px;font-weight:800;margin-top:2px;white-space:nowrap;}}
+.ea-cal .n{{font-size:10.5px;opacity:.85;}}
+@media (max-width:640px){{.ea-cal .c{{min-height:46px;padding:3px 4px;}} .ea-cal .v{{font-size:11.5px;}} .ea-cal .n{{display:none;}}}}
+"""
+    return css(extra) + f'<div class="ea-rx ea-cal">{head}{cells}</div>'
+
+
+def record_card(g: pd.DataFrame, styler) -> None:
+    """Mockup V1 as one card under the month and all-time cards: six numbers,
+    the whole equity curve with its drawdown, the month as a calendar, and
+    where trades land. R only."""
+    import altair as alt
+    g = g.copy()
+    g["__r"] = pd.to_numeric(g["Closed RR"] if "Closed RR" in g.columns else g.get("PnL_from_RR"), errors="coerce")
+    g["__d"] = pd.to_datetime(g["__Date"])
+    g = g[g["__r"].notna()].sort_values("__d").reset_index(drop=True)
+    if len(g) < 5:
+        return
+    s = record_stats(g["__r"], g["__d"])
+    f = lambda d: d.strftime("%d %b") if d is not None else ""
+    dd_sub = ("no drawdown yet" if s["maxdd"] >= 0 else
+              f"{f(s['dd_from'])} → {f(s['dd_to'])}, " + (f"back by {f(s['dd_back'])}" if s["dd_back"] is not None
+                                                             else "not yet recovered"))
+    cur = s["cur"]
+    streak_v = ("none" if cur == 0 else f"{abs(cur)} {'win' if cur > 0 else 'loss'}{'' if abs(cur) == 1 else ('s' if cur > 0 else 'es')}")
+    tiles([
+        ("Net", fmt_r(s["net"], 1), f"{s['n']} trades", GREEN if s["net"] >= 0 else RED),
+        ("Expectancy", fmt_r(s["exp"]), "per trade", GREEN if s["exp"] >= 0 else RED),
+        ("Win rate", f"{s['win']:.0f}%", f"of all trades · {s['be']:.0f}% break-even", "#4800ff"),
+        ("Profit factor", "—" if s["pf"] is None else f"{s['pf']:.2f}",
+         (f"avg win {fmt_r(s['avg_w'], 1)} · loss {fmt_r(s['avg_l'], 1)}" if s["avg_w"] is not None and s["avg_l"] is not None else ""),
+         "#4800ff"),
+        ("Max drawdown", fmt_r(s["maxdd"], 1), dd_sub, RED if s["maxdd"] < 0 else GREEN),
+        ("Streak", streak_v, f"longest: {s['best_w']} wins · {s['best_l']} losses",
+         GREEN if cur > 0 else (RED if cur < 0 else "#64748b")),
+    ])
+    # equity curve + drawdown, one trade per point, shared time axis
+    cum = g["__r"].cumsum()
+    eq = pd.DataFrame({"Date": g["__d"].dt.strftime("%Y-%m-%dT%H:%M:%S"), "R": cum.round(2),
+                       "DD": (cum - cum.cummax()).round(2), "Trade": g["__r"].round(2)})
+    vals = eq.to_dict("records")
+    x = alt.X("Date:T", title=None, axis=alt.Axis(format="%b %y", labelOverlap=True, tickCount="month"))
+    area = alt.Chart(alt.Data(values=vals)).mark_area(color=PURPLE, opacity=0.08).encode(x=x, y=alt.Y("R:Q", title="Running R"))
+    line = alt.Chart(alt.Data(values=vals)).mark_line(color=PURPLE, strokeWidth=2).encode(
+        x=x, y=alt.Y("R:Q", title="Running R"),
+        tooltip=[alt.Tooltip("Date:T", format="%a %d %b %Y"), alt.Tooltip("Trade:Q", title="This trade (R)"),
+                 alt.Tooltip("R:Q", title="Running R")])
+    ddc = alt.Chart(alt.Data(values=vals)).mark_area(color=RED, opacity=0.25, line={"color": RED, "strokeWidth": 1}).encode(
+        x=alt.X("Date:T", title=None, axis=alt.Axis(format="%b %y", labelOverlap=True, tickCount="month")),
+        y=alt.Y("DD:Q", title="Drawdown"), tooltip=[alt.Tooltip("Date:T", format="%a %d %b %Y"),
+                                                     alt.Tooltip("DD:Q", title="Below peak (R)")])
+    st.markdown("#### The whole record")
+    st.caption("Running R across every trade, with how far below its last peak it sat underneath.")
+    chart = alt.vconcat(alt.layer(area, line).properties(height=230), ddc.properties(height=80),
+                        spacing=6).resolve_scale(x="shared")
+    st.altair_chart(styler(chart), use_container_width=True)
+
+    c1, c2 = st.columns(2)
+    with c1:
+        months = sorted(g["__d"].dt.to_period("M").unique())[::-1]
+        lab = {m.strftime("%B %Y"): m for m in months}
+        st.markdown("#### Calendar")
+        pick = st.selectbox("Month", list(lab), index=0, key="ea_cal_month", label_visibility="collapsed")
+        st.markdown(_calendar(g, lab[pick]), unsafe_allow_html=True)
+        _dsum = g.groupby(g["__d"].dt.normalize())["__r"].sum()
+        st.caption(f"Green days {int((_dsum > 0).sum())} of {len(_dsum)} traded, all time.")
+    with c2:
+        import numpy as np
+        st.markdown("#### Where your trades land")
+        top = float(max(1.25, np.ceil((g["__r"].quantile(0.99) + 0.25) * 2) / 2))
+        edges = np.arange(-1.25, top + 0.26, 0.5)
+        clipped = g["__r"].clip(edges[0] + 0.01, edges[-1] - 0.01)
+        cnt, _ = np.histogram(clipped, bins=edges)
+        hv = [dict(c=float(edges[i] + 0.25), lab=("0" if abs(edges[i] + 0.25) < 0.01 else f"{edges[i] + 0.25:+.1f}"),
+                   n=int(cnt[i]), k=("Stops" if edges[i] + 0.25 <= -0.5 else ("Winners" if edges[i] + 0.25 >= 0.5 else "Scratch")))
+              for i in range(len(cnt))]
+        order = [h["lab"] for h in hv]
+        hx = alt.X("lab:N", sort=order, title="R per trade", axis=alt.Axis(labelAngle=0))
+        bars = alt.Chart(alt.Data(values=hv)).mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4).encode(
+            x=hx, y=alt.Y("n:Q", title="Trades"),
+            color=alt.Color("k:N", legend=None, scale=alt.Scale(domain=["Stops", "Scratch", "Winners"],
+                                                                range=[RED, "#94a3b8", GREEN])),
+            tooltip=[alt.Tooltip("lab:N", title="Around (R)"), alt.Tooltip("n:Q", title="Trades")])
+        txt = alt.Chart(alt.Data(values=[h for h in hv if h["n"]])).mark_text(dy=-7, fontSize=11, fontWeight="bold", color="#64748b").encode(
+            x=hx, y="n:Q", text="n:Q")
+        st.altair_chart(styler(alt.layer(bars, txt).properties(height=250)), use_container_width=True)
+        st.caption(f"Median trade {fmt_r(float(g['__r'].median()))}. Most trades are a stop or a scratch; "
+                   "the edge lives in the right-hand tail.")

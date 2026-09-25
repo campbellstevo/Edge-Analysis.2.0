@@ -5486,6 +5486,16 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
         _month_card(_f_track, styler)
         _targets_tab(_track_only(df_all_safe)[0], styler)
         _alltime_card(_f_track, styler)
+        # Mockup V1, added under his own cards (his call, 25 Sep: "I do like
+        # my current performance tab"): the whole record in one card
+        _g_rec = _perf_prep(_f_track)
+        if _g_rec is not None and len(_g_rec) >= 5:
+            with st.container(border=True):
+                st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
+                _card_header("Your record", "Every trade so far \u2014 the curve, its drawdowns, "
+                                            "the calendar and where trades land. R only.")
+                from edge_analysis.ui import reshape as rx
+                rx.record_card(_g_rec, styler)
         if _more_detail_has_content(f_perf, df_all_safe):
             with st.container(border=True):
                 st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
