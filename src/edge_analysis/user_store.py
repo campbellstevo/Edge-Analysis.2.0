@@ -66,17 +66,76 @@ def _normalise(data: Any) -> Dict[str, Any]:
 
 # ----------------------------- Notion mirror ----------------------------------
 
+# One Notion code block holds at most 100 rich-text pieces of 2000 characters.
+# The store is written compact; a store that no longer fits is NOT written
+# (a cut-off JSON restores nobody after a redeploy) and the failure is reported.
+_CHUNK = 2000
+_MAX_CHUNKS = 100
+MIRROR_CAPACITY = _CHUNK * _MAX_CHUNKS
+_MIRROR_STATUS: Dict[str, Any] = {"ok_at": None, "error": None, "chars": 0}
+
+
+def _report(msg: str) -> None:
+    """A store failure is loud: the server log, Sentry when it's on, and the
+    owner's ⋯ menu (mirror_status)."""
+    _MIRROR_STATUS["error"] = f"{time.strftime('%d %b %H:%M')} {msg}"
+    try:
+        import sys
+        print(f"[user_store] {msg}", file=sys.stderr)
+    except Exception:
+        pass
+    if os.environ.get("_EA_SENTRY_ON"):
+        try:
+            import sentry_sdk
+            sentry_sdk.capture_message(f"user store: {msg}", level="error")
+        except Exception:
+            pass
+
+
+def _notion_call(method: str, url: str, **kw):
+    """One Notion request that honours a 429: up to three tries, waiting what
+    Notion asks (Retry-After) or 1s, 2s. Returns the response, or None when
+    the network failed."""
+    import requests
+    for attempt in range(3):
+        try:
+            r = getattr(requests, method)(url, timeout=8, **kw)
+        except Exception as e:  # network
+            if attempt == 2:
+                _report(f"{method.upper()} failed: {type(e).__name__}")
+                return None
+            time.sleep(2 ** attempt)
+            continue
+        if r.status_code != 429 or attempt == 2:
+            return r
+        try:
+            wait = float(r.headers.get("Retry-After") or 0) or 2 ** attempt
+        except (TypeError, ValueError, AttributeError):
+            wait = 2 ** attempt
+        time.sleep(min(wait, 8))
+    return None
+
+
+def mirror_status() -> Dict[str, Any]:
+    """For the owner: how full the mirror is and whether the last write held."""
+    return dict(_MIRROR_STATUS, capacity=MIRROR_CAPACITY)
+
+
 def _mirror_pull() -> Optional[Dict[str, Any]]:
-    """Best-effort restore of the whole store from the mirror page."""
+    """Restore the whole store from the mirror page."""
     global _MIRROR_BLOCK_ID
     page, tok = _mirror_cfg()
     if not page:
         return None
+    r = _notion_call("get", f"https://api.notion.com/v1/blocks/{page}/children",
+                     params={"page_size": 100},
+                     headers={"Authorization": f"Bearer {tok}", **_NV})
+    if r is None:
+        return None
+    if not r.ok:
+        _report(f"mirror read refused: HTTP {r.status_code}")
+        return None
     try:
-        import requests
-        r = requests.get(f"https://api.notion.com/v1/blocks/{page}/children",
-                         params={"page_size": 100},
-                         headers={"Authorization": f"Bearer {tok}", **_NV}, timeout=8)
         for blk in (r.json() or {}).get("results", []):
             if blk.get("type") == "code":
                 _MIRROR_BLOCK_ID = blk.get("id")
@@ -85,41 +144,54 @@ def _mirror_pull() -> Optional[Dict[str, Any]]:
                 if txt.strip().startswith("{"):
                     return _normalise(json.loads(txt))
                 return None
-    except Exception:
-        pass
+    except ValueError:
+        _report("mirror unreadable: the stored JSON does not parse")
+    except Exception as e:
+        _report(f"mirror read failed: {type(e).__name__}")
     return None
 
 
 def _mirror_push(store: Dict[str, Any]) -> None:
-    """Best-effort mirror of the whole store to one code block on the page."""
+    """Mirror the whole store to one code block on the page."""
     global _MIRROR_BLOCK_ID
     page, tok = _mirror_cfg()
     if not page:
         return
-    try:
-        import requests
-        raw = json.dumps(store, sort_keys=True)
-        chunks = [raw[i:i + 1800] for i in range(0, len(raw), 1800)] or [raw]
-        rich = [{"type": "text", "text": {"content": c}} for c in chunks[:98]]
-        hdr = {"Authorization": f"Bearer {tok}", "Content-Type": "application/json", **_NV}
-        if _MIRROR_BLOCK_ID is None:
-            _mirror_pull()  # discovers the block id if the page has one
-        if _MIRROR_BLOCK_ID:
-            requests.patch(f"https://api.notion.com/v1/blocks/{_MIRROR_BLOCK_ID}",
-                           headers=hdr,
-                           json={"code": {"rich_text": rich, "language": "json"}},
-                           timeout=8)
-        else:
-            r = requests.patch(f"https://api.notion.com/v1/blocks/{page}/children",
-                               headers=hdr,
-                               json={"children": [{"object": "block", "type": "code",
-                                     "code": {"rich_text": rich, "language": "json"}}]},
-                               timeout=8)
-            for blk in (r.json() or {}).get("results", []):
-                if blk.get("type") == "code":
-                    _MIRROR_BLOCK_ID = blk.get("id")
-    except Exception:
-        pass
+    raw = json.dumps(store, sort_keys=True, separators=(",", ":"))
+    _MIRROR_STATUS["chars"] = len(raw)
+    if len(raw) > MIRROR_CAPACITY:
+        _report(f"mirror FULL: {len(store.get('users', {}))} users, {len(raw)} chars "
+                f"> {MIRROR_CAPACITY}; not written — the last good copy stands. "
+                "Move the user store to a real database (roadmap 5.5).")
+        return
+    chunks = [raw[i:i + _CHUNK] for i in range(0, len(raw), _CHUNK)] or [raw]
+    rich = [{"type": "text", "text": {"content": c}} for c in chunks]
+    hdr = {"Authorization": f"Bearer {tok}", "Content-Type": "application/json", **_NV}
+    if _MIRROR_BLOCK_ID is None:
+        _mirror_pull()  # discovers the block id if the page has one
+    if _MIRROR_BLOCK_ID:
+        r = _notion_call("patch", f"https://api.notion.com/v1/blocks/{_MIRROR_BLOCK_ID}",
+                         headers=hdr,
+                         json={"code": {"rich_text": rich, "language": "json"}})
+    else:
+        r = _notion_call("patch", f"https://api.notion.com/v1/blocks/{page}/children",
+                         headers=hdr,
+                         json={"children": [{"object": "block", "type": "code",
+                               "code": {"rich_text": rich, "language": "json"}}]})
+        if r is not None and r.ok:
+            try:
+                for blk in (r.json() or {}).get("results", []):
+                    if blk.get("type") == "code":
+                        _MIRROR_BLOCK_ID = blk.get("id")
+            except Exception:
+                pass
+    if r is None:
+        return  # already reported
+    if not r.ok:
+        _report(f"mirror write refused: HTTP {r.status_code}")
+        return
+    _MIRROR_STATUS["ok_at"] = time.strftime("%d %b %H:%M")
+    _MIRROR_STATUS["error"] = None
 
 
 # ----------------------------- disk io ----------------------------------------
@@ -156,7 +228,8 @@ def _write_disk(store: Dict[str, Any]) -> None:
 
 
 # Kept once, read by nothing (SEC-09): purged from every record on each save.
-_DROPPED_FIELDS = ("name", "email")
+# A Notion workspace name is usually the person's name ("Jane's Notion").
+_DROPPED_FIELDS = ("name", "email", "workspace")
 
 
 def _save_raw_store(store: Dict[str, Any]) -> None:
@@ -184,7 +257,7 @@ def upsert_user(user_id: str, **fields: Any) -> Dict[str, Any]:
         for k, v in fields.items():
             if v is not None:
                 rec[k] = v
-        rec["last_updated"] = time.time()
+        rec["last_updated"] = int(time.time())  # whole seconds: the mirror has a size cap
         _save_raw_store(store)
         return rec
 

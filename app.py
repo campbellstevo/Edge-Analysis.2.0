@@ -417,8 +417,8 @@ def _complete_login_with_token(access_token: str, workspace_name: Optional[str] 
 
     if user_id:
         st.session_state[SessionKeys.USER_ID] = user_id
-        # No name or email: nothing reads them back (SEC-09).
-        upsert_user(user_id, workspace=workspace_name)
+        # No name, email or workspace name: nothing reads them back (SEC-09).
+        upsert_user(user_id)
         rec = get_user(user_id) or {}
         dbid = rec.get("db_id")
         if dbid:

@@ -417,6 +417,7 @@ def render_filters(
             st.button("Send a test error", key="mm_testerr", use_container_width=True,
                       on_click=_flag, args=("ea_send_test_error",))
             st.caption(_server_clock_line())
+            st.caption(_store_line())
     if st.session_state.pop("ea_show_qr", False):
         if _qr_dialog is not None:
             _qr_dialog()
@@ -467,6 +468,21 @@ def _server_clock_line() -> str:
     local = _os.environ.get("EDGE_LOCAL_TZ") or "Australia/Sydney (default)"
     return (f"Server clock {now:%a %d %b %H:%M} {now.tzname() or _time.tzname[0]} · "
             f"app zone {local}")
+
+
+def _store_line() -> str:
+    """Owner-only: the user store's size against its mirror ceiling, and
+    whether the last mirror write held (roadmap 1.13)."""
+    try:
+        from edge_analysis.user_store import list_users, mirror_status
+        n = len(list_users())
+        ms = mirror_status()
+        pct = int(round(100 * ms.get("chars", 0) / max(1, ms["capacity"])))
+        state = (f"FAILED {ms['error']}" if ms.get("error")
+                 else (f"saved {ms['ok_at']}" if ms.get("ok_at") else "no write yet this run"))
+        return f"User store {n} users \u00b7 mirror {pct}% full \u00b7 {state}"
+    except Exception as e:
+        return f"User store unreadable: {type(e).__name__}"
 
 
 def _phone_qr_body() -> None:
