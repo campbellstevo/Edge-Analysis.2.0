@@ -65,6 +65,19 @@ def test_no_phantom_none_session():
     assert normalize_session("London") == "London"
 
 
+def test_date_only_and_open_rows_are_not_counted_as_trades(monkeypatch):
+    # DATA-03: None went through astype(str) as "None", so every date-only
+    # row counted as a complete trade (Sept read 19 trades; win rate diluted).
+    import data_loading as dl
+    salty_fixture.FakeNotionClient.pages = salty_fixture.salty_pages()
+    monkeypatch.setattr(na, "Client", salty_fixture.FakeNotionClient)
+    df = dl._load_live_df_impl("test-token", "test-db")
+    assert int(df["Is Complete"].sum()) == 120          # the closed trades, exactly
+    assert len(df) == 123                               # + 3 open; date-only rows gone
+    open_rows = df[~df["Is Complete"]]
+    assert open_rows["Entry Model"].notna().all()       # what stays open is a real entry
+
+
 @pytest.fixture
 def salty_member(monkeypatch):
     salty_fixture.FakeNotionClient.pages = salty_fixture.salty_pages()

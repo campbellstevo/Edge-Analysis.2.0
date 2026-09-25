@@ -5,11 +5,25 @@ import pandas as pd
 from notion_client import Client
 
 # ---- simple property flattener (Notion → plain dict) ----
-def _flatten_props(props: Dict[str, Any]) -> Dict[str, Any]:
+def _formula_value(v: Dict[str, Any]) -> Any:
+    f = v.get("formula") or {}
+    ft = f.get("type")
+    if ft == "date":
+        return (f.get("date") or {}).get("start")
+    val = f.get(ft) if ft else None
+    return val.strip() if isinstance(val, str) else val
+
+
+def _flatten_props(props: Dict[str, Any], formulas: bool = False) -> Dict[str, Any]:
+    """formulas=False keeps every formula column empty — the behaviour the
+    owner's journals were built on. Salty's template computes Deviation Score
+    as a formula, so its loader asks for the values (formulas=True)."""
     out: Dict[str, Any] = {}
     for k, v in props.items():
         t = v.get("type")
-        if t == "title":
+        if t == "formula" and formulas:
+            out[k] = _formula_value(v)
+        elif t == "title":
             out[k] = " ".join([r.get("plain_text", "") for r in v.get("title", [])]).strip()
         elif t == "rich_text":
             out[k] = " ".join([r.get("plain_text", "") for r in v.get("rich_text", [])]).strip()
@@ -345,6 +359,8 @@ def load_trades_from_notion(token: str, database_id: str, page_size: int = 100) 
     schema = detect_schema(df)
 
     if schema == "salty":
+        df = pd.DataFrame([_flatten_props(r.get("properties", {}), formulas=True)
+                           for r in results])
         df = normalise_salty_df(df)
         # After normalisation, "Closed RR" came from "R Result"
         rr_source = ["Closed RR"]

@@ -24,6 +24,13 @@ def normalize_session(s:str)->str:
     if re.search(r"asia|asian|tokyo|sydney",t): return "Asia"
     return t.title()
 
+def smart_title(s: str) -> str:
+    """Title-case, but keep a word the trader capitalised on purpose: FBoS,
+    NC, +S. Plain .title() showed a member's "FBoS" as "Fbos" and "NC Model"
+    as "Nc Model"; lower-case words still merge ("no close" = "No Close")."""
+    return " ".join(w if any(c.isupper() for c in w[1:]) else w.title()
+                    for w in str(s).split())
+
 def _split_listish(x):
     if pd.isna(x): return []
     s=str(x).strip()
@@ -43,7 +50,7 @@ def normalize_entry_model(x:str)->str:
     if "internal no close" in t: return "Internal No Close"
     if "external no close" in t: return "External No Close"
     if t in {"yes","no","n/a","na"}: return ""
-    return t.title()
+    return smart_title(x.strip())
 
 def build_models_list(entry_model, multi_entry):
     models=_split_listish(entry_model)+_split_listish(multi_entry)

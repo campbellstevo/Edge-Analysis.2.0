@@ -18,6 +18,7 @@ from edge_analysis.ui.components import (
 )
 
 from edge_analysis.data.template_adapter import adapt_auto
+from edge_analysis.core.parsing import smart_title
 
 CONFLUENCE_OPTIONS = ["DIV", "Sweep", "DIV & Sweep"]
 
@@ -132,6 +133,14 @@ def _insight_box_raw(body: str, kind: str = "info") -> None:
     )
 
 
+def _clean_text(v) -> str:
+    """A cell as display text; missing (None, NaN, "nan") is "", never "nan"."""
+    if v is None or (isinstance(v, float) and pd.isna(v)):
+        return ""
+    s = str(v).strip()
+    return "" if s.lower() in ("nan", "none", "null", "nat") else s
+
+
 def _asset_label(name: str) -> str:
     return "GOLD" if str(name) == "Gold" else str(name)
 
@@ -154,7 +163,9 @@ def _coerce_datetime_series(df: pd.DataFrame, tz_name: str = "UTC"):
         "Timestamp", "Created", "Created At", "Entry Time (UTC)", "Time & Date",
     ]
     cand_date = ["Date", "Trade Date", "Entry Date"]
-    cand_time = ["Time", "Trade Time", "Entry Time"]
+    # "Time of Trade" is Salty's free-text clock; without it every trade sat
+    # at midnight and no quick re-entry after a loss could ever be seen.
+    cand_time = ["Time", "Trade Time", "Entry Time", "Time of Trade"]
 
     for c in cand_single:
         if c in df.columns:
@@ -184,10 +195,16 @@ def _coerce_datetime_series(df: pd.DataFrame, tz_name: str = "UTC"):
         tcol = next((c for c in cand_time if c in df.columns), None)
         if dcol and tcol:
             s_date = pd.to_datetime(df[dcol].map(_extract_iso_from_notion), errors="coerce")
-            s_time = df[tcol].astype(str).str.strip().replace({"": "00:00"})
+            s_time = df[tcol].map(_clean_text).replace({"": "00:00"})
             s_dt = pd.to_datetime(
-                s_date.dt.strftime("%Y-%m-%d") + " " + s_time, errors="coerce"
+                s_date.dt.strftime("%Y-%m-%d") + " " + s_time, errors="coerce", format="mixed"
             )
+            # a clock that won't parse ("soon", "after NY") keeps the day
+            # rather than dropping the trade
+            _day = s_date.dt.normalize()
+            if getattr(_day.dt, "tz", None) is not None:
+                _day = _day.dt.tz_localize(None)
+            s_dt = s_dt.where(s_dt.notna(), _day)
 
     if s_dt is None:
         dcol = next((c for c in cand_date if c in df.columns), None)
@@ -2073,8 +2090,10 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
 
     _gap(10)
 
+    # "All clear" must agree with the cards beside it: a month over its cap
+    # is not clear, whatever the day-level score says.
     _all_clear = (int(n_overtrade_days) == 0 and int(n_revenge) == 0
-                  and float(discipline_score) >= 100)
+                  and float(discipline_score) >= 100 and _month_n <= _cap)
     if _all_clear:
         st.markdown(
             "<div style='display:flex;align-items:center;gap:16px;background:#e9f7ef;"
@@ -2082,9 +2101,11 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
             "<div style='min-width:36px;height:36px;border-radius:50%;background:#16a34a;"
             "color:#fff;font-size:19px;font-weight:800;display:flex;align-items:center;"
             "justify-content:center;'>\u2713</div>"
-            "<div><div style='font-size:17px;font-weight:800;color:#14532d;'>Discipline: all clear</div>"
-            f"<div style='font-size:13.5px;color:#2f6b45;margin-top:2px;'>Score 100% \u00b7 "
-            f"0 overtrading days \u00b7 0 revenge trades \u00b7 {clean_days} of {total_days} clean days"
+            "<div><div style='font-size:17px;font-weight:800;color:#14532d;'>"
+            "No overtrading or revenge days</div>"
+            f"<div style='font-size:13.5px;color:#2f6b45;margin-top:2px;'>"
+            f"No day over {OVERTRADE_LIMIT} trades \u00b7 no entry within "
+            f"{REVENGE_WINDOW_MINS // 60}h of a loss \u00b7 {clean_days} of {total_days} clean days"
             "</div></div></div>", unsafe_allow_html=True)
     else:
         st.markdown("### Discipline score over time")
@@ -2292,6 +2313,16 @@ def _confluences_tab(f: pd.DataFrame, show_table):
             return False
         return str(val).strip().lower() in {"yes", "y", "true", "1"}
 
+    if div_col_name is None and sweep_col_name is None:
+        # No dedicated DIV?/Sweep? columns: the journal tags confluences in a
+        # list (Salty's "Entry Confluences"). Every tag the trader uses gets a
+        # row — the old path only knew DIV and Sweep, then hid those singles
+        # as "covered" by a DIV-vs-Sweep card that only exists for DIV?/Sweep?
+        # journals, so a member saw one "DIV & Sweep" row and never GAP.
+        _per_tag_confluences(g)
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
     def _classify_row(row):
         if div_col_name is not None or sweep_col_name is not None:
             div_flag = _from_yes_no(row.get(div_col_name)) if div_col_name else False
@@ -2349,7 +2380,8 @@ def _confluences_tab(f: pd.DataFrame, show_table):
             st.markdown("</div>", unsafe_allow_html=True)
             return
         st.markdown("### Confluences")
-        if not conf_df.empty and "Win %" in conf_df.columns:
+        if not conf_df.empty and "Win %" in conf_df.columns and _verdicts_on() \
+                and int(conf_df.iloc[0]["Trades"]) >= 8:
             best_conf = conf_df.iloc[0]
             _insight_box(
                 f"<b>{best_conf['Confluence']}</b> is your highest-probability confluence at "
@@ -2360,6 +2392,43 @@ def _confluences_tab(f: pd.DataFrame, show_table):
     else:
         _empty_note("Appears once trades carry confluence tags.")
     st.markdown("</div>", unsafe_allow_html=True)
+
+
+def _confluence_tags(v) -> list:
+    """The tags on one trade, as typed: a list cell or "Sweep, GAP" text."""
+    if isinstance(v, (list, tuple, set)):
+        items = [str(x).strip() for x in v]
+    elif v is None or (isinstance(v, float) and pd.isna(v)):
+        return []
+    else:
+        items = [p.strip() for p in re.split(r"[;,|]", str(v))]
+    return [smart_title(x) for x in items if x and x.lower() not in ("nan", "none", "null")]
+
+
+def _per_tag_confluences(g: pd.DataFrame) -> None:
+    col = next((c for c in ("Entry Confluence List", "Entry Confluence", "Confluence")
+                if c in g.columns), None)
+    if col is None:
+        return
+    counted = g[g["Outcome"].isin(["Win", "BE", "Loss"])].copy()
+    counted["__tags"] = counted[col].map(_confluence_tags)
+    tagged = counted[counted["__tags"].map(len) > 0]
+    st.markdown("### Confluences")
+    if tagged.empty:
+        _empty_note("Appears once trades carry confluence tags.")
+        return
+    st.caption("Every confluence you tag, on its own. A trade with two tags counts in both rows; "
+               f"{len(counted) - len(tagged)} closed trades carry no tag.")
+    rows = []
+    for tag, sub in tagged.explode("__tags").groupby("__tags"):
+        r = outcome_rates_from(sub)
+        net_rr, ex_rr = _rr_stats(sub)
+        rows.append({"Entry_Model": tag, "Trades": len(sub), "Win %": r["win_rate"],
+                     "BE %": r["be_rate"], "Loss %": r["loss_rate"],
+                     "Net PnL (R)": net_rr, "Expectancy (R)": ex_rr})
+    conf_df = (pd.DataFrame(rows).sort_values("Expectancy (R)", ascending=False)
+               .reset_index(drop=True))
+    render_entry_model_table(conf_df, title=None, first_col_label="Confluence")
 
 
 def _hourly_expectancy_clock(df_raw: pd.DataFrame) -> None:
@@ -3422,7 +3491,7 @@ def _powered_on_panel(df: pd.DataFrame) -> None:
         elif st_ == "unlogged":
             bg, fg, mark, tip = "#fdf6e8", "#7c4a03", "\u25d0", " title='Column exists \u2014 log it on a few trades'"
         else:
-            bg, fg, mark, tip = "#f1f3f9", "#8a93a6", "\u2014", f" title='Needs {_h.escape(need)}'"
+            bg, fg, mark, tip = "#f1f3f9", "#64748b", "\u2014", f" title='Needs {_h.escape(need)}'"
         chips.append(
             f"<span{tip} style='display:inline-flex;align-items:center;gap:6px;"
             f"background:{bg};color:{fg};border-radius:999px;padding:5px 11px;"
@@ -3496,9 +3565,11 @@ def _confluence_board(f: pd.DataFrame, scope: str = "entry") -> None:
         return
     best, worst = d8.iloc[0], d8.iloc[-1]
     kind = "confluence" if scope == "entry" else "condition"
+    # "Costliest" only when it actually loses — a +0.95R bucket isn't a cost
+    _low = "Costliest" if float(worst["Avg R"]) < 0 else "Lowest"
     _insight_box(
         f"Strongest {kind}: <b>{best['Category']}</b> ({best['Avg R']:+.2f}R over {int(best['Trades'])}). "
-        f"Costliest: <b>{worst['Category']}</b> ({worst['Avg R']:+.2f}R over {int(worst['Trades'])}).")
+        f"{_low}: <b>{worst['Category']}</b> ({worst['Avg R']:+.2f}R over {int(worst['Trades'])}).")
 
 
 _LOSS_THEMES = [
@@ -3801,22 +3872,22 @@ def _liquidity_windows(f: pd.DataFrame) -> None:
                 f"({dd['Trades']}) \u2014 a gap of <b>{gap:+.2f}R per trade</b>.")
 
 def _conditions_tab(f: pd.DataFrame, show_table):
+    cols = [] if f is None else list(f.columns)
+    c_etf = "Conditions ETF" if "Conditions ETF" in cols else None
+    c_mtf = "Conditions MTF" if "Conditions MTF" in cols else None
+    c_htf = "Conditions HTF" if "Conditions HTF" in cols else None
+    present_cols = [c for c in [c_etf, c_mtf, c_htf] if c]
+    tf_labels = {"Conditions ETF": "ETF", "Conditions MTF": "MTF", "Conditions HTF": "HTF"}
+    # A journal without condition columns never tracked them: no card, rather
+    # than a heading over a sentence naming columns the member never had.
+    if not present_cols:
+        return
+
     st.markdown('<div class="section">', unsafe_allow_html=True)
     st.markdown("### Conditions")
 
     if f is None or f.empty:
         _empty_note("Nothing matches these filters — widen them to see trades here.")
-        st.markdown("</div>", unsafe_allow_html=True)
-        return
-
-    c_etf = "Conditions ETF" if "Conditions ETF" in f.columns else None
-    c_mtf = "Conditions MTF" if "Conditions MTF" in f.columns else None
-    c_htf = "Conditions HTF" if "Conditions HTF" in f.columns else None
-    present_cols = [c for c in [c_etf, c_mtf, c_htf] if c]
-    tf_labels = {"Conditions ETF": "ETF", "Conditions MTF": "MTF", "Conditions HTF": "HTF"}
-
-    if not present_cols:
-        _empty_note("No Conditions ETF/MTF/HTF columns in current data.")
         st.markdown("</div>", unsafe_allow_html=True)
         return
 
@@ -4032,6 +4103,9 @@ _FIELDLIST_SKIP = {
     "PnL_from_RR", "Closed RR", "Closed RR Num", "Entry Models List",
     "Entry Confluence List", "PnL", "Trade Duration", "Entry Model",
     "Entry Timeframe", "Timeframe", "Multi Entry Model Setup", "GAP Alignment",
+    # made by the loader, not columns in anyone's journal — listing them as
+    # "gaps" asked a member to fill fields they never had
+    "Is Complete", "Account Group", "Stars", "Risk %", "Trade Duration Num", "Duration Bin",
 }
 
 
@@ -4052,6 +4126,12 @@ def _data_tab(f_all: pd.DataFrame, show_table):
         if cs.startswith("__") or cs in _FIELDLIST_SKIP:
             continue
         col = f_all[c]
+        # derived for templates that lack them: the hour from Salty's
+        # "Time of Trade", the "Salty" account sentinel
+        if cs == "Hour (Melb)" and "Time of Trade" in f_all.columns:
+            continue
+        if cs == "Account" and col.astype(str).eq("Salty").all():
+            continue
         try:
             filled = int((col.notna()
                           & ~col.astype(str).str.strip().isin(
@@ -5088,28 +5168,31 @@ def _refinements_tab(f_perf: pd.DataFrame, df_all_safe: pd.DataFrame, styler):
 
 
 # ── Salty: Execution Quality tab (Deviation Score) ───────────────────────────
+def _deviation_scored(f: pd.DataFrame) -> pd.DataFrame:
+    """Trades carrying a deviation score of 1–3, parsed into __dev_num."""
+    if f is None or f.empty or "Deviation Score" not in f.columns:
+        return pd.DataFrame()
+    g = f.copy()
+    g["__dev_str"] = g["Deviation Score"].astype(str).str.strip()
+    # Deviation scores: "1 = small deviation", "2 = moderate deviation", etc.
+    # Only 1–3 in that form (or the bare number) — a formula that returns a
+    # price distance like 0.35 must not become a "0 — 0 deviation" bucket.
+    g["__dev_num"] = g["__dev_str"].str.extract(r"^([1-3])(?:\.0+)?(?:\s*(?:=|-|—|$))",
+                                                 expand=False).astype(float)
+    return g[g["__dev_num"].notna()]
+
+
 def _salty_execution_quality_tab(f: pd.DataFrame) -> None:
-    """Show deviation score analysis — available in Salty schema only."""
+    """Show deviation score analysis — available in Salty schema only. The
+    card only appears when scores exist: an empty card headed "Execution
+    quality" read as a broken feature on a member's first visit."""
+    g = _deviation_scored(f)
+    if g.empty:
+        return
+
     st.markdown('<div class="section">', unsafe_allow_html=True)
     st.markdown("### Execution quality (deviation score)")
     st.caption("How far your actual entry deviated from your planned entry.")
-
-    dev_col = "Deviation Score" if "Deviation Score" in f.columns else None
-    if dev_col is None or f.empty:
-        _unavailable("Deviation Score")
-        st.markdown("</div>", unsafe_allow_html=True)
-        return
-
-    g = f.copy()
-    g["__dev_str"] = g[dev_col].astype(str).str.strip()
-    # Deviation scores: "1 = small deviation", "2 = moderate deviation", etc.
-    g["__dev_num"] = g["__dev_str"].str.extract(r"^(\d)").astype(float)
-    g = g[g["__dev_num"].notna()]
-
-    if g.empty:
-        _empty_note("No deviation score data recorded.")
-        st.markdown("</div>", unsafe_allow_html=True)
-        return
 
     rows = []
     labels = {1: "Small", 2: "Moderate", 3: "Large"}
@@ -5289,7 +5372,8 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
                 r_ = float(row["r"]); c = "#16a34a" if r_ >= 0 else "#ef4444"
                 live = dt_.to_period("M") == now_m
                 badge = ("<span style='background:#e2f5e9;color:#14532d;font-size:11px;"
-                         "font-weight:800;border-radius:999px;padding:3px 10px;margin-left:8px;'>"
+                         "font-weight:800;border-radius:999px;padding:3px 10px;margin-left:8px;"
+                         "white-space:nowrap;display:inline-block;'>"
                          "TARGET ✓</span>" if r_ >= need_r else "")
                 usd_note = ""
                 if _dollars_hidden():
@@ -5423,7 +5507,7 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
         st.markdown(
             "<div style='font-size:11px;font-weight:700;letter-spacing:0.06em;color:#64748b;"
             "margin-top:14px;'>RECORDS</div>"
-            "<div style='display:flex;gap:12px;flex-wrap:wrap;margin-top:8px;'>" + "".join(
+            "<div style='display:flex;gap:12px;flex-wrap:wrap;margin:8px 0 14px;'>" + "".join(
                 f"<div style='flex:1;min-width:150px;background:#f8f9fc;border-radius:12px;"
                 f"padding:11px 14px;'>"
                 f"<div style='font-size:10.5px;font-weight:600;letter-spacing:0.05em;"
@@ -5661,7 +5745,7 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                     _gap(18)
                     _holdtime_section(_data, styler)
 
-        if _mt5 or _salty:
+        if _mt5 or (_salty and not _deviation_scored(f_perf).empty):
             with st.container(border=True):
                 st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
                 _card_header("Managing the trade",
@@ -5749,11 +5833,15 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                 _breaker_strip(_track_only(df_all_safe)[0])
                 render_plan_tab(df_all_safe, styler)
 
-        with st.container(border=True):
-            st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
-            _card_header("Refinements", "Data-backed tweaks worth testing next.")
-            with _budget(1):
-                _refinements_tab(f_perf, df_all_safe, styler)
+        # Refinements are verdicts ("the edge is real", "keep stacking this
+        # condition") picked from the same splits Entry already tabulates —
+        # the owner-only family until they pass a null test (1.12).
+        if _verdicts_on():
+            with st.container(border=True):
+                st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
+                _card_header("Refinements", "Data-backed tweaks worth testing next.")
+                with _budget(1):
+                    _refinements_tab(f_perf, df_all_safe, styler)
 
         with st.container(border=True):
             st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)

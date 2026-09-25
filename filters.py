@@ -140,6 +140,16 @@ def render_filters(
     if tot_opts is None:
         tot_opts = ["All"]
 
+    # Focus = the track record plus what needs work. "What needs work" is the
+    # verdict layer, owner-only until it passes its null test (1.12), so for
+    # members and the demo Focus would be one card — not offered there, and a
+    # stored Focus pref falls back to Everything.
+    from edge_analysis.ui.tabs import _verdicts_on
+    _focus_ok = _verdicts_on()
+    if not _focus_ok and st.session_state.get("ea_density_pref") == "Focus":
+        st.session_state["ea_density_pref"] = "All"
+        st.session_state["ea_density_seg"] = "Everything"
+
     def _inst_label(v: str) -> str:
         return "GOLD" if v == "Gold" else v
 
@@ -214,12 +224,14 @@ def render_filters(
                 except Exception:
                     flt = st.expander(_flabel)
             with _rc_seg:
-                _render_density_seg()
+                if _focus_ok:
+                    _render_density_seg()
     else:
         st.session_state.pop("ea_nav_external", None)
         _hc1, _hcd, _hc2, _hc3 = st.columns([5.3, 2.1, 1.5, 0.9])
         with _hcd:
-            _render_density_seg()
+            if _focus_ok:
+                _render_density_seg()
         with _hc1:
             try:
                 flt = st.popover(_flabel, use_container_width=False)

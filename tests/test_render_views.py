@@ -67,12 +67,27 @@ def test_demo_renders_all_six_views():
     assert _walk_views(at) == {}
 
 
-def test_demo_focus_mode_renders():
+def test_focus_mode_renders_where_verdicts_are_on():
+    at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=TIMEOUT)
+    at.query_params["demo"] = "1"
+    at.secrets["EA_VERDICTS"] = "all"
+    at.session_state["ea_density_pref"] = "Focus"
+    _boot(at)
+    assert not _problems(at), _problems(at)
+    assert at.session_state["ea_density_pref"] == "Focus"
+    assert [r for r in at.radio if r.label == "Density"]
+
+
+def test_focus_is_not_offered_without_verdicts():
+    # Focus without the verdict layer is one card: members and the demo get
+    # Everything, and a stored Focus pref falls back instead of trapping them.
     at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=TIMEOUT)
     at.query_params["demo"] = "1"
     at.session_state["ea_density_pref"] = "Focus"
     _boot(at)
     assert not _problems(at), _problems(at)
+    assert at.session_state["ea_density_pref"] == "All"
+    assert not [r for r in at.radio if r.label == "Density"]
 
 
 @pytest.fixture

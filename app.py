@@ -1836,6 +1836,12 @@ def render_dashboard(mobile: bool):
         from datetime import date as _date
         min_date = max_date = _date.today()
 
+    # Owner-or-member is known from here on: the setup screen and the header
+    # both ask it (Focus is offered only where verdicts are on).
+    st.session_state["ea_is_owner"] = _session_is_owner()
+    from edge_analysis.ui.tabs import _verdicts_on
+    _focus_offered = _verdicts_on()
+
     # Render filters (imported from filters module)
     # ── Three-tap setup (first sign-in only) ─────────────────────────────
     # One screen, three choices, saved to this device. Never shown again once
@@ -1858,7 +1864,10 @@ def render_dashboard(mobile: bool):
                 "<div style='font-size:22px;font-weight:800;letter-spacing:-0.01em;"
                 "margin:2px 0 2px;'>Make it yours</div>"
                 "<div style='font-size:14px;color:#5b6270;margin-bottom:14px;'>"
-                "Three taps — change any of them later from the header.</div>",
+                + "Sets how every card opens; each card keeps its own Table / Chart switch"
+                + (", and the rest lives in the header." if (_focus_offered or len(_s_accts) > 1)
+                   else ".")
+                + "</div>",
                 unsafe_allow_html=True)
             if len(_s_accts) > 1:
                 _cur = st.session_state.get("ea_track_account")
@@ -1876,15 +1885,16 @@ def render_dashboard(mobile: bool):
             st.markdown('<div class="ea-setupseg"></div>', unsafe_allow_html=True)
             st.radio("Numbers", ["Tables", "Charts"], key="ea_setup_view",
                      horizontal=True, label_visibility="collapsed")
-            st.markdown(
-                "<div style='font-size:11px;font-weight:700;letter-spacing:0.06em;"
-                "color:#64748b;margin:12px 0 4px;'>HOW MUCH AT ONCE</div>",
-                unsafe_allow_html=True)
-            st.markdown('<div class="ea-setupseg"></div>', unsafe_allow_html=True)
-            st.radio("Density", ["Everything", "Focus"], key="ea_setup_density",
-                     horizontal=True, label_visibility="collapsed",
-                     help="Focus opens with your track record and what needs work. "
-                          "Everything keeps all six tabs.")
+            if _focus_offered:
+                st.markdown(
+                    "<div style='font-size:11px;font-weight:700;letter-spacing:0.06em;"
+                    "color:#64748b;margin:12px 0 4px;'>HOW MUCH AT ONCE</div>",
+                    unsafe_allow_html=True)
+                st.markdown('<div class="ea-setupseg"></div>', unsafe_allow_html=True)
+                st.radio("Density", ["Everything", "Focus"], key="ea_setup_density",
+                         horizontal=True, label_visibility="collapsed",
+                         help="Focus opens with your track record and what needs work. "
+                              "Everything keeps all six tabs.")
             st.markdown("<div class='spacer-12'></div>", unsafe_allow_html=True)
             if st.button("Start", key="ea_setup_go", type="primary"):
                 _pick_acct = st.session_state.get("ea_setup_acct")
@@ -1895,7 +1905,8 @@ def render_dashboard(mobile: bool):
                 if st.session_state.get("ea_view_pref") != _v:
                     st.session_state["ea_view_pref"] = _v
                     st.session_state["ea_view_dirty"] = True
-                _dwant = ("Focus" if st.session_state.get("ea_setup_density") == "Focus"
+                _dwant = ("Focus" if (_focus_offered and
+                                      st.session_state.get("ea_setup_density") == "Focus")
                           else "All")
                 st.session_state["ea_density_pref"] = _dwant
                 st.session_state["ea_density_seg"] = ("Focus" if _dwant == "Focus"
@@ -1917,15 +1928,19 @@ def render_dashboard(mobile: bool):
                 "<div style='font-size:14px;line-height:2.0;color:#3b3f4d;'>"
                 "<b>Your month vs your plan</b> — the first card, target and "
                 "max-loss included.<br>"
-                "<b>What needs work</b> — the Review tab prices your leaks in R; "
-                "Focus mode (header) shows just these two.<br>"
-                "<b>Auto-sync and template</b> — the &hellip; menu, top right."
-                "</div>", unsafe_allow_html=True)
+                + ("<b>What needs work</b> — the Review tab prices your leaks in R; "
+                   "Focus mode (header) shows just these two.<br>" if _focus_offered else
+                   "<b>Your week</b> — the Review tab: every trade, rules kept, "
+                   "and how it compares with last week.<br>")
+                + ("<b>Auto-sync and template</b> — the &hellip; menu, top right."
+                   if (st.session_state.get("detected_schema") == "mt5")
+                   else "<b>Template check and theme</b> — the &hellip; menu and the "
+                        "&#9728;/&#9790; switch, top right.")
+                + "</div>", unsafe_allow_html=True)
             if st.button("Got it", key="ea_tour_dismiss"):
                 st.session_state["ea_tour_done"] = True
                 _st_rerun()
 
-    st.session_state["ea_is_owner"] = _session_is_owner()
     sel_inst, sel_em, sel_sess, date_range, sel_acct, sel_tot = render_filters(
         mobile, inst_opts, em_opts, sess_opts, date_mode_options, min_date, max_date,
         acct_opts, tot_opts, brand=_brand

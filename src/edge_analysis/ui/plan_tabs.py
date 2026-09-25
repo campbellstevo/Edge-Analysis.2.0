@@ -26,6 +26,16 @@ def get_tz_offset(df) -> int:
         return st.session_state["ea_tz_offset"]
     off = 10
     try:
+        # A date-only journal (Salty's template: the day in "Date", the clock
+        # as text) already holds the trader's own calendar day. Comparing its
+        # 17:30 entries with a midnight "UTC" read as a -7h offset and slid
+        # every trade to the previous day: 1 Sep trades landed in August and
+        # the weekly scoreboard showed Tuesday's trades as Monday's.
+        if "Date" in df.columns:
+            _d = pd.to_datetime(df["Date"], errors="coerce").dropna()
+            if len(_d) and bool((_d == _d.dt.normalize()).all()):
+                st.session_state["ea_tz_offset"] = 0
+                return 0
         hour_col = next((c for c in df.columns if str(c).strip().lower().startswith("hour")), None)
         if hour_col is not None and "Date" in df.columns:
             hrs = pd.to_numeric(df[hour_col], errors="coerce")
@@ -193,11 +203,16 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
     else:
         model_rule = ("Your proven entry models", None, "", "")
 
+    def _has(col):
+        # the journal actually logs this column (not merely has it empty)
+        return col in g.columns and g[col].map(t._clean_text).ne("").any()
+
     ok_head = _col_contains(g, "Mental State", "Clear|Good")
     ok_aplus = _yes(g, "A+ Setup?")
     exec_col = g.get("Execution/Bias", pd.Series("", index=g.index)).astype(str)
     ok_exec = exec_col.str.contains("Right", case=False, na=False) & ~exec_col.str.contains("Wrong", case=False, na=False)
-    ok_single = ~_yes(g, "Multi Entry Model Setup")
+    # no multi-entry column = nothing known, not "every trade single"
+    ok_single = ~_yes(g, "Multi Entry Model Setup") if _has("Multi Entry Model Setup") else None
     ok_5m = _col_contains(g, "Entry Timeframe", "5")
     ok_model = _col_contains(g, "Entry Model", "Protected|FBOS|FBoS")
     bad_model = _col_contains(g, "Entry Model", "No.Close|No Close")
@@ -213,24 +228,32 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
         na, nb = int(mask.sum()), int((~mask).sum())
         return a, b, na, nb
 
+    # A box shows only when THIS journal logs what it needs. A member on
+    # another template saw the owner's playbook (headspace, A+, true break)
+    # as nine grey "start tagging this in Notion" rows — someone else's rules.
     gates = [
-        ("Headspace is Good", ok_head, "Good", "Okay/Bad"),
-        ("It's a genuine A+ setup", ok_aplus, "A+", "non-A+"),
+        ("Headspace is Good", ok_head, "Good", "Okay/Bad",
+         _has("Mental State") and bool(ok_head.any())),
+        ("It's a genuine A+ setup", ok_aplus, "A+", "non-A+", _has("A+ Setup?")),
         # decision-time field only: "was the bias RIGHT" is knowable after the
         # fact and would make this gate circular
         ("Bias written down, prepared before entry",
-         _yes(g, "Clear Bias/Prepared"), "prepared", "unprepared"),
+         _yes(g, "Clear Bias/Prepared"), "prepared", "unprepared", _has("Clear Bias/Prepared")),
         # (No session gate: which sessions to trade is exactly what the data is
         # still deciding — sessions are reported in the ranked lists below.)
-        ("Single entry, structure stop set", ok_single, "single", "multi"),
-        tf_rule,
-        model_rule,
-        ("True break confirmed", ok_break, "confirmed", "No/NA"),
+        ("Single entry, structure stop set", ok_single, "single", "multi",
+         ok_single is not None),
+        ("You followed your own rules", _yes(g, "Rules Followed?"), "followed", "broken",
+         _has("Rules Followed?")),
+        (*tf_rule, _has("Entry Timeframe") or _has("Timeframe")),
+        (*model_rule, _has("Entry Model")),
+        ("True break confirmed", ok_break, "confirmed", "No/NA", _has("True Break?")),
         (f"Minimum {_min_rr:g}R of room to target"
          + (" (from your data)" if _min_rr_derived else ""),
-         ok_room, f"\u2265{_min_rr:g}R", f"<{_min_rr:g}R"),
-        ("Stick to your proven instruments", on_proven, "proven", "other"),
+         ok_room, f"\u2265{_min_rr:g}R", f"<{_min_rr:g}R", bool(planned.notna().any())),
+        ("Stick to your proven instruments", on_proven, "proven", "other", True),
     ]
+    gates = [gt[:4] for gt in gates if gt[4]]
 
     st.markdown("#### Pre-trade checklist — every box yes, or pass")
     if _min_rr_derived and _min_rr_ev:
@@ -268,8 +291,11 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
                     "one needs 5+ trades at a positive average</span>")
             small = ""
         elif not logged:
-            stat = ("<span style='font-size:12px;color:#64748b;'>not logged yet — "
-                    "start tagging this in Notion</span>")
+            # every row here IS logged (absent columns never reach the list):
+            # all trades sit on one side, so there is nothing to compare yet
+            _one = (f"every trade so far is {lab_y} — nothing to compare yet" if nb == 0
+                    else f"no {lab_y} trades logged yet")
+            stat = f"<span style='font-size:12px;color:#64748b;'>{_one}</span>"
             small = ""
         else:
             ec = GREEN if (edge == edge and edge >= 0) else RED
@@ -307,8 +333,10 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
         "<div style='background:#fff;border:1px solid rgba(0,0,0,0.06);border-radius:12px;"
         "box-shadow:0 2px 10px rgba(0,0,0,0.04);overflow:hidden;margin:4px 0 10px;'>"
         + rows_html + "</div>", unsafe_allow_html=True)
-    t._insight_box("Any box a <b>NO</b> → no trade. The gap between textbook and off-plan "
-                   "below is what following this list is worth.", "info")
+    _comparable = any(e[2] for e in entries)
+    if _comparable:
+        t._insight_box("Any box a <b>NO</b> → no trade. The gap between textbook and off-plan "
+                       "below is what following this list is worth.", "info")
 
     # Textbook vs off-plan: what the checklist is worth. (Per-trade expectancy
     # and profit factor live on Performance — not repeated here.)
@@ -322,21 +350,26 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
         return (_fmt_r(v) + f" · {n} trades", GREEN if (v == v and v >= 0) else RED)
 
     st.markdown("#### Where you stand")
-    cards = [("EVERY BOX YES — PER TRADE", *_side(exp_book, n_book)),
-             ("ANY BOX NO — PER TRADE", *_side(exp_off, n_off))]
-    st.markdown("<div style='display:flex;gap:12px;flex-wrap:wrap;margin:6px 0 10px;'>" + "".join(
-        f"<div style='flex:1;min-width:150px;background:#fff;border:1px solid rgba(0,0,0,0.06);"
-        f"border-radius:12px;padding:12px 14px;box-shadow:0 2px 10px rgba(0,0,0,0.04);'>"
-        f"<div style='font-size:11px;font-weight:600;letter-spacing:0.06em;color:#64748b;'>{lab}</div>"
-        f"<div style='font-size:22px;font-weight:800;color:{col};'>{val}</div></div>"
-        for lab, val, col in cards) + "</div>", unsafe_allow_html=True)
+    if not _comparable:
+        # "every box yes: all 120 trades" when no box has a NO side is a
+        # tautology, not a reading
+        st.caption("Appears once a box has trades on both sides — a YES and a NO to compare.")
+    else:
+        cards = [("EVERY BOX YES — PER TRADE", *_side(exp_book, n_book)),
+                 ("ANY BOX NO — PER TRADE", *_side(exp_off, n_off))]
+        st.markdown("<div style='display:flex;gap:12px;flex-wrap:wrap;margin:6px 0 10px;'>" + "".join(
+            f"<div style='flex:1;min-width:150px;background:#fff;border:1px solid rgba(0,0,0,0.06);"
+            f"border-radius:12px;padding:12px 14px;box-shadow:0 2px 10px rgba(0,0,0,0.04);'>"
+            f"<div style='font-size:11px;font-weight:600;letter-spacing:0.06em;color:#64748b;'>{lab}</div>"
+            f"<div style='font-size:22px;font-weight:800;color:{col};'>{val}</div></div>"
+            for lab, val, col in cards) + "</div>", unsafe_allow_html=True)
 
     segs = []
     named = [("New York session", is_ny), ("London session", is_ldn), ("Asia session", is_asia),
              ("Right bias + right execution", ok_exec), ("A+ setups", ok_aplus),
              ("Non-A+ setups", ~ok_aplus & g["A+ Setup?"].notna() if "A+ Setup?" in g.columns else None),
              ("Good headspace", ok_head), ("Single entry", ok_single),
-             ("Multi-entry", ~ok_single), ("OB/OS extremes", ok_obos),
+             ("Multi-entry", None if ok_single is None else ~ok_single), ("OB/OS extremes", ok_obos),
              ("True break confirmed", ok_break), ("No-Close entries", bad_model)]
     for name, mask in named:
         if mask is None:
@@ -623,9 +656,14 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
     if n > 1 and net >= 0 and ex_best < -0.5:
         t._insight_box(
             f"<b>One trade wide.</b> Your best trade ({_fmt_r(float(rr.max()))}) carried the week — "
-            f"without it you're at <b>{_fmt_r(ex_best)}</b>. Green on paper, thin on process.", "warn")
+            f"without it you're at <b>{_fmt_r(ex_best)}</b>. The week rests on one result.", "warn")
 
-    # scoreboard
+    # scoreboard — a column the journal never fills (P&L, MFE, lots on an
+    # R-only template) is left out, not shown as a column of dashes
+    def _any_num(col):
+        return col in wk.columns and pd.to_numeric(wk[col], errors="coerce").notna().any()
+
+    _show_pnl, _show_mfe, _show_lots = _any_num("PnL"), _any_num("MFE (R)"), _any_num("Lot Size")
     st.markdown("#### Scoreboard — trade by trade")
     rows = ""
     for _, r in wk.iterrows():
@@ -633,8 +671,8 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
         res = "Win" if rv > 0.15 else ("Loss" if rv < -0.15 else "BE")
         rescol = GREEN if res == "Win" else (RED if res == "Loss" else "#64748b")
         day = r["__dt"].strftime("%a")
-        sess = str(r.get("Session", "") or "")[:18]
-        dirn = str(r.get("Direction", "") or "")
+        sess = t._clean_text(r.get("Session"))[:18]
+        dirn = t._clean_text(r.get("Direction"))
         pnl = pd.to_numeric(pd.Series([r.get("PnL")]), errors="coerce").iloc[0]
         pnl_s = "—" if pd.isna(pnl) else _t()._money(f"{'-' if pnl < 0 else '+'}${abs(pnl):,.2f}")
         mfe_v = pd.to_numeric(pd.Series([r.get("MFE (R)")]), errors="coerce").iloc[0]
@@ -664,7 +702,9 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
         rows += (f"<tr><td class='text'>{day} · {sess}</td><td class='text'>{dirn}</td>"
                  f"<td class='text' style='color:{rescol};font-weight:700;'>{res}</td>"
                  f"<td class='num' style='color:{GREEN if rv >= 0 else RED};font-weight:700;'>{rv:+.2f}</td>"
-                 f"<td class='num'>{pnl_s}</td><td class='num'>{mfe_s}</td><td class='num'>{lots_s}</td>"
+                 + (f"<td class='num'>{pnl_s}</td>" if _show_pnl else "")
+                 + (f"<td class='num'>{mfe_s}</td>" if _show_mfe else "")
+                 + (f"<td class='num'>{lots_s}</td>" if _show_lots else "")
                  + extras + "</tr>")
     _tag_ths = "".join(
         f"<th class='text'>{_l}</th>" for _c, _l in (("A+ Setup?", "A+"), ("Conviction (1-5)", "Conv"),
@@ -673,7 +713,9 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
     st.markdown(
         "<div class='table-wrap'><table><thead><tr><th class='text'>Day / Session</th>"
         "<th class='text'>Dir</th><th class='text'>Result</th><th class='num'>R</th>"
-        "<th class='num'>P&L</th><th class='num'>MFE</th><th class='num'>Lots</th>"
+        + ("<th class='num'>P&L</th>" if _show_pnl else "")
+        + ("<th class='num'>MFE</th>" if _show_mfe else "")
+        + ("<th class='num'>Lots</th>" if _show_lots else "")
         + _tag_ths + "</tr></thead>"
         f"<tbody>{rows}</tbody></table></div>", unsafe_allow_html=True)
 
@@ -776,6 +818,8 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
             f"<div style='flex:0 1 140px;min-width:0;font-size:12.5px;color:#64748b;'>last {_a}</div>"
             f"<div style='font-size:13px;font-weight:800;color:{GREEN if _ok else RED};'>now {_b}</div></div>"
             for _l, _a, _b, _ok in _cmp), unsafe_allow_html=True)
-        if n > pn and net < float(pr.sum()):
+        # prescriptive on two weeks of trades — owner only until it passes a
+        # null test (1.12); members keep the side-by-side above
+        if n > pn and net < float(pr.sum()) and t._verdicts_on():
             t._insight_box("Activity up, edge down — more trades produced less R than last week. "
                            "Fewer, better entries beat more entries.", "warn")

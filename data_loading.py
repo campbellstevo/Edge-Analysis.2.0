@@ -234,24 +234,26 @@ def _load_live_df_impl(token: Optional[str], dbid: Optional[str]) -> pd.DataFram
         df["Account Group"] = df["Account"].apply(normalize_account_group)
 
     # ── Validity filter ───────────────────────────────────────────────────────
+    # A trade is COMPLETE when it has a result: R, P&L or a Result label. An
+    # entered-but-open trade (model, session or direction, no result) stays
+    # for the behaviour views but out of every number. A row with only a date
+    # (a pre-made journal row) is not a trade at all and is dropped. Blank
+    # tests must not go through astype(str): None became "None", which is
+    # not "", so every date-only row used to count as a complete trade
+    # (DATA-03: Sept read 19 trades of which 12 were real; win rate diluted).
     has_date = df["Date"].notna() if "Date" in df.columns else pd.Series(False, index=df.index)
 
-    conditions = []
-    if "PnL" in df.columns:
-        conditions.append(df["PnL"].notna())
-    if "Closed RR" in df.columns:
-        conditions.append(df["Closed RR"].notna())
-    if "Result" in df.columns:
-        conditions.append(df["Result"].astype(str).str.strip().ne(""))
-    if "Entry Model" in df.columns:
-        conditions.append(df["Entry Model"].astype(str).str.strip().ne(""))
+    def _filled(col):
+        if col not in df.columns:
+            return pd.Series(False, index=df.index)
+        s = df[col]
+        t = s.map(lambda v: "" if v is None else
+                  ("" if isinstance(v, (list, tuple)) and not v else str(v))).str.strip().str.lower()
+        return s.notna() & ~t.isin(["", "nan", "none", "null", "nat", "[]"])
 
-    if conditions:
-        has_signal = conditions[0]
-        for cond in conditions[1:]:
-            has_signal = has_signal | cond
-    else:
-        has_signal = pd.Series(False, index=df.index)
+    has_result = (_filled("PnL") | _filled("Closed RR") | _filled("Result")
+                  | df["Outcome"].isin(["Win", "BE", "Loss"]))
+    has_trade = has_result | _filled("Entry Model") | _filled("Session") | _filled("Direction")
 
-    df["Is Complete"] = has_signal
-    return df[has_date].copy()
+    df["Is Complete"] = has_result
+    return df[has_date & has_trade].copy()
