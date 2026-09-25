@@ -1278,11 +1278,24 @@ def _alltime_card(f: pd.DataFrame, styler) -> None:
             hi = max(max((r["Net"] for r in rows), default=0.0), _hi_ref)
             span = max(hi - lo, 1.0)
             dom = [lo - span * 0.18, hi + span * 0.24]
+            # A fixed 44px bar overflowed its slot on a phone (11 months in
+            # ~330px = 26px each): neighbouring months merged into one stepped
+            # block and the labels piled up. Bars now take their band with a
+            # gap; only a short history keeps the fixed width (no giant bars).
+            _phone = st.session_state.get("layout_mode") == "mobile"
+            _tight = _phone or len(rows) > 14
+            if _tight:
+                for r in rows:
+                    r["Lab"] = r["Lab"].rstrip("R")      # "+5.6" fits a 26px slot
             base = alt.Chart(alt.Data(values=rows))
             xenc = alt.X("Month:N", sort=order, title=None,
-                         axis=alt.Axis(labelAngle=0, labelFontSize=13,
+                         scale=alt.Scale(paddingInner=0.28, paddingOuter=0.12),
+                         axis=alt.Axis(labelAngle=0, labelFontSize=11 if _phone else 13,
                                        labelColor="#0f172a", ticks=False, domain=False))
-            bars = base.mark_bar(size=44, cornerRadiusTopLeft=7, cornerRadiusTopRight=7).encode(
+            _bar_kw = dict(cornerRadiusTopLeft=5 if _tight else 7, cornerRadiusTopRight=5 if _tight else 7)
+            if len(rows) <= 4:
+                _bar_kw["size"] = 44
+            bars = base.mark_bar(**_bar_kw).encode(
                 x=xenc,
                 y=alt.Y("Net:Q", title=None, scale=alt.Scale(domain=dom),
                         axis=alt.Axis(format="+.0f", grid=True, gridColor="#eef0f5",
@@ -1295,11 +1308,21 @@ def _alltime_card(f: pd.DataFrame, styler) -> None:
             # labels sit ON TOP of the target/stop rules, with a canvas-coloured
             # halo so a bar near the target line stays readable (the dashed
             # rule used to run straight through "+4.8R")
-            halo = base.mark_text(dy=-12, fontSize=12, fontWeight="bold", color="#ffffff",
-                                  stroke="#ffffff", strokeWidth=5).encode(
-                x=xenc, y=_yl, text="Lab:N")
-            txt = base.mark_text(dy=-12, fontSize=12, fontWeight="bold", color="#334155").encode(
-                x=xenc, y=_yl, text="Lab:N")
+            # positive labels sit above the bar top, negative ones below the
+            # bar's end (a label drawn inside a red bar read as a white box)
+            _fs = 10.5 if _tight else 12
+            _up = alt.Chart(alt.Data(values=[r for r in rows if r["Net"] >= 0]))
+            _dn = alt.Chart(alt.Data(values=[r for r in rows if r["Net"] < 0]))
+            halo = alt.layer(
+                _up.mark_text(dy=-9, fontSize=_fs, fontWeight="bold", color="#ffffff",
+                              stroke="#ffffff", strokeWidth=4).encode(x=xenc, y=_yl, text="Lab:N"),
+                _dn.mark_text(dy=11, fontSize=_fs, fontWeight="bold", color="#ffffff",
+                              stroke="#ffffff", strokeWidth=4).encode(x=xenc, y=_yl, text="Lab:N"))
+            txt = alt.layer(
+                _up.mark_text(dy=-9, fontSize=_fs, fontWeight="bold", color="#334155").encode(
+                    x=xenc, y=_yl, text="Lab:N"),
+                _dn.mark_text(dy=11, fontSize=_fs, fontWeight="bold", color="#334155").encode(
+                    x=xenc, y=_yl, text="Lab:N"))
             lays = [bars,
                     alt.Chart(alt.Data(values=[{"y": 0}]))
                     .mark_rule(color="#cbd5e1", strokeWidth=1.5).encode(y=alt.Y("y:Q", title=None))]
