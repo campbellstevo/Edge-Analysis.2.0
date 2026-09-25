@@ -120,3 +120,22 @@ def test_record_stats_drawdown_and_streaks():
     assert s["best_w"] == 2 and s["best_l"] == 3        # the scratch breaks no streak
     assert s["cur"] == -1
     assert round(s["win"]) == 44 and round(s["be"]) == 11
+
+
+def test_explorer_frame_reads_both_journal_shapes():
+    g = pd.DataFrame({
+        "__Date": pd.to_datetime(["2026-09-21 16:33", "2026-09-22 09:10", "2026-09-23 20:00"]),
+        "Closed RR": [-1.06, 2.1, 0.0],
+        "Entry Model 1": ["Internal NC+S", "External NC+S", None],
+        "Entry Model 2": ["Internal NC+S", None, None],
+        "Rules Followed?": ["Yes", "No", None],
+        "Mistake": ["No A+ setup", "", "NA"],
+        "Comment": ["<b>chased</b>", None, ""],
+    })
+    x = rx.explorer_frame(g)
+    assert list(x["r"]) == [0.0, 2.1, -1.06]                       # newest first
+    first = x.iloc[-1]
+    assert first["setup"] == "Internal NC+S → Internal NC+S"   # the pair is the setup
+    assert bool(first["flag"]) and bool(x.iloc[1]["flag"])          # mistake / rule broken
+    assert not bool(x.iloc[0]["flag"])                               # "NA" is no mistake
+    assert first["notes"] == "<b>chased</b>"                        # escaped at render, kept raw here

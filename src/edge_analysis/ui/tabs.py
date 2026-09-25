@@ -5679,3 +5679,13 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
             _card_header("Weekly debrief", "Process over P&L \u2014 did you trade your system this week? Money lives on Performance.")
             with _budget(2):
                 render_review_tab(df_all_safe, styler)
+
+        # Mockup V5: every trade, filterable, one click from its story
+        _g_tx = _perf_prep(f_perf)
+        if _g_tx is not None and len(_g_tx):
+            with st.container(border=True):
+                st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
+                _card_header("Every trade", "Newest first. Filter, search your notes, and open any trade "
+                                            "to see how it moved and how that setup has done before.")
+                from edge_analysis.ui import reshape as rx
+                rx.trade_explorer(_g_tx)

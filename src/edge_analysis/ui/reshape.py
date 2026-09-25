@@ -803,3 +803,246 @@ def record_card(g: pd.DataFrame, styler) -> None:
         st.altair_chart(styler(alt.layer(bars, txt).properties(height=250)), use_container_width=True)
         st.caption(f"Median trade {fmt_r(float(g['__r'].median()))}. Most trades are a stop or a scratch; "
                    "the edge lives in the right-hand tail.")
+
+
+# ── trade explorer + trade card (mockup V5) ──────────────────────────────────
+_NOTE_COLS = ("Comment", "Teachings/Learning Curve", "Reason of loss", "Notes")
+
+
+def _txt(v) -> str:
+    if v is None or (isinstance(v, float) and pd.isna(v)):
+        return ""
+    if isinstance(v, (list, tuple)):
+        return ", ".join(_txt(x) for x in v if _txt(x))
+    s = str(v).strip()
+    if s.startswith("[") and s.endswith("]"):
+        s = s.strip("[]").replace('"', "").replace("'", "")
+    return "" if s.lower() in ("nan", "none", "null", "nat", "na") else s
+
+
+def _first_col(df: pd.DataFrame, *names):
+    return next((c for c in names if c in df.columns), None)
+
+
+def _yes(v) -> bool | None:
+    if isinstance(v, bool):
+        return v
+    s = _txt(v).lower()
+    if s in ("yes", "true", "__yes__", "1"):
+        return True
+    if s in ("no", "false", "__no__", "0"):
+        return False
+    return None
+
+
+def explorer_frame(g: pd.DataFrame) -> pd.DataFrame:
+    """One tidy row per trade for the explorer, newest first."""
+    em1 = _first_col(g, "Entry Model", "Entry Model 1")
+    em2 = _first_col(g, "Entry Model 2")
+    tf = _first_col(g, "Entry Timeframe", "Timeframe 1", "Entry Model Timeframe")
+    ses = _first_col(g, "Session", "Session Norm")
+    out = pd.DataFrame(index=g.index)
+    out["when"] = pd.to_datetime(g["__Date"])
+    out["r"] = pd.to_numeric(g["Closed RR"] if "Closed RR" in g.columns else g.get("PnL_from_RR"), errors="coerce")
+    out["session"] = g[ses].map(_txt) if ses else ""
+    m1 = g[em1].map(_txt) if em1 else pd.Series("", index=g.index)
+    m2 = g[em2].map(_txt) if em2 else pd.Series("", index=g.index)
+    out["setup"] = [a + (f" → {b}" if b else "") for a, b in zip(m1, m2)]
+    out["model"] = m1
+    out["tf"] = g[tf].map(_txt) if tf else ""
+    out["dir"] = g["Direction"].map(_txt) if "Direction" in g.columns else ""
+    for c, k in (("MFE (R)", "mfe"), ("MAE (R)", "mae"), ("Planned R:R", "plan")):
+        out[k] = pd.to_numeric(g[c], errors="coerce") if c in g.columns else float("nan")
+    out["rules"] = g["Rules Followed?"].map(_yes) if "Rules Followed?" in g.columns else None
+    out["mistake"] = g["Mistake"].map(_txt) if "Mistake" in g.columns else ""
+    out["mistake"] = out["mistake"].where(~out["mistake"].str.lower().isin(["no mistake", "none"]), "")
+    out["aplus"] = g["A+ Setup?"].map(_yes) if "A+ Setup?" in g.columns else None
+    out["flag"] = out["rules"].eq(False) | out["mistake"].ne("")
+    out["notes"] = [" · ".join(x for x in (_txt(g.at[i, c]) for c in _NOTE_COLS if c in g.columns) if x)
+                    for i in g.index]
+    tags = {}
+    for c, lab in (("Conviction (1-5)", "Conviction"), ("Mental State", "Mental state"),
+                   ("Conditions MTF", "Conditions"), ("Volatility", "Volatility"),
+                   ("News Aspect", "News"), ("Breakeven Criteria", "Break-even rule"),
+                   ("Tiers in pricing MTF", "Tier")):
+        if c in g.columns:
+            tags[lab] = g[c].map(_txt)
+    out["tags"] = [{k: v.at[i] for k, v in tags.items() if v.at[i]} for i in g.index]
+    out = out[out["r"].notna() & out["when"].notna()]
+    return out.sort_values("when", ascending=False)
+
+
+def _path_svg(row, w: int = 150, h: int = 14) -> str:
+    lo, hi = -1.3, 4.4
+    X = lambda v: (min(max(v, lo), hi) - lo) / (hi - lo) * w
+    mae = row["mae"] if pd.notna(row["mae"]) else min(row["r"], 0.0)
+    mfe = row["mfe"] if pd.notna(row["mfe"]) else max(row["r"], 0.0)
+    col = GREEN if row["r"] > 0.15 else (RED if row["r"] < -0.15 else "#94a3b8")
+    return (f'<svg width="{w}" height="{h}" viewBox="0 0 {w} {h}"><rect x="0" y="{h/2-1}" width="{w}" height="2" fill="#e2e8f0"/>'
+            f'<rect x="{X(mae):.1f}" y="{h/2-4}" width="{max(X(mfe)-X(mae), 2):.1f}" height="8" rx="4" fill="#c7d2fe"/>'
+            f'<line x1="{X(0):.1f}" x2="{X(0):.1f}" y1="0" y2="{h}" stroke="#64748b"/>'
+            f'<circle cx="{X(row["r"]):.1f}" cy="{h/2}" r="4.5" fill="{col}" stroke="#fff" stroke-width="1.5"/></svg>')
+
+
+def _big_path(row, w: int = 400) -> str:
+    t = _tokens()
+    plan = row["plan"] if pd.notna(row["plan"]) else None
+    mae = row["mae"] if pd.notna(row["mae"]) else None
+    mfe = row["mfe"] if pd.notna(row["mfe"]) else None
+    pts = [-1.0, 0.0, row["r"]] + [x for x in (plan, mae, mfe) if x is not None]
+    lo, hi = min(pts) - 0.3, max(pts) + 0.4
+    X = lambda v: 14 + (v - lo) / (hi - lo) * (w - 28)
+    marks = [(-1.0, "stop −1R", RED), (0.0, "entry", t["muted"])]
+    if plan:
+        marks.append((plan, f"target {plan:.1f}R", "#a78bfa" if _dark() else PURPLE))
+    svg = "".join(f'<line x1="{X(v):.1f}" x2="{X(v):.1f}" y1="24" y2="62" stroke="{c}" stroke-dasharray="3 3"/>'
+                  f'<text x="{X(v):.1f}" y="78" font-size="11.5" fill="{c}" text-anchor="middle" font-weight="700">{lab}</text>'
+                  for v, lab, c in marks)
+    if mae is not None and mfe is not None:
+        svg += (f'<rect x="{X(mae):.1f}" y="37" width="{max(X(mfe) - X(mae), 2):.1f}" height="12" rx="6" fill="#c7d2fe"/>'
+                f'<text x="{X(mae):.1f}" y="16" font-size="11" fill="{t["muted"]}" text-anchor="middle">worst {fmt_r(mae)}</text>'
+                f'<text x="{X(mfe):.1f}" y="16" font-size="11" fill="{t["muted"]}" text-anchor="middle">best {fmt_r(mfe)}</text>')
+    col = GREEN if row["r"] > 0.15 else (RED if row["r"] < -0.15 else "#94a3b8")
+    svg += f'<circle cx="{X(row["r"]):.1f}" cy="43" r="8" fill="{col}" stroke="#fff" stroke-width="2"/>'
+    # capped width: a viewBox stretched across a desktop card blew the labels up 3x
+    return (f'<svg viewBox="0 0 {w} 86" style="width:100%;max-width:{w + 60}px;height:auto;display:block;" '
+            f'preserveAspectRatio="xMinYMid meet">{svg}</svg>')
+
+
+def trade_explorer(g: pd.DataFrame, key: str = "ea_tx") -> None:
+    """Every trade, filterable, with a path bar per row; open one to see its
+    card: the move against stop and target, its tags, its notes, and how the
+    same setup has done before."""
+    x = explorer_frame(g)
+    if x.empty:
+        st.caption("Trades appear here once they carry a date and a result.")
+        return
+    t = _tokens()
+    c1, c2, c3, c4 = st.columns([1.6, 1, 1.2, 1.2])
+    with c1:
+        res = st.radio("Show", ["All", "Wins", "Losses", "Break-even", "Flagged"], horizontal=True,
+                       key=f"{key}_res", label_visibility="collapsed") or "All"
+    with c2:
+        sess = sorted(s for s in x["session"].unique() if s)
+        ses = st.selectbox("Session", ["Every session"] + sess, key=f"{key}_ses", label_visibility="collapsed")
+    with c3:
+        mods = sorted(s for s in x["model"].unique() if s)
+        mod = st.selectbox("Setup", ["Every setup"] + mods, key=f"{key}_mod", label_visibility="collapsed")
+    with c4:
+        q = st.text_input("Search", key=f"{key}_q", placeholder="Search notes and mistakes",
+                          label_visibility="collapsed")
+    v = x
+    if res == "Wins":
+        v = v[v["r"] > 0.15]
+    elif res == "Losses":
+        v = v[v["r"] < -0.15]
+    elif res == "Break-even":
+        v = v[v["r"].abs() <= 0.15]
+    elif res == "Flagged":
+        v = v[v["flag"]]
+    if ses != "Every session":
+        v = v[v["session"] == ses]
+    if mod != "Every setup":
+        v = v[v["model"] == mod]
+    if q.strip():
+        needle = q.strip().lower()
+        v = v[(v["notes"].str.lower().str.contains(needle, regex=False))
+              | (v["mistake"].str.lower().str.contains(needle, regex=False))
+              | (v["setup"].str.lower().str.contains(needle, regex=False))]
+    if v.empty:
+        st.caption("No trades match. Widen the filters.")
+        return
+    shown = int(st.session_state.get(f"{key}_n", 25))
+    rows = ""
+    for i, r in v.head(shown).iterrows():
+        rc = GREEN if r["r"] > 0.15 else (RED if r["r"] < -0.15 else t["muted"])
+        tags = ""
+        if r["aplus"] is True:
+            tags += '<span class="tg good">A+</span>'
+        if r["mistake"]:
+            tags += f'<span class="tg bad">{_h.escape(r["mistake"][:40])}</span>'
+        if r["rules"] is False:
+            tags += '<span class="tg bad">rule broken</span>'
+        setup = _h.escape(r["setup"] or "—") + (f' <span class="mu">· {_h.escape(r["tf"])}</span>' if r["tf"] else "")
+        rows += (f'<tr><td class="w"><b>{r["when"].strftime("%a %d %b")}</b> <span class="mu">{r["when"].strftime("%H:%M") if r["when"].hour or r["when"].minute else ""}</span></td>'
+                 f'<td class="m">{_h.escape(r["session"])}</td><td>{setup}</td><td class="m mu">{_h.escape(r["dir"])}</td>'
+                 f'<td class="rv" style="color:{rc};">{_h.escape(fmt_r(r["r"]))}</td><td class="m">{_path_svg(r)}</td><td>{tags}</td></tr>')
+    extra = f"""
+.ea-tx{{border-collapse:collapse !important;width:100%;font-size:13.5px;border:0 !important;}}
+.ea-tx th{{font-size:11px;font-weight:700;letter-spacing:.06em;color:{t['muted']};text-transform:uppercase;text-align:left;
+  padding:7px 8px !important;border:0 !important;border-bottom:1px solid {t['line']} !important;background:none !important;white-space:nowrap;}}
+.ea-tx td{{padding:8px 8px !important;border:0 !important;border-bottom:1px solid {t['line']} !important;vertical-align:middle;color:{t['ink']};background:none !important;}}
+.ea-tx tr{{background:none !important;}}
+.ea-tx td.w{{white-space:nowrap;}} .ea-tx td.rv{{font-weight:800;white-space:nowrap;}}
+.ea-tx .mu{{color:{t['muted']};}}
+.ea-tx .tg{{display:inline-block;font-size:11.5px;font-weight:700;border-radius:6px;padding:1px 7px;margin:1px 4px 1px 0;}}
+.ea-tx .tg.good{{background:{'#12301f' if _dark() else '#dcfce7'};color:{'#86efac' if _dark() else '#14532d'};}}
+.ea-tx .tg.bad{{background:{'#3a1d22' if _dark() else '#fde8e8'};color:{'#fca5a5' if _dark() else '#7f1d1d'};}}
+@media (max-width:640px){{.ea-tx td.m,.ea-tx th.m{{display:none;}}}}
+"""
+    st.markdown(css(extra) + '<div class="ea-rx ea-rx-scroll"><table class="ea-tx"><tr><th>When</th><th class="m">Session</th>'
+                '<th>Setup</th><th class="m">Dir</th><th>R</th><th class="m">Path (worst → best, ● exit)</th><th>Tags</th></tr>'
+                f'{rows}</table></div>', unsafe_allow_html=True)
+    n_all = len(v)
+    cap_ = f"Showing {min(shown, n_all)} of {n_all}. Flagged = your Rules tag says No, or a mistake is logged."
+    b1, b2 = st.columns([3, 1])
+    with b1:
+        st.caption(cap_)
+    with b2:
+        if n_all > shown and st.button("Show 25 more", key=f"{key}_more", use_container_width=True):
+            st.session_state[f"{key}_n"] = shown + 25
+            st.rerun()
+
+    # the trade card
+    st.markdown("#### Open a trade")
+    lab = {f'{r["when"].strftime("%a %d %b %Y %H:%M")} · {r["setup"] or "no setup"} · {fmt_r(r["r"])}': i
+           for i, r in v.iterrows()}
+    pick = st.selectbox("Trade", list(lab), index=0, key=f"{key}_pick", label_visibility="collapsed")
+    r = v.loc[lab[pick]]
+    same = x[(x["model"] == r["model"]) & (x["session"] == r["session"])] if r["model"] else x.iloc[0:0]
+    same_tf = x[(x["model"] == r["model"]) & (x["tf"] == r["tf"])] if (r["model"] and r["tf"]) else x.iloc[0:0]
+    rec = ""
+    if len(same) >= 2:
+        rec = (f'<b>Your record with this setup:</b> {_h.escape(r["model"])} in {_h.escape(r["session"] or "any session")}: '
+               f'<b>{len(same)} trades, {_h.escape(fmt_r(same["r"].mean()))} average, '
+               f'{(same["r"] > 0.15).mean() * 100:.0f}% won</b>.')
+        if len(same_tf) >= 2:
+            rec += f' On the {_h.escape(r["tf"])}: {len(same_tf)} trades, {_h.escape(fmt_r(same_tf["r"].mean()))} average.'
+    kv = dict(r["tags"])
+    if r["aplus"] is not None:
+        kv["A+ setup"] = "Yes" if r["aplus"] else "No"
+    if r["rules"] is not None:
+        kv["Rules followed"] = "Yes" if r["rules"] else "No"
+    if r["mistake"]:
+        kv["Mistake"] = r["mistake"]
+    if pd.notna(r["mfe"]) and r["mfe"] > 0 and r["r"] > 0.15:
+        kv["Captured"] = f"{min(100, r['r'] / r['mfe'] * 100):.0f}% of the move"
+    kvh = "".join(f'<div><div class="k">{_h.escape(k)}</div><div class="v">{_h.escape(str(vv))}</div></div>'
+                  for k, vv in kv.items())
+    rc = GREEN if r["r"] > 0.15 else (RED if r["r"] < -0.15 else t["muted"])
+    notes = (f'<div class="nt">{_h.escape(r["notes"])}</div>' if r["notes"] else
+             '<div class="nt mu">No notes on this trade.</div>')
+    extra = f"""
+.ea-tc{{border:1px solid {'#4c3a99' if _dark() else '#c4b5fd'};border-radius:14px;padding:16px 18px;background:{t['base']};}}
+.ea-tc .top{{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;}}
+.ea-tc .e{{font-size:11.5px;font-weight:700;letter-spacing:.07em;color:{t['muted']};}}
+.ea-tc .h{{font-size:19px;font-weight:800;color:{t['ink']};margin-top:2px;}}
+.ea-tc .r{{font-size:28px;font-weight:800;white-space:nowrap;}}
+.ea-tc .kv{{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-top:8px;}}
+.ea-tc .kv>div{{background:{t['soft']};border:1px solid {t['line']};border-radius:10px;padding:8px 11px;}}
+.ea-tc .k{{font-size:10.5px;font-weight:700;letter-spacing:.06em;color:{t['muted']};text-transform:uppercase;}}
+.ea-tc .v{{font-size:14px;font-weight:700;color:{t['ink']};margin-top:1px;}}
+.ea-tc .rec{{background:{'#221c44' if _dark() else '#f3f0ff'};border-radius:10px;padding:10px 13px;margin-top:12px;font-size:14px;line-height:1.5;color:{t['ink']};}}
+.ea-tc .nt{{font-size:14px;color:{t['ink']};background:{t['soft']};border:1px dashed {t['line']};border-radius:10px;padding:9px 12px;margin-top:10px;white-space:pre-wrap;}}
+.ea-tc .mu{{color:{t['muted']};}}
+"""
+    when = r["when"].strftime("%a %d %b %Y") + (f' · {r["when"].strftime("%H:%M")}' if r["when"].hour or r["when"].minute else "")
+    head = " · ".join(x_ for x_ in (r["setup"], r["tf"], r["dir"]) if x_) or "Trade"
+    card = (f'<div class="ea-rx ea-tc"><div class="top"><div><div class="e">{_h.escape(when.upper())}'
+            f'{(" · " + _h.escape(r["session"].upper())) if r["session"] else ""}</div>'
+            f'<div class="h">{_h.escape(head)}</div></div><div class="r" style="color:{rc};">{_h.escape(fmt_r(r["r"]))}</div></div>'
+            f'<div class="e" style="margin-top:12px;">HOW THE TRADE MOVED</div>{_big_path(r)}'
+            f'<div class="kv">{kvh}</div>'
+            + (f'<div class="rec">{rec}</div>' if rec else "")
+            + f'<div class="e" style="margin-top:12px;">YOUR NOTES</div>{notes}</div>')
+    st.markdown(css(extra) + card, unsafe_allow_html=True)
