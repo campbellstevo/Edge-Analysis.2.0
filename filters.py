@@ -69,33 +69,24 @@ def _st_rerun():
         st.experimental_rerun()
 
 
-def _render_density_seg():
-    """Focus/Everything segment — shared by the rail and stacked layouts."""
-    _dwant = ("Focus" if st.session_state.get("ea_density_pref") == "Focus"
-              else "Everything")
-    if st.session_state.get("ea_density_seg") not in ("Focus", "Everything"):
-        st.session_state["ea_density_seg"] = _dwant
-    # Boot guard (r169): until the prefs blob has been read once, the widget
-    # FOLLOWS the stored pref. During the boot reruns the frontend can replay
-    # the radio's default (index 0 = "Focus") into the widget state, and the
-    # value-compare below then flipped a fresh session into Focus mode about
-    # one boot in six (reproduced locally). After boot, the widget is the truth
-    # — no permanent re-sync lock, that one ate every click (r162).
+def _render_focus_toggle(marker: str = "ea-bfo") -> None:
+    """Focus switch (owner): track record + what needs work, nothing else."""
+    _want = st.session_state.get("ea_density_pref") == "Focus"
+    # Boot guard (r169): until the prefs blob has been read once, the switch
+    # FOLLOWS the stored pref — a replayed default during the boot reruns must
+    # not flip a fresh session into Focus. After boot, the switch is the truth.
     if not st.session_state.get("ea_density_booted"):
-        st.session_state["ea_density_seg"] = _dwant
+        st.session_state["ea_focus_tgl"] = _want
         if ("ea_prefs" in st.session_state
                 or int(st.session_state.get("ea_prefs_tries", 0) or 0) >= 6):
             st.session_state["ea_density_booted"] = True
-
-    st.markdown('<div class="ea-densityseg"></div>', unsafe_allow_html=True)
-    _seg_val = st.radio("Density", ["Focus", "Everything"], key="ea_density_seg",
-                        index=(0 if _dwant == "Focus" else 1),
-                        horizontal=True, label_visibility="collapsed",
-                        help="Focus shows your track record and what needs work. "
-                             "Everything shows all six tabs.")
+    elif "ea_focus_tgl" not in st.session_state:
+        st.session_state["ea_focus_tgl"] = _want   # dropped while not drawn
+    st.markdown(f'<div class="ea-mk {marker}"></div>', unsafe_allow_html=True)
+    _on = st.toggle("Focus", key="ea_focus_tgl")
     # value-compare instead of on_change: callbacks can be dropped across
     # reruns, but the returned value never lies
-    _want_pref = "Focus" if _seg_val == "Focus" else "All"
+    _want_pref = "Focus" if _on else "All"
     if st.session_state.get("ea_density_pref", "All") != _want_pref:
         st.session_state["ea_density_pref"] = _want_pref
         st.session_state["ea_density_dirty"] = True
@@ -148,7 +139,7 @@ def render_filters(
     _focus_ok = _verdicts_on()
     if not _focus_ok and st.session_state.get("ea_density_pref") == "Focus":
         st.session_state["ea_density_pref"] = "All"
-        st.session_state["ea_density_seg"] = "Everything"
+        st.session_state.pop("ea_focus_tgl", None)
 
     def _inst_label(v: str) -> str:
         return "GOLD" if v == "Gold" else v
@@ -180,87 +171,95 @@ def render_filters(
                   if st.session_state.get(k, "All") != "All")
     if st.session_state.get("filters_date_mode", "All") != "All":
         _active += 1
-    _flabel = f"Filters · {_active} on" if _active else "Filters"
-    st.markdown('<div class="ea-hdrbar"></div>', unsafe_allow_html=True)
-    _rail = bool(brand and not mobile)
-    if _rail:
-        # Band 1 — identity: logo left; status, theme, menu right
-        _logo_html, _pill_html = brand
-        try:
-            _hcl, _hcp, _hc2, _hc3 = st.columns(
-                [2.0, 5.45, 1.15, 0.62], vertical_alignment="center")
-        except TypeError:
-            _hcl, _hcp, _hc2, _hc3 = st.columns([2.0, 5.45, 1.15, 0.62])
-        with _hcl:
-            st.markdown(f"<div class='ea-topbar-logo ea-band-logo'>{_logo_html}</div>",
-                        unsafe_allow_html=True)
-        with _hcp:
-            if _pill_html:
-                st.markdown(f"<div style='text-align:right;'>{_pill_html}</div>",
-                            unsafe_allow_html=True)
-        # Band 2 — THE RAIL: nav + Filters + density in one contained bar
-        _focus_now = st.session_state.get("ea_density_pref") == "Focus"
-        with st.container():
-            st.markdown('<div class="ea-rail"></div>', unsafe_allow_html=True)
-            _rc_nav, _rc_flt, _rc_seg = st.columns([6.35, 1.0, 1.8])
-            with _rc_nav:
-                if not _focus_now:
-                    st.markdown('<div class="ea-rail-nav"></div>',
-                                unsafe_allow_html=True)
-                    st.radio("View",
-                             ["Performance", "Entry", "Externals", "Psychology",
-                              "Plan", "Review"],
-                             horizontal=True, key="ea_tab",
-                             label_visibility="collapsed")
-                    st.session_state["ea_nav_external"] = True
-                else:
-                    st.session_state.pop("ea_nav_external", None)
-                    st.markdown("<div class='ea-rail-focus'>FOCUS \u00b7 your "
-                                "briefing</div>", unsafe_allow_html=True)
-            with _rc_flt:
-                st.markdown('<div class="ea-rail-flt"></div>', unsafe_allow_html=True)
-                try:
-                    flt = st.popover(_flabel, use_container_width=False)
-                except Exception:
-                    flt = st.expander(_flabel)
-            with _rc_seg:
-                if _focus_ok:
-                    _render_density_seg()
-    else:
-        st.session_state.pop("ea_nav_external", None)
-        _hc1, _hcd, _hc2, _hc3 = st.columns([5.3, 2.1, 1.5, 0.9])
-        with _hcd:
-            if _focus_ok:
-                _render_density_seg()
-        with _hc1:
-            try:
-                flt = st.popover(_flabel, use_container_width=False)
-            except Exception:
-                flt = st.expander(_flabel)
-    with _hc2:
-        _dark_now = st.session_state.get("ea_theme_pref", "light") == "dark"
-        # One widget per applied theme. The saved theme arrives from the browser
-        # a run or two after the first paint, so a single widget seeded once sat
-        # on ☀ over a dark page; writing its value from code instead races the
-        # value the browser sends back and can flip the theme on the next click.
-        # A new key is a new widget, drawn with the right default.
-        _seg_key = "ea_theme_seg_d" if _dark_now else "ea_theme_seg_l"
+    _flabel = f"Filters · {_active}" if _active else "Filters"
+    _fmark = "ea-bf ea-bf-on" if _active else "ea-bf"
+    _logo_html, _sync_html = brand if brand else ("", "")
+    _focus_now = st.session_state.get("ea_density_pref") == "Focus"
+    _dark_now = st.session_state.get("ea_theme_pref", "light") == "dark"
+    _TABS = ["Performance", "Entry", "Externals", "Psychology", "Plan", "Review"]
 
-        def _theme_cb():
-            want = "dark" if st.session_state.get(_seg_key) == "\u263e" else "light"
-            if st.session_state.get("ea_theme_pref", "light") != want:
-                st.session_state["ea_theme_pref"] = want
-                st.session_state["ea_theme_dirty"] = True
+    def _flip_theme():
+        st.session_state["ea_theme_pref"] = "light" if _dark_now else "dark"
+        st.session_state["ea_theme_dirty"] = True
 
-        st.markdown('<div class="ea-themeseg"></div>', unsafe_allow_html=True)
-        st.radio("Theme", ["\u2600", "\u263e"], index=1 if _dark_now else 0, key=_seg_key,
-                 horizontal=True, on_change=_theme_cb, label_visibility="collapsed")
-    with _hc3:
-        st.markdown('<div class="ea-dots"></div>', unsafe_allow_html=True)
+    def _nav():
+        # The one nav. Focus mode shows the briefing only, so no tabs there.
+        if _focus_now:
+            st.session_state.pop("ea_nav_external", None)
+            st.markdown("<div class='ea-rail-focus' style='font-size:13px;font-weight:700;"
+                        "letter-spacing:0.08em;color:#64748b;padding:0 12px;'>FOCUS \u00b7 "
+                        "your briefing</div>", unsafe_allow_html=True)
+            return
+        st.radio("View", _TABS, horizontal=True, key="ea_tab", label_visibility="collapsed")
+        st.session_state["ea_nav_external"] = True
+
+    def _popover(label, icon, help_=None):
         try:
-            _more = st.popover("\u22ef", use_container_width=False)
+            return st.popover(label, icon=icon, help=help_, use_container_width=False)
         except Exception:
-            _more = st.expander("More")
+            return st.expander(label)
+
+    from edge_analysis.ui.theme import inject_bar_css
+    inject_bar_css()
+    if not mobile:
+        # One bar: logo · tabs · status · Filters · Focus · theme · menu
+        with st.container():
+            st.markdown('<div class="ea-mk ea-bar"></div>', unsafe_allow_html=True)
+            _cols = st.columns(7 if _focus_ok else 6, vertical_alignment="center")
+            _c_logo, _c_nav, _c_sync, _c_flt = _cols[:4]
+            _c_focus = _cols[4] if _focus_ok else None
+            _c_theme, _c_more = _cols[-2], _cols[-1]
+            with _c_logo:
+                st.markdown(f"<div class='ea-bar-logo'>{_logo_html}</div>", unsafe_allow_html=True)
+            with _c_nav:
+                st.markdown('<div class="ea-mk ea-bn"></div>', unsafe_allow_html=True)
+                _nav()
+            with _c_sync:
+                st.markdown('<div class="ea-mk ea-bs"></div>', unsafe_allow_html=True)
+                if _sync_html:
+                    st.markdown(_sync_html, unsafe_allow_html=True)
+            with _c_flt:
+                st.markdown(f'<div class="ea-mk {_fmark}"></div>', unsafe_allow_html=True)
+                flt = _popover(_flabel, ":material/tune:")
+            if _c_focus is not None:
+                with _c_focus:
+                    _render_focus_toggle()
+            with _c_theme:
+                st.markdown('<div class="ea-mk ea-bt"></div>', unsafe_allow_html=True)
+                st.button("Theme", key="ea_theme_btn", on_click=_flip_theme,
+                          icon=":material/light_mode:" if _dark_now else ":material/dark_mode:",
+                          help="Light mode" if _dark_now else "Dark mode")
+            with _c_more:
+                st.markdown('<div class="ea-mk ea-bm"></div>', unsafe_allow_html=True)
+                _more = _popover("Menu", ":material/more_horiz:")
+    else:
+        # Phone: row 1 = logo · status · theme · menu; row 2 = swipeable tabs + Filters
+        with st.container():
+            st.markdown('<div class="ea-mk ea-pbar"></div>', unsafe_allow_html=True)
+            _p1 = st.columns(4, vertical_alignment="center")
+            with _p1[0]:
+                st.markdown('<div class="ea-mk ea-pl"></div>', unsafe_allow_html=True)
+                st.markdown(f"<div class='ea-pbar-logo'>{_logo_html}</div>", unsafe_allow_html=True)
+            with _p1[1]:
+                st.markdown('<div class="ea-mk ea-ps"></div>', unsafe_allow_html=True)
+                if _sync_html:
+                    st.markdown(_sync_html, unsafe_allow_html=True)
+            with _p1[2]:
+                st.markdown('<div class="ea-mk ea-pbt"></div>', unsafe_allow_html=True)
+                st.button("Theme", key="ea_theme_btn", on_click=_flip_theme,
+                          icon=":material/light_mode:" if _dark_now else ":material/dark_mode:",
+                          help="Light mode" if _dark_now else "Dark mode")
+            with _p1[3]:
+                st.markdown('<div class="ea-mk ea-pbm"></div>', unsafe_allow_html=True)
+                _more = _popover("Menu", ":material/more_horiz:")
+            _p2 = st.columns(2, vertical_alignment="center")
+            with _p2[0]:
+                st.markdown('<div class="ea-mk ea-pn"></div>', unsafe_allow_html=True)
+                _nav()
+            with _p2[1]:
+                st.markdown(f'<div class="ea-mk ea-pf{" ea-pf-on" if _active else ""}"></div>',
+                            unsafe_allow_html=True)
+                flt = _popover(_flabel, ":material/tune:")
     with flt:
         st.markdown("<div style='font-size:11px;font-weight:700;letter-spacing:0.06em;"
                     "color:#64748b;margin-bottom:2px;'>FILTERS</div>", unsafe_allow_html=True)
@@ -389,6 +388,8 @@ def render_filters(
         st.markdown('<div class="ea-moremenu"></div>', unsafe_allow_html=True)
         _cur = st.session_state.get(SessionKeys.NAV_PAGE, PageNames.DASHBOARD)
         st.markdown(_eyebrow.format("VIEW"), unsafe_allow_html=True)
+        if mobile and _focus_ok:
+            _render_focus_toggle("ea-mfo")
         st.button(("\u2713 " if _cur == PageNames.DASHBOARD else "") + PageNames.DASHBOARD,
                   key="mm_dash", use_container_width=True,
                   on_click=_go, args=(PageNames.DASHBOARD,))

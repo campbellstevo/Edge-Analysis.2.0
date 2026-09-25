@@ -75,7 +75,7 @@ def test_focus_mode_renders_where_verdicts_are_on():
     _boot(at)
     assert not _problems(at), _problems(at)
     assert at.session_state["ea_density_pref"] == "Focus"
-    assert [r for r in at.radio if r.label == "Density"]
+    assert [t for t in at.toggle if t.label == "Focus"]
 
 
 def test_focus_is_not_offered_without_verdicts():
@@ -87,7 +87,7 @@ def test_focus_is_not_offered_without_verdicts():
     _boot(at)
     assert not _problems(at), _problems(at)
     assert at.session_state["ea_density_pref"] == "All"
-    assert not [r for r in at.radio if r.label == "Density"]
+    assert not [t for t in at.toggle if t.label == "Focus"]
 
 
 @pytest.fixture

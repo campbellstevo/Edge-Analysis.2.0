@@ -1,6 +1,7 @@
 from __future__ import annotations 
 from pathlib import Path
 import base64
+import re
 import streamlit as st
 import altair as alt
 import streamlit.components.v1 as components
@@ -13,6 +14,10 @@ RAW_ICON   = ASSETS_DIR / "edge_favicon_mark.png"
 FAVI_PNG   = ASSETS_DIR / "edge_favicon_transparent.png"
 HEADER_LOGO_LIGHT = ASSETS_DIR / "edge_logo.png"
 HEADER_LOGO_DARK  = ASSETS_DIR / "edge_logo_dark.png"  # kept for compatibility
+# tight crops for the header bar: the full files are mostly empty canvas
+# (the artwork fills the top third), so sizing them by height shrank the art
+BAR_LOGO_LIGHT = ASSETS_DIR / "edge_logo_bar.png"
+BAR_LOGO_DARK = ASSETS_DIR / "edge_logo_bar_dark.png"
 
 
 # ───────────────────────── Light-only palette ─────────────────────
@@ -2400,26 +2405,218 @@ def _img_tag_from_file(path: Path) -> str:
         return ""
 
 
+def _sync_short(status_text: str) -> str:
+    """"Live · Notion connected · synced 3h ago" -> "Synced 3h ago": the bar
+    shows the part that changes; the whole line is the tooltip."""
+    t = (status_text or "").strip()
+    m = re.search(r"synced (.+)$", t)
+    if m:
+        return "Synced " + m.group(1)
+    if t.startswith("Demo"):
+        return "Demo data"
+    if t.startswith("Live"):
+        return "Connected"
+    return t or "Not connected"
+
+
 def header_parts(status_text: str = "", status_ok: bool = True):
-    """(logo_html, pill_html) for the one-band header. Logo follows the theme."""
+    """(logo_html, sync_html) for the header bar. Logo follows the theme."""
     _dark = st.session_state.get("ea_theme_pref") == "dark"
-    if _dark and HEADER_LOGO_DARK.exists():
-        logo_path = HEADER_LOGO_DARK
-    else:
-        logo_path = HEADER_LOGO_LIGHT if HEADER_LOGO_LIGHT.exists() else HEADER_LOGO_DARK
-    logo = _img_tag_from_file(logo_path) if logo_path and logo_path.exists() else ""
-    pill = ""
+    logo_path = next((p for p in ((BAR_LOGO_DARK, HEADER_LOGO_DARK) if _dark
+                                  else (BAR_LOGO_LIGHT, HEADER_LOGO_LIGHT)) if p.exists()), None)
+    logo = ""
+    if logo_path:
+        logo = _img_tag_from_file(logo_path).replace("class='header-logo-img'", "class='ea-logo'")
+    sync = ""
     if status_text:
+        import html as _h
         col = "#16a34a" if status_ok else "#ef4444"
-        pill = (
-            "<div style='display:inline-flex;align-items:center;gap:8px;background:#ffffff;"
-            "border:1px solid rgba(0,0,0,0.06);border-radius:999px;padding:8px 16px;"
-            "box-shadow:0 2px 10px rgba(0,0,0,0.04);font-size:13px;font-weight:600;color:#334155;"
-            "white-space:nowrap;'>"
-            f"<span style='width:8px;height:8px;border-radius:50%;background:{col};display:inline-block;'></span>"
-            f"{status_text}</div>"
-        )
-    return logo, pill
+        halo = "rgba(22,163,74,0.18)" if status_ok else "rgba(239,68,68,0.18)"
+        sync = (f"<div class='ea-sync' title='{_h.escape(status_text, quote=True)}'>"
+                f"<span class='ea-sync-dot' style='background:{col};box-shadow:0 0 0 3px {halo};'></span>"
+                f"<span class='ea-sync-t'>{_h.escape(_sync_short(status_text))}</span></div>")
+    return logo, sync
+
+
+# ── Header bar (one bar on desktop, two slim rows on a phone) ──────────────
+# Every rule hangs off a marker div (class "ea-mk" + a role class) that
+# filters.py drops into the bar's container and columns; the markers' own
+# element containers are hidden so they take no room.
+_BAR_TOKENS = {
+    False: "--eb-card:#ffffff;--eb-line:#e6e8f0;--eb-ink:#0f172a;--eb-muted:#64748b;"
+           "--eb-brand:#4800ff;--eb-hover:#f4f5fa;--eb-soft:#f1edff;--eb-track:#cbd5e1;",
+    True: "--eb-card:#161b26;--eb-line:#262d3b;--eb-ink:#e6e9f0;--eb-muted:#9aa4b4;"
+          "--eb-brand:#a578ff;--eb-hover:#1d2331;--eb-soft:#241a45;--eb-track:#475569;",
+}
+
+_BAR_CSS = """
+[data-testid="stElementContainer"]:has(.ea-mk), [data-testid="stElementContainer"]:has(.ea-bar-css),
+[data-testid="stElementContainer"]:has(> [data-testid="stMarkdown"] [data-testid="stMarkdownContainer"] > style:only-child) {
+    display: none !important; }   /* style-only blocks each added a 12px gap above the bar */
+/* with the bar on the page, the page starts at the bar */
+[data-testid="stMainBlockContainer"]:has(:is(.ea-bar, .ea-pbar)) { padding-top: 0 !important; }
+/* the bar container: full-bleed white band, flush with the top of the page */
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-bar),
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-pbar) {
+    gap: 0 !important; background: var(--eb-card);
+    box-shadow: 0 0 0 100vmax var(--eb-card), 0 1px 0 100vmax var(--eb-line);
+    clip-path: inset(0 -100vmax -1px -100vmax);
+    margin: 0 0 22px !important;
+}
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] :is(.ea-bar, .ea-pbar))
+    > div[data-testid="stHorizontalBlock"] {
+    flex-wrap: nowrap !important; align-items: center !important; gap: 10px !important;
+}
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] :is(.ea-bar, .ea-pbar))
+    > div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
+    flex: 0 0 auto !important; width: auto !important; min-width: 0 !important;
+}
+/* the flexible ones: the tabs (desktop + phone) and the phone logo take the
+   free width; the tab strip shrinks and scrolls instead of widening the page */
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] :is(.ea-bar, .ea-pbar))
+    > div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:is(:has(.ea-bn), :has(.ea-pn), :has(.ea-pl)) {
+    flex: 1 1 0 !important; min-width: 0 !important; overflow: hidden;
+}
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-bar)
+    > div[data-testid="stHorizontalBlock"] { height: 66px; }
+/* the tabs column takes the free width and pushes the controls right */
+div[data-testid="stColumn"]:has(.ea-bn) { flex: 1 1 auto !important; }
+div[data-testid="stColumn"]:has(.ea-pl) { flex: 1 1 auto !important; }   /* phone: logo pushes icons right */
+.ea-bar-logo img { height: 34px !important; width: auto !important; max-width: none !important;
+                   display: block; margin-right: 26px; }
+.ea-pbar-logo img { height: 30px !important; width: auto !important; max-width: none !important; display: block; }
+/* Streamlit gives markdown a -16px bottom margin; in the bar it pushed the
+   status and logo below the buttons' centre line */
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] :is(.ea-bar, .ea-pbar))
+    [data-testid="stMarkdownContainer"] { margin-bottom: 0 !important; }
+
+/* tabs: text with an underline on the active one */
+div[data-testid="stColumn"]:has(.ea-bn) [data-testid="stRadio"] { margin: 0 !important; }
+div[data-testid="stColumn"]:has(.ea-bn) [role="radiogroup"] {
+    flex-wrap: nowrap !important; gap: 2px !important; align-items: stretch !important; }
+div[data-testid="stColumn"]:has(.ea-bn) [role="radiogroup"] > label {
+    position: relative; margin: 0 !important; padding: 0 13px !important; height: 66px;
+    display: flex !important; align-items: center !important; cursor: pointer;
+    background: transparent !important; border: none !important; border-radius: 0 !important; }
+div[data-testid="stColumn"]:has(.ea-bn) [role="radiogroup"] > label > div:first-child { display: none !important; }
+div[data-testid="stColumn"]:has(.ea-bn) [role="radiogroup"] > label p {
+    font-size: 15.5px !important; font-weight: 600 !important; color: var(--eb-muted) !important;
+    white-space: nowrap !important; margin: 0 !important; transition: color 150ms ease; }
+div[data-testid="stColumn"]:has(.ea-bn) [role="radiogroup"] > label:hover p { color: var(--eb-ink) !important; }
+div[data-testid="stColumn"]:has(.ea-bn) [role="radiogroup"] > label:has(input:checked) p {
+    color: var(--eb-ink) !important; font-weight: 700 !important; }
+div[data-testid="stColumn"]:has(.ea-bn) [role="radiogroup"] > label:has(input:checked)::after {
+    content: ''; position: absolute; left: 10px; right: 10px; bottom: 0; height: 3px;
+    border-radius: 3px 3px 0 0; background: var(--eb-brand); }
+div[data-testid="stColumn"]:has(.ea-bn) [role="radiogroup"] > label:has(input:focus-visible) {
+    outline: 2px solid var(--eb-brand); outline-offset: -10px; border-radius: 10px !important; }
+
+/* sync status: dot + "Synced 3h ago"; the full line is the tooltip */
+.ea-sync { display: inline-flex; align-items: center; gap: 9px; font-size: 14px; color: var(--eb-muted);
+           white-space: nowrap; padding: 0 6px; cursor: default; }
+.ea-sync-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; }
+
+/* square 40px controls: Filters, theme, menu */
+div[data-testid="stColumn"]:is(:has(.ea-bf), :has(.ea-bt), :has(.ea-bm)) button {
+    height: 40px !important; min-height: 40px !important; border-radius: 10px !important;
+    border: 1px solid var(--eb-line) !important; background: var(--eb-card) !important;
+    box-shadow: none !important; color: var(--eb-ink) !important; padding: 0 14px !important;
+    transition: background 150ms ease, border-color 150ms ease; }
+div[data-testid="stColumn"]:is(:has(.ea-bf), :has(.ea-bt), :has(.ea-bm)) button:hover {
+    background: var(--eb-hover) !important; border-color: var(--eb-muted) !important; }
+div[data-testid="stColumn"]:is(:has(.ea-bf), :has(.ea-bt), :has(.ea-bm)) button p {
+    font-size: 15px !important; font-weight: 600 !important; color: var(--eb-ink) !important;
+    white-space: nowrap !important; margin: 0 !important; }
+div[data-testid="stColumn"]:is(:has(.ea-bf), :has(.ea-bt), :has(.ea-bm)) button [data-testid="stIconMaterial"] {
+    color: var(--eb-ink) !important; font-size: 20px !important; }
+div[data-testid="stColumn"]:is(:has(.ea-bt), :has(.ea-bm)) button { width: 40px !important; padding: 0 !important; }
+/* icon-only buttons keep their word for screen readers */
+div[data-testid="stColumn"]:is(:has(.ea-bt), :has(.ea-bm), :has(.ea-pbt), :has(.ea-pbm)) button [data-testid="stMarkdownContainer"] {
+    position: absolute !important; width: 1px !important; height: 1px !important; overflow: hidden !important;
+    clip: rect(0 0 0 0) !important; white-space: nowrap !important; }
+div[data-testid="stColumn"]:is(:has(.ea-bt), :has(.ea-bm)) button [data-testid="stIconMaterial"] {
+    color: var(--eb-muted) !important; }
+div[data-testid="stColumn"]:is(:has(.ea-bf), :has(.ea-bm)) button svg { display: none !important; }  /* popover caret */
+div[data-testid="stColumn"]:has(.ea-bf-on) button { border-color: var(--eb-brand) !important; }
+div[data-testid="stColumn"]:has(.ea-bf-on) button p,
+div[data-testid="stColumn"]:has(.ea-bf-on) button [data-testid="stIconMaterial"] { color: var(--eb-brand) !important; }
+
+/* Focus switch (owner): a plain switch, not a second purple pill */
+div[data-testid="stColumn"]:has(.ea-bfo) [data-testid="stCheckbox"] label p {
+    font-size: 15px !important; font-weight: 600 !important; color: var(--eb-muted) !important; white-space: nowrap; }
+div[data-testid="stColumn"]:has(.ea-bfo) [data-testid="stCheckbox"] label:has(input:checked) p { color: var(--eb-ink) !important; }
+/* the off track was the page colour in dark mode: only the knob showed */
+:is(div[data-testid="stColumn"]:has(.ea-bfo),
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-mfo))
+    [data-testid="stCheckbox"] label:not(:has(input:checked)) > div:first-child {
+    background: var(--eb-track) !important; }
+
+/* narrow desktop: the status keeps its dot, the tabs tighten */
+@media (max-width: 1180px) {
+    div[data-testid="stColumn"]:has(.ea-bs) .ea-sync-t { display: none; }
+    div[data-testid="stColumn"]:has(.ea-bn) [role="radiogroup"] > label { padding: 0 9px !important; }
+}
+
+/* ── phone: row 1 = logo, status, theme, menu; row 2 = swipeable tabs + Filters ── */
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-pbar) {
+    margin: 0 0 14px !important; }
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-pbar)
+    > div[data-testid="stHorizontalBlock"] { height: 58px; gap: 4px !important; }
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ea-pbar)
+    > div[data-testid="stVerticalBlock"] { margin-top: 0 !important; }
+div[data-testid="stHorizontalBlock"]:has(.ea-pn) {
+    flex-wrap: nowrap !important; align-items: stretch !important; gap: 0 !important;
+    border-top: 1px solid var(--eb-line); height: 50px; }
+div[data-testid="stColumn"]:has(.ea-pn) {
+    -webkit-mask-image: linear-gradient(90deg, #000 86%, transparent);
+            mask-image: linear-gradient(90deg, #000 86%, transparent); }
+div[data-testid="stColumn"]:has(.ea-pn) [data-testid="stRadio"] { margin: 0 !important; }
+div[data-testid="stColumn"]:has(.ea-pn) [role="radiogroup"] {
+    flex-wrap: nowrap !important; gap: 0 !important; overflow-x: auto; scrollbar-width: none;
+    align-items: stretch !important; padding-right: 36px; }
+div[data-testid="stColumn"]:has(.ea-pn) [role="radiogroup"]::-webkit-scrollbar { display: none; }
+div[data-testid="stColumn"]:has(.ea-pn) [role="radiogroup"] > label {
+    position: relative; margin: 0 !important; padding: 0 12px !important; height: 50px; flex: none;
+    display: flex !important; align-items: center !important;
+    background: transparent !important; border: none !important; border-radius: 0 !important; }
+div[data-testid="stColumn"]:has(.ea-pn) [role="radiogroup"] > label > div:first-child { display: none !important; }
+div[data-testid="stColumn"]:has(.ea-pn) [role="radiogroup"] > label p {
+    font-size: 15px !important; font-weight: 600 !important; color: var(--eb-muted) !important;
+    white-space: nowrap !important; margin: 0 !important; }
+div[data-testid="stColumn"]:has(.ea-pn) [role="radiogroup"] > label:has(input:checked) p {
+    color: var(--eb-ink) !important; font-weight: 700 !important; }
+div[data-testid="stColumn"]:has(.ea-pn) [role="radiogroup"] > label:has(input:checked)::after {
+    content: ''; position: absolute; left: 8px; right: 8px; bottom: 0; height: 3px;
+    border-radius: 3px 3px 0 0; background: var(--eb-brand); }
+/* phone Filters: icon only (the word stays for screen readers), pinned right */
+div[data-testid="stColumn"]:has(.ea-pf) { border-left: 1px solid var(--eb-line); display: flex; align-items: center; }
+div[data-testid="stColumn"]:has(.ea-pf) button {
+    width: 52px !important; height: 50px !important; min-height: 50px !important; border: none !important;
+    border-radius: 0 !important; background: transparent !important; padding: 0 !important; }
+div[data-testid="stColumn"]:has(.ea-pf) button p {
+    position: absolute !important; width: 1px !important; height: 1px !important; overflow: hidden !important;
+    clip: rect(0 0 0 0) !important; white-space: nowrap !important; }
+div[data-testid="stColumn"]:has(.ea-pf) button svg { display: none !important; }
+div[data-testid="stColumn"]:has(.ea-pf) button [data-testid="stIconMaterial"] { color: var(--eb-ink) !important; font-size: 22px !important; }
+div[data-testid="stColumn"]:has(.ea-pf-on) button [data-testid="stIconMaterial"] { color: var(--eb-brand) !important; }
+div[data-testid="stColumn"]:is(:has(.ea-pbt), :has(.ea-pbm)) button {
+    width: 44px !important; height: 44px !important; min-height: 44px !important; padding: 0 !important;
+    border: none !important; background: transparent !important; box-shadow: none !important; }
+div[data-testid="stColumn"]:is(:has(.ea-pbt), :has(.ea-pbm)) button [data-testid="stIconMaterial"] {
+    color: var(--eb-muted) !important; font-size: 22px !important; }
+div[data-testid="stColumn"]:has(.ea-pbm) button svg { display: none !important; }
+@media (max-width: 360px) { div[data-testid="stColumn"]:has(.ea-ps) .ea-sync-t { display: none; } }
+"""
+
+
+def inject_bar_css() -> None:
+    """The header bar's styles, in the current theme's tokens."""
+    dark = st.session_state.get("ea_theme_pref") == "dark"
+    # no blank lines: markdown ends a raw-HTML block at the first one, and
+    # every rule after it silently fell out of the stylesheet
+    css = re.sub(r"\n\s*\n", "\n", _BAR_CSS)
+    st.markdown(f"<div class='ea-bar-css'></div><style>:root{{{_BAR_TOKENS[dark]}}}{css}</style>",
+                unsafe_allow_html=True)
 
 
 def inject_header_bar(status_text: str = "", status_ok: bool = True):

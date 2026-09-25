@@ -1657,12 +1657,12 @@ def render_dashboard(mobile: bool):
             _status += f" · synced {_ago}"
         except (TypeError, ValueError):
             pass  # legacy HH:MM stamp from an older session — drop it
-    if mobile:
-        inject_header_bar(_status, bool(token and dbid) or _demo)
-        _brand = None
-    else:
-        from edge_analysis.ui.theme import header_parts
-        _brand = header_parts(_status, bool(token and dbid) or _demo)
+    from edge_analysis.ui.theme import header_parts
+    _brand = header_parts(_status, bool(token and dbid) or _demo)
+    # The header bar is drawn later (it needs the journal's filter options)
+    # but belongs at the TOP: this slot keeps it above the demo banner and
+    # the first-run note.
+    _hdr_slot = st.container()
     st.session_state["_ea_connected"] = bool(token and dbid) or _demo
 
     if _demo:
@@ -1909,8 +1909,7 @@ def render_dashboard(mobile: bool):
                                       st.session_state.get("ea_setup_density") == "Focus")
                           else "All")
                 st.session_state["ea_density_pref"] = _dwant
-                st.session_state["ea_density_seg"] = ("Focus" if _dwant == "Focus"
-                                                      else "Everything")
+                st.session_state["ea_focus_tgl"] = (_dwant == "Focus")
                 st.session_state["ea_density_dirty"] = True
                 st.session_state["ea_setup_done"] = True
                 st.session_state["ea_setup_dirty"] = True
@@ -1935,16 +1934,17 @@ def render_dashboard(mobile: bool):
                 + ("<b>Auto-sync and template</b> — the &hellip; menu, top right."
                    if (st.session_state.get("detected_schema") == "mt5")
                    else "<b>Template check and theme</b> — the &hellip; menu and the "
-                        "&#9728;/&#9790; switch, top right.")
+                        "moon button, top right.")
                 + "</div>", unsafe_allow_html=True)
             if st.button("Got it", key="ea_tour_dismiss"):
                 st.session_state["ea_tour_done"] = True
                 _st_rerun()
 
-    sel_inst, sel_em, sel_sess, date_range, sel_acct, sel_tot = render_filters(
-        mobile, inst_opts, em_opts, sess_opts, date_mode_options, min_date, max_date,
-        acct_opts, tot_opts, brand=_brand
-    )
+    with _hdr_slot:
+        sel_inst, sel_em, sel_sess, date_range, sel_acct, sel_tot = render_filters(
+            mobile, inst_opts, em_opts, sess_opts, date_mode_options, min_date, max_date,
+            acct_opts, tot_opts, brand=_brand
+        )
     _owner_tools_actions()
 
     # The Trade-Type coaching lives on the select itself (its help tooltip) —
