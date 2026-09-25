@@ -3714,7 +3714,7 @@ def _conditions_tab(f: pd.DataFrame, show_table):
         _insight_box(
             f"Best condition: <b>{best_ind['Condition']}</b> "
             f"(<b>{best_ind['Expectancy']:+.2f}R</b> per trade). "
-            f"Worst: <b>{worst_ind['Condition']}</b> "
+            f"{'Worst' if worst_ind['Expectancy'] < 0 else 'Lowest'}: <b>{worst_ind['Condition']}</b> "
             f"(<b>{worst_ind['Expectancy']:+.2f}R</b>)."
         )
     if not bar_rows:

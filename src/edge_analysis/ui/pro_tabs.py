@@ -66,7 +66,9 @@ def _exit_optimizer(df, styler) -> None:
     with c2: _kpi("Best fixed target", f"+{best['Target']:.1f}R", f"{best['Expectancy']:+.2f}R / trade")
     with c3:
         delta = best["Total R"] - actual_total
-        _kpi("Improvement", f"{delta:+.0f}R", "vs your actual exits", "#16a34a" if delta >= 0 else "#ef4444")
+        # a negative "improvement" read as a gain: name it for what it is
+        _kpi("Improvement" if delta >= 0 else "Change", f"{delta:+.0f}R".replace("-", "\u2212"),
+             "vs your actual exits", "#16a34a" if delta >= 0 else "#ef4444")
     if best["Expectancy"] > actual_exp + 0.05:
         t._insight_box(f"A flat <b>+{best['Target']:.1f}R</b> target would lift expectancy from <b>{actual_exp:+.2f}R</b> "
                        f"to <b>{best['Expectancy']:+.2f}R</b> (~<b>{best['Total R'] - actual_total:+.0f}R</b>). "
