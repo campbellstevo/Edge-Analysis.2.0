@@ -3838,6 +3838,10 @@ def _data_tab(f_all: pd.DataFrame, show_table):
             continue
         if cs == "Account" and col.astype(str).eq("Salty").all():
             continue
+        # a two-model journal: every trade with a second model IS a double
+        # confirmation, so the checkbox is a given, not a gap (his ruling)
+        if cs == "Double Confirmation?" and "Entry Model 2" in f_all.columns:
+            continue
         try:
             filled = int((col.notna()
                           & ~col.astype(str).str.strip().isin(
@@ -3849,15 +3853,23 @@ def _data_tab(f_all: pd.DataFrame, show_table):
         _empty_note("Appears once trades are logged.")
         return
     rows.sort(key=lambda x: (x[1] / n, x[0].lower()))
-    gaps = [(nm, fl) for nm, fl in rows if fl < n]
-    full = len(rows) - len(gaps)
+    # never filled is a different thing from sometimes missed: one quiet
+    # line, not a wall of red pills
+    unused = [nm for nm, fl in rows if fl == 0]
+    gaps = [(nm, fl) for nm, fl in rows if 0 < fl < n]
+    full = len(rows) - len(gaps) - len(unused)
     st.markdown(
         "<div style='font-size:11px;font-weight:700;letter-spacing:0.07em;"
         f"color:#64748b;margin:16px 0 8px;'>FIELDS \u00b7 {full} OF {len(rows)} FILLED ON EVERY TRADE"
-        + (f" \u00b7 {len(gaps)} WITH GAPS" if gaps else "") + "</div>",
+        + (f" \u00b7 {len(gaps)} WITH GAPS" if gaps else "")
+        + (f" \u00b7 {len(unused)} NEVER USED" if unused else "") + "</div>",
         unsafe_allow_html=True)
+    if unused:
+        st.caption("Never used: " + ", ".join(unused[:12]) + (f" +{len(unused) - 12} more" if len(unused) > 12 else "")
+                   + ". Start logging them or hide them in Notion; nothing here needs them.")
     if not gaps:
-        _empty_note("Every field is filled on every trade \u2014 nothing waiting on data.")
+        if not unused:
+            _empty_note("Every field is filled on every trade \u2014 nothing waiting on data.")
     else:
         chips = []
         for name, filled in gaps[:14]:
