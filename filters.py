@@ -494,10 +494,11 @@ def render_filters(
 
 
 def _owner_status_line() -> str:
-    """Owner-only, one line: the server's clock (the 'this week / this month'
-    surfaces read it, TZ-04) and whether the user store's last write held."""
-    from datetime import datetime as _dt
-    now = _dt.now().astimezone()
+    """Owner-only, one line: the clock "this week / this month" follow (the
+    trader's zone since TZ-04, not the server's UTC) and whether the user
+    store's last write held."""
+    from edge_analysis.core.clock import local_now, local_tz
+    now = local_now()
     try:
         from edge_analysis.user_store import list_users, mirror_status
         n = len(list_users())
@@ -506,7 +507,7 @@ def _owner_status_line() -> str:
         users = f"{n} user{'s' if n != 1 else ''}"
     except Exception:
         users, store = "users unknown", "store unreadable"
-    return f"Server {now:%a %H:%M} {now.tzname() or ''} \u00b7 {users} \u00b7 {store}"
+    return f"{now:%a %H:%M} {local_tz().split('/')[-1]} time \u00b7 {users} \u00b7 {store}"
 
 
 def _server_clock_line() -> str:
@@ -516,7 +517,8 @@ def _server_clock_line() -> str:
     import time as _time
     from datetime import datetime as _dt
     now = _dt.now().astimezone()
-    local = _os.environ.get("EDGE_LOCAL_TZ") or "Australia/Sydney (default)"
+    from edge_analysis.core.clock import local_tz
+    local = local_tz()
     return (f"Server clock {now:%a %d %b %H:%M} {now.tzname() or _time.tzname[0]} · "
             f"app zone {local}")
 

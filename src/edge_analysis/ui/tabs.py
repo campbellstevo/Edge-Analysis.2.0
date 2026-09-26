@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import altair as alt
 import streamlit as st
+from edge_analysis.core.clock import local_now, local_today, local_tz as _clock_tz
 from pathlib import Path
 import re
 import os
@@ -295,7 +296,7 @@ def _ensure_session_and_day(df: pd.DataFrame) -> pd.DataFrame:
             s_dt = _coerce_datetime_series(out, tz_name=os.getenv("EDGE_SESSIONS_TZ", "Australia/Sydney"))
             if s_dt is not None:
                 try:
-                    local_tz = ZoneInfo(os.getenv("EDGE_LOCAL_TZ", "Australia/Sydney"))
+                    local_tz = ZoneInfo(_clock_tz())
                     out["DayName"] = s_dt.dt.tz_convert(local_tz).dt.day_name()
                 except Exception:
                     out["DayName"] = s_dt.dt.day_name()
@@ -307,7 +308,7 @@ def _ensure_session_and_day(df: pd.DataFrame) -> pd.DataFrame:
             s_dt = _coerce_datetime_series(out, tz_name=os.getenv("EDGE_SESSIONS_TZ", "Australia/Sydney"))
             if s_dt is not None:
                 try:
-                    local_tz = ZoneInfo(os.getenv("EDGE_LOCAL_TZ", "Australia/Sydney"))
+                    local_tz = ZoneInfo(_clock_tz())
                     out["DayName"] = s_dt.dt.tz_convert(local_tz).dt.day_name()
                 except Exception:
                     out["DayName"] = s_dt.dt.day_name()
@@ -326,7 +327,7 @@ def _ensure_session_and_day(df: pd.DataFrame) -> pd.DataFrame:
     out["__ts_utc"] = s_dt_utc
     out["Session Norm"] = out["__ts_utc"].map(_classify_session_market_local)
     try:
-        local_tz = ZoneInfo(os.getenv("EDGE_LOCAL_TZ", "Australia/Sydney"))
+        local_tz = ZoneInfo(_clock_tz())
         out["DayName"] = out["__ts_utc"].dt.tz_convert(local_tz).dt.day_name()
     except Exception:
         out["DayName"] = out["__ts_utc"].dt.day_name()
@@ -977,12 +978,12 @@ def _month_card(f: pd.DataFrame, styler) -> None:
         return
     TGT_R, STOP_R, auto_tgt = _perf_settings(g)
     daily = g.set_index("__Date")["PnL_from_RR"].groupby(pd.Grouper(freq="D")).sum().dropna()
-    now_p = pd.Timestamp.now().to_period("M")
+    now_p = local_now().to_period("M")
     md = daily[daily.index.to_period("M") == now_p].cumsum().reset_index()
     md.columns = ["Date", "Cum"]
     cur = float(md["Cum"].iloc[-1]) if not md.empty else 0.0
     n_tr = int((g["__Date"].dt.to_period("M") == now_p).sum())
-    wk_r = float(g.loc[g["__Date"] >= (pd.Timestamp.now() - pd.Timedelta(days=7)),
+    wk_r = float(g.loc[g["__Date"] >= (local_now() - pd.Timedelta(days=7)),
                        "PnL_from_RR"].sum())
 
     with st.container(border=True):
@@ -1013,15 +1014,15 @@ def _month_card(f: pd.DataFrame, styler) -> None:
             else:
                 _bal_note = ""
             _mtd_pct = _period_pct(g, g["__Date"].dt.to_period("M") == now_p, _bal_disp)
-            _wk_mon = (pd.Timestamp.now().normalize()
-                       - pd.Timedelta(days=int(pd.Timestamp.now().dayofweek)))
+            _wk_mon = (local_now().normalize()
+                       - pd.Timedelta(days=int(local_now().dayofweek)))
             _wk_pct = _period_pct(
                 g, g["__Date"] >= _wk_mon, _bal_disp)
             _cur_txt = f"{_mtd_pct:+.2f}%" if _mtd_pct is not None else _pct_txt(cur, _rp)
             _wk_txt = f"{_wk_pct:+.2f}%" if _wk_pct is not None else _pct_txt(wk_r, _rp)
             st.markdown(
                 f"<div style='font-size:12px;font-weight:700;letter-spacing:0.08em;"
-                f"color:#64748b;'>{pd.Timestamp.now().strftime('%B').upper()}</div>"
+                f"color:#64748b;'>{local_now().strftime('%B').upper()}</div>"
                 f"<div style='font-size:38px;font-weight:800;color:{cc};line-height:1.1;'>"
                 f"{_cur_txt}"
                 f"<span style='font-size:15px;font-weight:700;color:{wc};margin-left:14px;'>"
@@ -1947,7 +1948,7 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
 
     g = f.copy()
 
-    s_dt = _coerce_datetime_series(g, tz_name=os.getenv("EDGE_LOCAL_TZ", "Australia/Sydney"))
+    s_dt = _coerce_datetime_series(g, tz_name=_clock_tz())
     if s_dt is None:
         date_col = next((c for c in ["Date", "Trade Date", "Entry Date"] if c in g.columns), None)
         if date_col:
@@ -1967,7 +1968,7 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
         return
 
     try:
-        local_tz = ZoneInfo(os.getenv("EDGE_LOCAL_TZ", "Australia/Sydney"))
+        local_tz = ZoneInfo(_clock_tz())
         g["__local_ts"] = g["__ts"].dt.tz_convert(local_tz)
     except Exception:
         g["__local_ts"] = g["__ts"]
@@ -2042,7 +2043,7 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
         else "#f59e0b" if discipline_score >= 60
         else "#ef4444"
     )
-    _month_n = int((g["__month"] == pd.Timestamp.now().strftime("%Y-%m")).sum())
+    _month_n = int((g["__month"] == local_now().strftime("%Y-%m")).sum())
 
     _checked = ["your Rules Followed tag" if "Rules Followed?" in g.columns else None,
                 f"the monthly cap of {_cap}" if _cap_is_theirs else None,
@@ -3092,7 +3093,7 @@ def _breaker_strip(df_raw: pd.DataFrame, terse: bool = False) -> None:
         return
     stop_r = float(st.session_state.get("ea_m_stop", -6.0))
     _rp_b = _risk_pct(g.rename(columns={"__rr": "PnL_from_RR"}))
-    now = pd.Timestamp.now()
+    now = local_now()
     cur = g[g["__dt"].dt.to_period("M") == now.to_period("M")]
     mtd = float(cur["__rr"].sum()) if not cur.empty else 0.0
     closed = mtd <= stop_r
@@ -4190,7 +4191,7 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
         t_idx    = 0
         tpm      = int(trades_per_month)
         from datetime import date
-        _t = date.today()
+        _t = local_today()
         for m in range(int(total_months)):
             _ym   = _t.year * 12 + _t.month + m   # first projected month = next month
             year  = _ym // 12
@@ -5033,7 +5034,7 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
             mview = st.radio("View", ["Months", "Stacked"], horizontal=True,
                              key="mbm_view", label_visibility="collapsed") or "Months"
 
-        now_m = pd.Timestamp.now().to_period("M")
+        now_m = local_now().to_period("M")
         _bal = float(st.session_state.get("ea_m_bal", 10000) or 0)
         # Renaming onto a name the frame already carries would leave TWO columns
         # of that name, and every lookup would then hand back a DataFrame.
@@ -5171,7 +5172,7 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
         weekly = mg["__rr"].resample("W-MON", label="left", closed="left").sum()
         wk_n = mg["__rr"].resample("W-MON", label="left", closed="left").size()
         weekly = weekly[wk_n > 0]
-        _now_ts = pd.Timestamp.now()
+        _now_ts = local_now()
         _wk_start = (_now_ts.normalize()
                      - pd.Timedelta(days=int(_now_ts.dayofweek)))
         weekly = weekly[weekly.index < _wk_start]
@@ -5208,7 +5209,7 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
         # the ONE evidence strip on the tab — and it must EARN the word
         # "evidence": closed months only, and enough of them (his call on the
         # +2.8R claim from six trades: "I do not think that is accurate")
-        _mo_start2 = pd.Timestamp.now().normalize().replace(day=1)
+        _mo_start2 = local_now().normalize().replace(day=1)
         _m_closed = monthly[monthly.index < _mo_start2]
         _n_trades_all = int(monthly["n"].sum())
         if len(_m_closed) >= 3 and _n_trades_all >= 20:
@@ -5255,7 +5256,7 @@ def _monthly_report_pdf(monthly, need_r, target_pct, risk_pct, records_rows) -> 
     pdf.set_text_color(20, 24, 38)
     pdf.set_xy(10, 28)
     pdf.set_font("Helvetica", "", 10)
-    pdf.cell(0, 6, f"Generated {pd.Timestamp.now().strftime('%d %b %Y')} - "
+    pdf.cell(0, 6, f"Generated {local_now().strftime('%d %b %Y')} - "
                    f"target {target_pct:.0f}% at {risk_pct:.2f}% risk = {need_r:.0f}R per month", ln=1)
     pdf.ln(4)
     pdf.set_font("Helvetica", "B", 11)

@@ -14,6 +14,7 @@ import re
 
 import pandas as pd
 import streamlit as st
+from edge_analysis.core.clock import local_now
 
 GREEN, RED, PURPLE = "#16a34a", "#dc2626", "#4800ff"
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -742,7 +743,7 @@ def _calendar(g: pd.DataFrame, month: pd.Period) -> str:
     day = g.groupby(g["__d"].dt.normalize())["__r"].agg(["sum", "size"])
     start = month.start_time.normalize()
     days = pd.date_range(start, month.end_time.normalize())
-    today = pd.Timestamp.now().normalize()
+    today = local_now().normalize()
     head = "".join(f'<div class="h">{d}</div>' for d in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])
     cells = '<div></div>' * int(start.weekday())
     for x in days:

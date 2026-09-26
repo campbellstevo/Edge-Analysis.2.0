@@ -21,6 +21,7 @@ import html as _h
 
 import pandas as pd
 import streamlit as st
+from edge_analysis.core.clock import local_now
 
 from edge_analysis.ui import reshape as rx
 from edge_analysis.ui.reshape import GREEN, RED, PURPLE, fmt_r
@@ -54,7 +55,7 @@ def dated(df: pd.DataFrame) -> pd.DataFrame | None:
 def right_now(g: pd.DataFrame, tgt: float, stop: float, now: pd.Timestamp | None = None) -> dict:
     """The month against its lines, this week, the last trade, and a state:
     stop (breaker hit), careful (under 2R above it), target, or clear."""
-    now = now or pd.Timestamp.now()
+    now = now or local_now()
     month = g[g["__dt"].dt.to_period("M") == now.to_period("M")]
     week = g[g["__dt"].dt.to_period("W-SUN") == now.to_period("W-SUN")]
     mtd = float(month["__rr"].sum()) if not month.empty else 0.0

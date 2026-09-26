@@ -7,6 +7,7 @@ from __future__ import annotations
 import html as _html
 import pandas as pd
 import streamlit as st
+from edge_analysis.core.clock import local_now
 
 PURPLE = "#4800ff"
 GREEN = "#16a34a"
@@ -643,7 +644,7 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
         t._unavailable("Weekly Review")
         return
     g = g[g["__dt"].notna()].sort_values("__dt")
-    now = pd.Timestamp.now()
+    now = local_now()
     weeks = sorted(g["__dt"].dt.to_period("W-SUN").unique())
     labels = {p: f"{p.start_time.strftime('%d %b')} – {p.end_time.strftime('%d %b %Y')}" for p in weeks}
     default_p = now.to_period("W-SUN")

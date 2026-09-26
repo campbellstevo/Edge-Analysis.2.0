@@ -9,6 +9,7 @@ import os
 import html as _h
 import pandas as pd
 import streamlit as st
+from edge_analysis.core.clock import local_now
 import requests
 
 _ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
@@ -108,7 +109,7 @@ def _stats_context(df: pd.DataFrame) -> str:
     try:
         dt = _local_dates(df)
         if rr is not None and dt.notna().any():
-            now_p = pd.Timestamp.now().to_period("M")
+            now_p = local_now().to_period("M")
             m_mask = dt.dt.to_period("M") == now_p
             m_rr = rr[rr.index.isin(dt[m_mask].index)]
             tgt = float(st.session_state.get("ea_m_tgt", 5.0))
@@ -332,7 +333,7 @@ def _builtin_answer(q: str, df: pd.DataFrame):
 
         if has("this week", "week so far", "current week"):
             g = _ordered(df, rr)
-            now = pd.Timestamp.now()
+            now = local_now()
             mon = (now - pd.Timedelta(days=int(now.dayofweek))).normalize()
             wk = g[g["dt"] >= mon]["rr"]
             if not len(wk):
@@ -373,7 +374,7 @@ def _builtin_answer(q: str, df: pd.DataFrame):
 
         if has("today", "yesterday"):
             g = _ordered(df, rr)
-            day = pd.Timestamp.now().normalize() - (pd.Timedelta(days=1) if "yesterday" in ql else pd.Timedelta(0))
+            day = local_now().normalize() - (pd.Timedelta(days=1) if "yesterday" in ql else pd.Timedelta(0))
             dsub = g[g["dt"].dt.normalize() == day]["rr"]
             label = "Yesterday" if "yesterday" in ql else "Today"
             if not len(dsub):
@@ -396,7 +397,7 @@ def _builtin_answer(q: str, df: pd.DataFrame):
         # ── pace / breaker (before generic month words) ──────────────────────
         if has("pace", "on track", "this month", "month so far", "target"):
             dt = _local_dates(df)
-            m_mask = dt.dt.to_period("M") == pd.Timestamp.now().to_period("M")
+            m_mask = dt.dt.to_period("M") == local_now().to_period("M")
             m_rr = rr[rr.index.isin(dt[m_mask].index)]
             tgt = float(st.session_state.get("ea_m_tgt", 5.0))
             stp = float(st.session_state.get("ea_m_stop", -6.0))
@@ -411,7 +412,7 @@ def _builtin_answer(q: str, df: pd.DataFrame):
 
         if has("breaker", "circuit", "max loss"):
             dt = _local_dates(df)
-            m_rr = rr[rr.index.isin(dt[dt.dt.to_period("M") == pd.Timestamp.now().to_period("M")].index)]
+            m_rr = rr[rr.index.isin(dt[dt.dt.to_period("M") == local_now().to_period("M")].index)]
             stp = float(st.session_state.get("ea_m_stop", -6.0))
             net_m = float(m_rr.sum())
             if net_m <= stp:
