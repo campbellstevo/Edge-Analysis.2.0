@@ -2014,6 +2014,12 @@ def inject_dark_overlay():
         background: #141926 !important;
         border-color: rgba(255,255,255,0.09) !important;
     }
+    /* the date field kept the light sheet's white box with dark-on-white
+       text inside the dark card */
+    [data-testid="stDateInput"] > div > div {
+        background-color: #161b27 !important; border-color: rgba(255,255,255,0.2) !important;
+    }
+    [data-testid="stDateInput"] input { background-color: #161b27 !important; color: #e8ebf1 !important; }
     /* the custom select chevron is a dark-stroked SVG: invert it on dark */
     [data-baseweb="select"] > div::after { filter: invert(1) brightness(0.85) !important; }
     /* the light sheet paints every expander header #f3f4f6 with !important;

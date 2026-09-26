@@ -803,6 +803,100 @@ def record_card(g: pd.DataFrame, styler) -> None:
         st.altair_chart(styler(alt.layer(bars, txt).properties(height=250)), use_container_width=True)
         st.caption(f"Median trade {fmt_r(float(g['__r'].median()))}. Most trades are a stop or a scratch; "
                    "the edge lives in the right-hand tail.")
+    if len(g) >= 20:
+        edge_check(g, styler, s["exp"])
+        before_after(g)
+
+
+def edge_check(g: pd.DataFrame, styler, all_exp: float, window: int = 30) -> None:
+    """Launch-review P2 #10: the average of the last 30 trades at every point,
+    against the all-time average, so a fading setup shows up early."""
+    import altair as alt
+    st.markdown("#### Is the edge holding up?")
+    w = min(window, max(10, len(g) // 3))
+    roll = g["__r"].rolling(w, min_periods=w).mean()
+    d = pd.DataFrame({"Date": g["__d"].dt.strftime("%Y-%m-%dT%H:%M:%S"), "Roll": roll.round(3)}).dropna()
+    if d.empty:
+        return
+    vals = d.to_dict("records")
+    x = alt.X("Date:T", title=None, axis=alt.Axis(format="%b %y", labelOverlap=True, tickCount="month"))
+    line = alt.Chart(alt.Data(values=vals)).mark_line(color=PURPLE, strokeWidth=2.2).encode(
+        x=x, y=alt.Y("Roll:Q", title=f"Last {w} trades (R)"),
+        tooltip=[alt.Tooltip("Date:T", format="%a %d %b %Y"), alt.Tooltip("Roll:Q", title=f"Last {w} avg", format="+.2f")])
+    ref = alt.Chart(alt.Data(values=[{"y": round(all_exp, 3)}])).mark_rule(
+        color=GREEN, strokeDash=[6, 4], strokeWidth=1.8).encode(y=alt.Y("y:Q", title=f"Last {w} trades (R)"))
+    zero = alt.Chart(alt.Data(values=[{"y": 0}])).mark_rule(color="#cbd5e1", strokeWidth=1.2).encode(y="y:Q")
+    st.altair_chart(styler(alt.layer(zero, ref, line).properties(height=200)), use_container_width=True)
+    now = float(roll.dropna().iloc[-1])
+    if now < all_exp - 0.15:
+        how = f"below your all-time {fmt_r(all_exp)}"
+    elif now > all_exp + 0.15:
+        how = f"above your all-time {fmt_r(all_exp)}"
+    else:
+        how = f"in line with your all-time {fmt_r(all_exp)}"
+    st.caption(f"Your last {w} trades average {fmt_r(now)}, {how} (dashed line). "
+               f"Each point is the average of the {w} trades up to that day.")
+
+
+def before_after(g: pd.DataFrame) -> None:
+    """Launch-review P2 #9: pick the day a rule changed and compare the two
+    sides. Descriptive only: both sides are the trader's own trades, and a
+    side under 20 trades is marked as too small to read."""
+    import datetime as _dt
+    st.markdown("#### Before and after a change")
+    first, last = g["__d"].min().date(), g["__d"].max().date()
+    key = "ea_ba_date"
+    default = st.session_state.get(key) or (g["__d"].iloc[int(len(g) * 2 / 3)].date())
+    c1, c2 = st.columns([1, 2.4])
+    with c1:
+        st.caption("The day your rules changed")
+        day = st.date_input("The day your rules changed", value=default, min_value=first,
+                            max_value=last, key=key, format="DD/MM/YYYY",
+                            label_visibility="collapsed")
+    cut = pd.Timestamp(day if isinstance(day, _dt.date) else default)
+    b, a = g[g["__d"] < cut], g[g["__d"] >= cut]
+
+    def side(x):
+        if not len(x):
+            return None
+        wins = (x["__r"] > 0.15).mean() * 100
+        weeks = max(1.0, (x["__d"].max() - x["__d"].min()).days / 7.0)
+        return dict(n=len(x), exp=float(x["__r"].mean()), win=float(wins), net=float(x["__r"].sum()),
+                    pw=len(x) / weeks)
+    sb, sa = side(b), side(a)
+    with c2:
+        if not sb or not sa:
+            st.caption("Pick a day with trades on both sides.")
+            return
+        t = _tokens()
+        rows = [("Trades", f"{sb['n']}", f"{sa['n']}", None),
+                ("Expectancy", fmt_r(sb["exp"]), fmt_r(sa["exp"]), sa["exp"] - sb["exp"]),
+                ("Win rate", f"{sb['win']:.0f}%", f"{sa['win']:.0f}%", (sa["win"] - sb["win"]) / 100),
+                ("Net", fmt_r(sb["net"], 1), fmt_r(sa["net"], 1), None),
+                ("Trades a week", f"{sb['pw']:.1f}", f"{sa['pw']:.1f}", None)]
+        body = ""
+        for lab, vb, va, dlt in rows:
+            arrow = ""
+            if dlt is not None and abs(dlt) >= 0.005:
+                _tri = "\u25b2" if dlt > 0 else "\u25bc"
+                arrow = (f' <span style="color:{GREEN if dlt > 0 else RED};font-weight:800;">'
+                         f'{_tri}</span>')
+            body += f'<tr><td class="l">{lab}</td><td>{_h.escape(vb)}</td><td>{_h.escape(va)}{arrow}</td></tr>'
+        small = [nm for nm, sd in (("before", sb), ("after", sa)) if sd["n"] < 20]
+        extra = f"""
+.ea-ba{{border-collapse:collapse !important;width:100%;border:0 !important;font-variant-numeric:tabular-nums;}}
+.ea-ba th,.ea-ba td{{border:0 !important;border-bottom:1px solid {t['line']} !important;padding:7px 10px !important;
+  text-align:right;background:none !important;color:{t['ink']};font-size:14px;}}
+.ea-ba th{{font-size:11px;font-weight:700;letter-spacing:.06em;color:{t['muted']};text-transform:uppercase;}}
+.ea-ba td.l,.ea-ba th.l{{text-align:left;color:{t['muted']};font-weight:600;}}
+.ea-ba tr{{background:none !important;}}
+"""
+        st.markdown(css(extra) + f'<div class="ea-rx"><table class="ea-ba"><tr><th class="l"></th>'
+                    f'<th>Before {cut.strftime("%d %b")}</th><th>Since</th></tr>{body}</table></div>',
+                    unsafe_allow_html=True)
+        st.caption("Both sides are your own trades, nothing re-scored. "
+                   + (f"The {' and '.join(small)} side has under 20 trades, too few to read much into."
+                      if small else "Arrows show which way the after side moved."))
 
 
 # ── trade explorer + trade card (mockup V5) ──────────────────────────────────

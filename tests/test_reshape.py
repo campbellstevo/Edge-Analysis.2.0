@@ -185,3 +185,18 @@ def test_journal_health_is_quiet_on_a_clean_journal():
                       "A+ Setup?": ["Yes"] * 4, "Mistake": ["NA"] * 4, "Rules Followed?": ["Yes"] * 4})
     h = rx.journal_health(g)
     assert h["pct"] == 100.0 and h["problems"] == []
+
+
+def test_before_after_splits_on_the_chosen_day(monkeypatch):
+    out = _capture(monkeypatch)
+    n = 40
+    g = pd.DataFrame({"__d": pd.date_range("2026-07-01", periods=n, freq="D"),
+                      "__r": [1.0 if i % 2 else -1.0 for i in range(20)] + [2.0 if i % 2 else -1.0 for i in range(20)]})
+    monkeypatch.setattr(rx.st, "columns", lambda spec: [__import__("contextlib").nullcontext()] * len(spec))
+    monkeypatch.setattr(rx.st, "date_input", lambda *a, **k: pd.Timestamp("2026-07-21").date())
+    monkeypatch.setattr(rx.st, "caption", lambda *a, **k: out.append(a[0]))
+    rx.before_after(g)
+    html = "".join(out)
+    assert "Before 21 Jul" in html
+    assert "0.00R" in html and "+0.50R" in html          # 20 trades each side: 0.0 vs +0.5
+    assert "nothing re-scored" in html
