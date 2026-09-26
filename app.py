@@ -2135,10 +2135,15 @@ def render_dashboard(mobile: bool):
 
     # Render tabs with data
     try:
-        # full-history views (month cards, records) must honour the money/paper
-        # split too — otherwise the hero and the card below it disagree
-        _df_hist = df[_paper_mask].copy() if _paper_mask is not None else df
-        render_all_tabs(f, _df_hist, styler, show_light_table, hero_fn=None)
+        if st.session_state.get("ea_page") == "feedback":
+            # the Feedback page takes the views' place under the same header
+            from edge_analysis.ui.feedback_page import render_feedback_page
+            render_feedback_page(is_owner=_session_is_owner(), mobile=mobile)
+        else:
+            # full-history views (month cards, records) must honour the money/paper
+            # split too — otherwise the hero and the card below it disagree
+            _df_hist = df[_paper_mask].copy() if _paper_mask is not None else df
+            render_all_tabs(f, _df_hist, styler, show_light_table, hero_fn=None)
     except Exception as _exc:
         import traceback as _tb
         _ref = _report_error(_exc, where=str(st.session_state.get("ea_tab") or "view"))
@@ -2147,8 +2152,16 @@ def render_dashboard(mobile: bool):
         if _session_is_owner():
             with st.expander("Error details (only you see this)"):
                 st.code(_tb.format_exc())
+    if st.session_state.get("ea_page") != "feedback":
+        from edge_analysis.ui.feedback_page import open_page as _fb_open
+        _c = st.columns([1, 2, 1])[1]
+        with _c:
+            st.markdown('<div class="ea-mk ea-fbfoot"></div>', unsafe_allow_html=True)
+            st.button("Something off on this page? Tell us", key="ea_fb_foot", type="tertiary",
+                      icon=":material/rate_review:", use_container_width=True,
+                      on_click=_fb_open, args=(st.session_state.get("ea_tab"),))
     st.markdown(
-        "<div class='ea-foot' style='text-align:center;font-size:12px;color:#64748b;margin:34px 0 10px;'>"
+        "<div class='ea-foot' style='text-align:center;font-size:12px;color:#64748b;margin:6px 0 10px;'>"
         "Your trades live in your Notion — this server keeps only which journal "
         "you connected and a day-old-at-most cache for speed · "
         "Edge Analysis is a journal, not financial advice · Privacy &amp; terms in the ⋯ menu.</div>",

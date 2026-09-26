@@ -190,7 +190,8 @@ def render_filters(
                         "letter-spacing:0.08em;color:#64748b;padding:0 12px;'>FOCUS \u00b7 "
                         "your briefing</div>", unsafe_allow_html=True)
             return
-        st.radio("View", _TABS, horizontal=True, key="ea_tab", label_visibility="collapsed")
+        st.radio("View", _TABS, horizontal=True, key="ea_tab", label_visibility="collapsed",
+                 on_change=lambda: st.session_state.pop("ea_page", None))
         st.session_state["ea_nav_external"] = True
 
     def _popover(label, icon, help_=None):
@@ -352,15 +353,16 @@ def render_filters(
                 key="filters_date_range",
             )
 
-    try:
-        from edge_analysis.ui.chat import feedback_enabled as _fb_on
-        _fb = _fb_on()
-    except Exception:
-        _fb = False
-
     def _go(page):
         st.session_state[SessionKeys.NAV_TARGET] = page
         st.session_state["ea_show_qr"] = False
+        from edge_analysis.ui.feedback_page import leave
+        leave()
+
+    def _go_feedback():
+        st.session_state[SessionKeys.NAV_TARGET] = PageNames.DASHBOARD
+        from edge_analysis.ui.feedback_page import open_page
+        open_page()
 
     def _refresh():
         # This visitor's journal only — clearing every cache made one member's
@@ -389,7 +391,8 @@ def render_filters(
         # groups, a real switch for dollars, and the owner diagnostics as one
         # line instead of two wrapping paragraphs that forced the menu to scroll.
         _cur = st.session_state.get(SessionKeys.NAV_PAGE, PageNames.DASHBOARD)
-        _here = "mm_tmpl" if _cur == PageNames.CONNECT else "mm_dash"
+        _here = ("mm_tmpl" if _cur == PageNames.CONNECT
+                 else "mm_fb" if st.session_state.get("ea_page") == "feedback" else "mm_dash")
         # the page you're on is tinted, not ticked
         st.markdown('<div class="ea-moremenu"></div><style>div[data-testid="stPopoverBody"] '
                     f'.st-key-{_here} button {{ background: var(--ea-mm-here, #f4f2ff) !important; }} '
@@ -404,6 +407,9 @@ def render_filters(
         st.button("Your journal & template", key="mm_tmpl", use_container_width=True,
                   icon=":material/menu_book:",
                   on_click=_go, args=(PageNames.CONNECT,))
+        # always offered: notes are kept on the server even before Notion is set up
+        st.button("Feedback & ideas", key="mm_fb", use_container_width=True,
+                  icon=":material/rate_review:", on_click=_go_feedback)
 
         def _set_dollars():
             st.session_state["ea_privacy"] = not bool(st.session_state.get("mm_dollars"))
@@ -427,9 +433,6 @@ def render_filters(
                 or st.session_state.get("detected_schema") == "mt5"):
             st.button("Auto-log my trades", key="mm_broker", use_container_width=True,
                       icon=":material/bolt:", on_click=_flag, args=("ea_show_broker",))
-        if _fb:
-            st.button("Send feedback", key="mm_fb", use_container_width=True,
-                      icon=":material/rate_review:", on_click=_flag, args=("ea_show_feedback",))
         st.markdown(_eyebrow_div.format("HELP"), unsafe_allow_html=True)
         st.button("Getting started", key="mm_setup", use_container_width=True,
                   icon=":material/flag:", on_click=_flag, args=("ea_show_setup",))
@@ -475,12 +478,6 @@ def render_filters(
         else:
             with st.expander("Privacy & terms", expanded=True):
                 _legal_body()
-    if st.session_state.pop("ea_show_feedback", False):
-        if _feedback_dialog is not None:
-            _feedback_dialog()
-        else:
-            with st.expander("Send feedback", expanded=True):
-                _fb_body_safe()
 
     return sel_inst, sel_em, sel_sess, date_range, sel_acct, sel_tot
 
@@ -698,19 +695,3 @@ try:
         _setup_body()
 except Exception:
     _setup_dialog = None
-
-
-def _fb_body_safe() -> None:
-    try:
-        from edge_analysis.ui.chat import feedback_body
-        feedback_body()
-    except Exception:
-        st.caption("Feedback isn't available right now.")
-
-
-try:
-    @st.dialog("Send feedback")
-    def _feedback_dialog():
-        _fb_body_safe()
-except Exception:
-    _feedback_dialog = None

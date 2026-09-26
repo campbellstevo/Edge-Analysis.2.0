@@ -2079,6 +2079,21 @@ def inject_dark_overlay():
         border-color: rgba(255,255,255,0.12) !important;
     }
     [data-testid="stTextInputRootElement"] input::placeholder { color: #6b7488 !important; }
+    [data-testid="stTextArea"] textarea { color: #e8ebf1 !important; background: #161b27 !important; }
+    [data-testid="stTextArea"] textarea::placeholder { color: #6b7488 !important; }
+    /* every switch: the off track was the page colour, so only the knob showed */
+    [data-testid="stCheckbox"] label:not(:has(input:checked)) > div:first-child { background: #3a4356 !important; }
+    /* segmented pickers (Feedback's "What is it?") */
+    [data-testid="stButtonGroup"] button { background: #161b27 !important; border-color: rgba(255,255,255,0.12) !important; }
+    [data-testid="stButtonGroup"] button p { color: #c7cddb !important; }
+    [data-testid="stButtonGroup"] button[kind$="Active"], [data-testid="stButtonGroup"] button[aria-checked="true"] {
+        background: rgba(124,92,255,0.18) !important; border-color: #7c5cff !important; }
+    [data-testid="stButtonGroup"] button[kind$="Active"] p, [data-testid="stButtonGroup"] button[aria-checked="true"] p { color: #d4c8ff !important; }
+    /* file upload box */
+    [data-testid="stFileUploaderDropzone"] { background: #161b27 !important; border: 1px dashed rgba(255,255,255,0.16) !important; }
+    [data-testid="stFileUploaderDropzone"] span, [data-testid="stFileUploaderDropzone"] small { color: #c7cddb !important; }
+    [data-testid="stFileUploaderDropzone"] svg { color: #7c8699 !important; }
+    [data-testid="stFileUploaderFile"] div, [data-testid="stFileUploaderFile"] small { color: #c7cddb !important; }
     /* the field and its steppers: the light sheet paints them white with
        !important, so the dark rule must match that selector exactly */
     div[data-testid="stNumberInput"] input {
@@ -2572,6 +2587,14 @@ div[data-testid="stColumn"]:has(.ea-bn) [role="radiogroup"] > label:has(input:ch
     border-radius: 3px 3px 0 0; background: var(--eb-brand); }
 div[data-testid="stColumn"]:has(.ea-bn) [role="radiogroup"] > label:has(input:focus-visible) {
     outline: 2px solid var(--eb-brand); outline-offset: -10px; border-radius: 10px !important; }
+
+/* footer feedback link: quiet text, brand colour on hover */
+div[data-testid="stColumn"]:has(.ea-fbfoot) { margin-top: 26px; }
+div[data-testid="stColumn"]:has(.ea-fbfoot) button { border: none !important; background: transparent !important; box-shadow: none !important; }
+div[data-testid="stColumn"]:has(.ea-fbfoot) button p { font-size: 13px !important; color: var(--eb-muted, #64748b) !important; }
+div[data-testid="stColumn"]:has(.ea-fbfoot) button [data-testid="stIconMaterial"] { color: var(--eb-muted, #64748b) !important; font-size: 17px !important; }
+div[data-testid="stColumn"]:has(.ea-fbfoot) button:hover p,
+div[data-testid="stColumn"]:has(.ea-fbfoot) button:hover [data-testid="stIconMaterial"] { color: var(--eb-brand, #4800ff) !important; }
 
 /* sync status: dot + "Synced 3h ago"; the full line is the tooltip */
 .ea-sync { display: inline-flex; align-items: center; gap: 9px; font-size: 14px; color: var(--eb-muted);

@@ -9,7 +9,7 @@ Your trading journal stays in **your** Notion workspace. Edge Analysis reads it 
 - **Account link:** which journal database you connected (and its template), keyed to your Notion account id, plus a daily count of chat questions for the usage limit. We do **not** keep your name or email.
 - **A cache** of your journal on the server, so pages load fast. It is refreshed as you use the app and deleted once it is a day old; it is not an archive.
 - **On your own device** (browser storage): your Notion sign-in, theme, filter and plan preferences. Clearing your browser storage removes them.
-- **Feedback you send** through the in-app feedback box, delivered to a private Notion page.
+- **Feedback you send** from the Feedback & ideas page: your note and any screenshots you attach, kept on the server and copied to the builder's private Notion. It carries a short code in place of your account, and your email only if you tick “let the builder reply”. Screenshots show whatever was on your screen, so crop out anything you'd rather not send.
 - **Error reports:** if a page fails to draw, a report of what broke and where (not your journal) goes to our crash reporter, Sentry.
 
 ## What we never do

@@ -28,3 +28,7 @@ _to_delete/
 
 # Test caches
 .pytest_cache/
+
+# Feedback notes and screenshots received on this server
+feedback_inbox/
+src/edge_analysis/feedback_inbox/

@@ -1,9 +1,8 @@
-"""In-app analyst chat + feedback channel for Edge Analysis.
+"""In-app analyst chat for Edge Analysis.
 
 Chat: floating bubble, answers questions about the trader's own journal stats
 via the Anthropic API. Enabled only when ANTHROPIC_API_KEY is in secrets.
-Feedback: appends a line to the owner's Notion page. Enabled only when
-FEEDBACK_NOTION_TOKEN + FEEDBACK_PAGE_ID are in secrets.
+Feedback moved to its own page (ui/feedback_page.py, 26 Sep).
 """
 from __future__ import annotations
 import os
@@ -30,11 +29,6 @@ def _secret(key: str):
 
 def chat_enabled() -> bool:
     return _secret("ANTHROPIC_API_KEY") is not None
-
-
-def feedback_enabled() -> bool:
-    return (_secret("FEEDBACK_NOTION_TOKEN") is not None
-            and _secret("FEEDBACK_PAGE_ID") is not None)
 
 
 # ─────────────────────────── stats context ───────────────────────────────────
@@ -878,44 +872,3 @@ def render_chat_bubble(df: pd.DataFrame, llm_for_this_user: bool = False) -> Non
             _cap_note = (f" · {left} AI questions left today" if llm_on else "")
             st.caption("Answers come from your own data, instantly and privately"
                        + _cap_note + " · not financial advice")
-
-
-# ─────────────────────────── feedback ────────────────────────────────────────
-def send_feedback(text: str) -> bool:
-    tok = _secret("FEEDBACK_NOTION_TOKEN")
-    pid = _secret("FEEDBACK_PAGE_ID")
-    if not (tok and pid and text.strip()):
-        return False
-    who = str(st.session_state.get("ea_user_email") or "anonymous")
-    stamp = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M")
-    body = f"[{stamp}] {who}: {text.strip()[:1800]}"
-    try:
-        r = requests.patch(
-            f"https://api.notion.com/v1/blocks/{pid}/children",
-            headers={"Authorization": f"Bearer {tok}",
-                     "Notion-Version": "2022-06-28",
-                     "Content-Type": "application/json"},
-            json={"children": [{"object": "block", "type": "paragraph",
-                                "paragraph": {"rich_text": [
-                                    {"type": "text", "text": {"content": body}}]}}]},
-            timeout=15)
-        return r.status_code == 200
-    except Exception:
-        return False
-
-
-def feedback_body() -> None:
-    st.caption("Found a bug, missing a stat, or want a feature? It lands straight "
-               "with the builder.")
-    txt = st.text_area("Your message", key="ea_fb_text", height=120,
-                       label_visibility="collapsed",
-                       placeholder="What's broken / what would make this better?")
-    if st.button("Send feedback", type="primary", use_container_width=True):
-        if txt and txt.strip():
-            if send_feedback(txt):
-                st.success("Sent — thank you. It's already in the builder's inbox.")
-                st.session_state.pop("ea_fb_text", None)
-            else:
-                st.error("Couldn't send right now — try again in a minute.")
-        else:
-            st.warning("Write a line first.")
