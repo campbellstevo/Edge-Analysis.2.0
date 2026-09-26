@@ -269,6 +269,8 @@ def plan_model(df_raw: pd.DataFrame):
     all_pass = pd.Series(True, index=g.index)
     entries = []
     _young = set()
+    from edge_analysis.digest import _perm_p, _holm_pass
+    _gate_p = []      # (rule, p): does "yes" beat "no" beyond chance (5.3)
     for rule, mask, lab_y, lab_n in gates:
         if mask is None:  # nothing proven yet for this gate
             _young.add(rule)
@@ -284,6 +286,10 @@ def plan_model(df_raw: pd.DataFrame):
             all_pass &= mask
         edge = (a - b) if (logged and a == a and b == b) else float("nan")
         entries.append((rule, edge, logged, low, a, b, na, nb, lab_y, lab_n))
+        if logged and edge == edge:
+            _k = known if known is not None else pd.Series(True, index=g.index)
+            _gate_p.append((rule, _perm_p(g.loc[_k, "__rr"], mask[_k], lower=False)))
+    gate_beats = {_gate_p[i][0] for i in _holm_pass([p_ for _r, p_ in _gate_p])}
 
     proven = sorted([e for e in entries if e[1] == e[1] and e[1] >= 0.05 and not e[3]],
                     key=lambda e: -e[1])
@@ -299,7 +305,6 @@ def plan_model(df_raw: pd.DataFrame):
     # each slice also gets a chance test (5.3): a permutation p against the
     # rest, Holm across every slice, so a suggestion can say whether it
     # beats chance or is an early read
-    from edge_analysis.digest import _perm_p, _holm_pass
     _pv = []
     for name, mask in named:
         if mask is None:
@@ -318,6 +323,7 @@ def plan_model(df_raw: pd.DataFrame):
     bad = sorted([s for s in segs if s[1] < -0.02], key=lambda x: x[1])[:8]
     return dict(g=g, entries=entries, proven=proven, review=review, young=_young,
                 all_pass=all_pass, good=good, bad=bad, planned=planned, beats=beats,
+                gate_beats=gate_beats,
                 min_rr=_min_rr, min_rr_ev=_min_rr_ev, min_rr_derived=_min_rr_derived)
 
 
@@ -368,7 +374,11 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
                     if edge == edge else "")
             lows = (" <span style='font-size:10px;color:#64748b;border:1px solid rgba(148,163,184,0.4);"
                     "border-radius:999px;padding:1px 7px;'>low sample</span>" if low else "")
-            stat = chip + lows
+            _beat = rule in (m.get("gate_beats") or set())
+            chance = (" <span style='font-size:10px;color:" + ("#15803d" if _beat else "#64748b")
+                      + ";border:1px solid rgba(148,163,184,0.4);border-radius:999px;padding:1px 7px;'>"
+                      + ("beats chance" if _beat else "early read") + "</span>") if not low else ""
+            stat = chip + lows + chance
             small = (f"<div style='font-size:11px;color:#64748b;margin-top:3px;'>"
                      f"{lab_y} {_fmt_r(a)} ({na}) · {lab_n} {_fmt_r(b)} ({nb})</div>")
         op = "opacity:0.65;" if faded else ""

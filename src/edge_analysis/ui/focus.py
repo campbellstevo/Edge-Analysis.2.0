@@ -207,13 +207,15 @@ def _right_now_html(s: dict, label: str | None, t: dict) -> str:
             f'<div><b>{head}</b><span>{sub}</span></div></div><div class="ea-fo-grid">{tiles}</div>{spark}</div>')
 
 
-def _checklist_html(proven: list, mine: list, t: dict) -> str:
+def _checklist_html(proven: list, mine: list, t: dict, beats=None) -> str:
     rows = ""
     for e in proven[:5]:
         rule, edge = e[0], e[1]
+        _early = beats is not None and rule not in beats
         rule = rule.replace(" (from your data)", "")
-        rows += (f'<div class="ea-fo-i"><span class="n"></span><span class="t">{_h.escape(rule)}</span>'
-                 f'<span class="e" style="color:{GREEN};background:{GREEN}1a;">+{edge:.2f}R</span></div>')
+        rows += (f'<div class="ea-fo-i"><span class="n"></span><span class="t">{_h.escape(rule)}'
+                 + (f' <small style="font-weight:500;color:{t["muted"]};">\u00b7 early read</small>' if _early else "")
+                 + f'</span><span class="e" style="color:{GREEN};background:{GREEN}1a;">+{edge:.2f}R</span></div>')
     if mine:
         rows += '<div class="ea-fo-sub">YOUR OWN RULES</div>'
         for rule in mine[:8]:
@@ -298,7 +300,8 @@ def render_focus(f_perf: pd.DataFrame, df_all: pd.DataFrame, styler) -> None:
                        "Every box yes, or pass. The first ones have earned their place in your journal "
                        "(their edge in R a trade); the rest are yours.")
         if proven or mine:
-            st.markdown(rx.css(_CSS.format(bg="", bc="", c="", **t)) + _checklist_html(proven, mine, t),
+            st.markdown(rx.css(_CSS.format(bg="", bc="", c="", **t))
+                        + _checklist_html(proven, mine, t, (m or {}).get("gate_beats")),
                         unsafe_allow_html=True)
         else:
             st.caption("No checklist yet — a tag earns a place here once it has 5+ trades at a positive "
