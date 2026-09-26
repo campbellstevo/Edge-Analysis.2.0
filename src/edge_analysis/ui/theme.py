@@ -2588,6 +2588,31 @@ div[data-testid="stColumn"]:has(.ea-bn) [role="radiogroup"] > label:has(input:ch
 div[data-testid="stColumn"]:has(.ea-bn) [role="radiogroup"] > label:has(input:focus-visible) {
     outline: 2px solid var(--eb-brand); outline-offset: -10px; border-radius: 10px !important; }
 
+/* Plan rules and suggestions: one row each, text left, buttons right — also
+   on a phone, where Streamlit stacked every column into its own row */
+div[data-testid="stHorizontalBlock"]:has(.ea-row-nowrap):not(:has(div[data-testid="stHorizontalBlock"])) {
+    flex-wrap: nowrap !important; gap: 8px !important; }
+div[data-testid="stHorizontalBlock"]:has(.ea-row-nowrap):not(:has(div[data-testid="stHorizontalBlock"])) > div[data-testid="stColumn"] {
+    min-width: 0 !important; }
+div[data-testid="stHorizontalBlock"]:has(.ea-row-nowrap):not(:has(div[data-testid="stHorizontalBlock"])) > div[data-testid="stColumn"]:first-child {
+    flex: 1 1 auto !important; width: auto !important; }
+div[data-testid="stHorizontalBlock"]:has(.ea-row-nowrap):not(:has(div[data-testid="stHorizontalBlock"])) > div[data-testid="stColumn"]:not(:first-child) {
+    flex: 0 0 auto !important; width: auto !important; }
+/* Streamlit gives every markdown block a -1rem bottom margin (to cancel a
+   trailing <p>); on an HTML card it pulled the next element 4px over the
+   card's edge (the week's Share bar sat on the Keep/Fix boxes) */
+[data-testid="stMarkdownContainer"]:has(> .ea-rx),
+[data-testid="stMarkdownContainer"]:has(.ea-rulerow) { margin-bottom: 0 !important; }
+.ea-rulerow { display: flex; align-items: center; gap: 12px; min-height: 46px; padding: 8px 14px;
+    background: var(--eb-card, #fff); border: 1px solid var(--eb-line, #e6e8f0);
+    border-left: 3px solid var(--c); border-radius: 10px; }
+.ea-rulerow-ico { flex: none; width: 22px; height: 22px; border-radius: 50%; display: inline-flex;
+    align-items: center; justify-content: center; font-size: 12px; font-weight: 800; color: #fff;
+    background: var(--c); }
+.ea-rulerow-txt { min-width: 0; line-height: 1.3; }
+.ea-rulerow-txt b { display: block; font-size: 14px; font-weight: 600; color: var(--eb-ink, #0f172a); }
+.ea-rulerow-txt small { display: block; font-size: 12.5px; color: var(--eb-muted, #64748b); }
+
 /* footer feedback link: quiet text, brand colour on hover */
 div[data-testid="stColumn"]:has(.ea-fbfoot) { margin-top: 26px; }
 div[data-testid="stColumn"]:has(.ea-fbfoot) button { border: none !important; background: transparent !important; box-shadow: none !important; }

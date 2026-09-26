@@ -405,6 +405,7 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
     _rules_section(good, bad)
 
     if planned is not None and planned.notna().sum() >= 10:
+        st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
         st.markdown("#### For reference — targeted RR")
         st.caption("Not a rule — win rate and expectancy by the RR you aimed for.")
         bins = [(1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 99)]
@@ -455,6 +456,7 @@ def _rules_state() -> dict:
                         "custom": list(data.get("custom", []))[:30],
                         "accepted": list(data.get("accepted", []))[:30],
                         "declined": list(data.get("declined", []))[:60],
+                        "texts": dict(data.get("texts") or {}),
                     }
             except Exception:
                 pass
@@ -470,53 +472,96 @@ def _rules_save() -> None:
               key=f"ea_rules_save_{abs(hash(payload)) % 100000}")
 
 
+# A ranked slice becomes a suggested rule only when it is something you
+# choose (a session, a setup grade, how you enter) and the evidence is more
+# than a handful of trades. "Avoid good headspace" or a 3-trade London edge
+# are readings, not rules (his notes, 26 Sep). Pairs that are one rule (A+ vs
+# non-A+, single vs multi entry) share a group; the stronger reading speaks.
+_REC_RULES = {
+    # name: (group, rule when it earns, rule when it costs)
+    "A+ setups": ("aplus", "Only take A+ setups", None),
+    "Non-A+ setups": ("aplus", None, "Only take A+ setups"),
+    "Single entry": ("single", "One entry per idea \u2014 no adding", None),
+    "Multi-entry": ("single", None, "One entry per idea \u2014 no adding"),
+    "New York session": ("ny", "Trade the New York session", "Skip the New York session"),
+    "London session": ("ldn", "Trade the London session", "Skip the London session"),
+    "Asia session": ("asia", "Trade the Asia session", "Skip the Asia session"),
+    "Right bias + right execution": ("exec", "Only trade when bias and execution line up", None),
+    "OB/OS extremes": ("obos", "Wait for an OB/OS extreme", None),
+    "True break confirmed": ("break", "Wait for a confirmed break", None),
+    "No-Close entries": ("noclose", None, "No entry without a close"),
+    "Good headspace": ("head", "Only trade in a good headspace", None),
+}
+REC_MIN_N = 5
+REC_MIN_R = 0.15
+
+
+def rule_recommendations(good, bad):
+    """[(rid, rule, evidence, keep)] — at most one per group, strongest first."""
+    best = {}
+    for items, keep in ((good, True), (bad, False)):
+        for name, v, n in items:
+            spec = _REC_RULES.get(name)
+            if not spec or n < REC_MIN_N or v != v or abs(v) < REC_MIN_R:
+                continue
+            group, if_good, if_bad = spec
+            rule = if_good if keep else if_bad
+            if not rule:
+                continue
+            ev = f"{'worth' if keep else 'costing'} {_fmt_r(v)} a trade over {n} trades"
+            rid = f"{'keep' if keep else 'avoid'}:{name}"
+            if group not in best or abs(v) > best[group][4]:
+                best[group] = (rid, rule, ev, keep, abs(v))
+    return [r[:4] for r in sorted(best.values(), key=lambda r: -r[4])]
+
+
 def _rules_section(good, bad) -> None:
     t = _t()
     st.markdown("#### My rules")
-    st.caption(("Your own rules plus ones recommended from your data. " if t._verdicts_on()
-                else "Your own rules. ") + "Saved on this device.")
+    st.caption(("Your own rules, plus any you add from the suggestions under them. "
+                if t._verdicts_on() else "Your own rules. ") + "Saved on this device.")
     state = _rules_state()
+    texts = state.setdefault("texts", {})
+    recs = rule_recommendations(good, bad)
+    # rules accepted before texts were kept: name them from today's reading
+    for rid, rule, _ev, _k in recs:
+        if rid in state["accepted"] and rid not in texts:
+            texts[rid] = rule
 
-    # recommendations derived from the ranked edge
-    recs = []
-    for name, v, n in bad[:4]:
-        _nm = name[0].lower() + name[1:] if name[:5] == "Your " else name
-        recs.append((f"avoid:{name}", f"Avoid {_nm} — costing {v:+.2f}R per trade ({n} trades)"))
-    for name, v, n in good[:3]:
-        _nm = name[0].lower() + name[1:] if name[:5] == "Your " else name
-        recs.append((f"keep:{name}", f"Stick to {_nm} — worth {v:+.2f}R per trade ({n} trades)"))
-    # (No weekly-stop proposal: it was a constant −1R whatever the data said,
-    # COMP-17.)
+    def _row(icon, tone, title, sub, marker):
+        _c = {"keep": GREEN, "avoid": RED, "mine": "#4800ff"}[tone]
+        return (f"<div class='ea-row-nowrap ea-rulerow {marker}' style='--c:{_c};'>"
+                f"<span class='ea-rulerow-ico'>{icon}</span>"
+                f"<span class='ea-rulerow-txt'><b>{_html.escape(title)}</b>"
+                + (f"<small>{_html.escape(sub)}</small>" if sub else "")
+                + "</span></div>")
 
-    active = list(state["custom"]) + [txt for rid, txt in recs if rid in state["accepted"]]
+    active = [("custom", r, r) for r in state["custom"]] + [
+        ("rec", rid, texts.get(rid, rid.split(":", 1)[-1])) for rid in state["accepted"]]
     if active:
-        for k, rule in enumerate(active):
-            c1, c2 = st.columns([12, 1])
+        for k, (kind, ident, rule) in enumerate(active):
+            c1, c2 = st.columns([12, 1], vertical_alignment="center")
             with c1:
-                st.markdown(
-                    f"<div style='background:#fff;border:1px solid rgba(0,0,0,0.06);"
-                    f"border-radius:10px;padding:9px 14px;font-size:14px;color:#334155;"
-                    f"margin:2px 0;'>{_html.escape(str(rule))}</div>", unsafe_allow_html=True)
+                st.markdown(_row("\u2713", "mine", rule, "", "ea-myrule"), unsafe_allow_html=True)
             with c2:
-                if st.button("✕", key=f"rule_del_{k}", help="Remove this rule"):
-                    if rule in state["custom"]:
-                        state["custom"].remove(rule)
-                    else:
-                        for rid, txt in recs:
-                            if txt == rule and rid in state["accepted"]:
-                                state["accepted"].remove(rid)
-                                state["declined"].append(rid)
+                if st.button("", key=f"rule_del_{k}", icon=":material/close:", help="Remove this rule"):
+                    if kind == "custom":
+                        state["custom"].remove(ident)
+                    elif ident in state["accepted"]:
+                        state["accepted"].remove(ident)
+                        state["declined"].append(ident)
                     _rules_save()
                     st.rerun()
     else:
-        st.caption("No rules yet — add your own below"
-                   + (" or accept a recommendation." if t._verdicts_on() else "."))
+        st.caption("No rules yet \u2014 write your own below"
+                   + (" or add a suggestion." if t._verdicts_on() else "."))
 
-    c1, c2 = st.columns([12, 2])
+    c1, c2 = st.columns([12, 2], vertical_alignment="center")
     with c1:
+        st.markdown('<div class="ea-mk ea-row-nowrap"></div>', unsafe_allow_html=True)
         new_rule = st.text_input("Add a rule", key="ea_new_rule",
                                  label_visibility="collapsed",
-                                 placeholder="Write your own rule…")
+                                 placeholder="Write your own rule\u2026")
     with c2:
         if st.button("Add", key="ea_add_rule", use_container_width=True):
             if new_rule and new_rule.strip():
@@ -524,29 +569,32 @@ def _rules_section(good, bad) -> None:
                 _rules_save()
                 st.rerun()
 
-    # Recommendations come from an uncorrected many-way search that proposes a
+    # Suggestions come from an uncorrected many-way search that proposes a
     # rule on pure noise (STAT-05): owner-only until each passes its null
     # test (roadmap 1.12, D4). Members keep their own rules.
-    pending = [(rid, txt) for rid, txt in recs
-               if rid not in state["accepted"] and rid not in state["declined"]]
+    pending = [r for r in recs if r[0] not in state["accepted"] and r[0] not in state["declined"]]
     if not t._verdicts_on():
         pending = []
     if pending:
-        st.markdown("#### Recommended from your data")
-        for rid, txt in pending:
-            c1, c2, c3 = st.columns([10, 1.6, 1.6])
+        st.markdown("<div style='font-size:11px;font-weight:700;letter-spacing:0.07em;color:#64748b;"
+                    "margin:14px 0 2px;'>SUGGESTED FROM YOUR DATA</div>", unsafe_allow_html=True)
+        st.caption(f"Only slices you choose, with {REC_MIN_N}+ trades and at least "
+                   f"{REC_MIN_R:.2f}R a trade either way. Add one to make it yours.")
+        for rid, rule, ev, keep in pending:
+            c1, c2, c3 = st.columns([10, 1.4, 1], vertical_alignment="center")
             with c1:
-                st.markdown(
-                    f"<div style='background:#f8f9fc;border:1px dashed rgba(72,0,255,0.35);"
-                    f"border-radius:10px;padding:9px 14px;font-size:14px;color:#334155;"
-                    f"margin:2px 0;'>{txt}</div>", unsafe_allow_html=True)
+                st.markdown(_row("\u2713" if keep else "\u2715", "keep" if keep else "avoid",
+                                 rule, ev, "ea-rec"), unsafe_allow_html=True)
             with c2:
-                if st.button("Accept", key=f"rec_ok_{rid}"):
+                if st.button("Add", key=f"rec_ok_{rid}", icon=":material/add:",
+                             type="primary", use_container_width=True):
                     state["accepted"].append(rid)
+                    texts[rid] = rule
                     _rules_save()
                     st.rerun()
             with c3:
-                if st.button("Decline", key=f"rec_no_{rid}"):
+                if st.button("", key=f"rec_no_{rid}", icon=":material/close:",
+                             help="Not for me \u2014 hide this suggestion"):
                     state["declined"].append(rid)
                     _rules_save()
                     st.rerun()
@@ -595,7 +643,10 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
                 f"<div style='font-size:22px;font-weight:800;color:{col};'>{val}</div>"
                 f"<div style='font-size:12px;color:#64748b;'>{sub}</div></div>")
 
-    manual = [c for c in ["A+ Setup?", "Conviction (1-5)", "Mental State", "Mistake"] if c in wk.columns]
+    # only the tags this journal uses (a never-filled Conviction made every
+    # week read "0 of N fully tagged")
+    from edge_analysis.ui.reshape import used_tags
+    manual = used_tags(g, ["A+ Setup?", "Conviction (1-5)", "Mental State", "Mistake"])
 
     def _tagged(row):
         for c in manual:
@@ -732,6 +783,7 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
         return col in wk.columns and pd.to_numeric(wk[col], errors="coerce").notna().any()
 
     _show_pnl, _show_mfe, _show_lots = _any_num("PnL"), _any_num("MFE (R)"), _any_num("Lot Size")
+    _show_pnl = _show_pnl and not t._dollars_hidden()   # not a column of "•••"
     st.markdown("#### Trade by trade")
     rows = ""
     for _, r in wk.iterrows():

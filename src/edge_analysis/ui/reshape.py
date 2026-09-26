@@ -1012,10 +1012,21 @@ def trade_explorer(g: pd.DataFrame, key: str = "ea_tx") -> None:
         st.caption("Trades appear here once they carry a date and a result.")
         return
     t = _tokens()
-    c1, c2, c3, c4 = st.columns([1.6, 1, 1.2, 1.2])
-    with c1:
-        res = st.radio("Show", ["All", "Wins", "Losses", "Break-even", "Flagged"], horizontal=True,
-                       key=f"{key}_res", label_visibility="collapsed") or "All"
+    res = st.radio("Show", ["All", "Wins", "Losses", "Break-even", "Flagged"], horizontal=True,
+                   key=f"{key}_res", label_visibility="collapsed") or "All"
+    _phone = st.session_state.get("layout_mode") == "mobile"
+    if _phone:
+        # four stacked boxes were a wall on a phone: the period stays out,
+        # the rest fold away
+        per = st.selectbox("Period", ["All time", "Last 30 days", "Last 90 days", "This year"],
+                           key=f"{key}_per", label_visibility="collapsed")
+        _more = st.expander("Session, setup, search")
+        c2 = c3 = c4 = _more
+    else:
+        c1, c2, c3, c4 = st.columns([1, 1, 1, 1.3])
+        with c1:
+            per = st.selectbox("Period", ["All time", "Last 30 days", "Last 90 days", "This year"],
+                               key=f"{key}_per", label_visibility="collapsed")
     with c2:
         sess = sorted(s for s in x["session"].unique() if s)
         ses = st.selectbox("Session", ["Every session"] + sess, key=f"{key}_ses", label_visibility="collapsed")
@@ -1026,6 +1037,11 @@ def trade_explorer(g: pd.DataFrame, key: str = "ea_tx") -> None:
         q = st.text_input("Search", key=f"{key}_q", placeholder="Search notes and mistakes",
                           label_visibility="collapsed")
     v = x
+    if per != "All time":
+        _last = x["when"].max()
+        _from = (_last.normalize().replace(month=1, day=1) if per == "This year"
+                 else _last.normalize() - pd.Timedelta(days=(29 if per == "Last 30 days" else 89)))
+        v = v[v["when"] >= _from]
     if res == "Wins":
         v = v[v["r"] > 0.15]
     elif res == "Losses":
@@ -1046,9 +1062,23 @@ def trade_explorer(g: pd.DataFrame, key: str = "ea_tx") -> None:
     if v.empty:
         st.caption("No trades match. Widen the filters.")
         return
-    shown = int(st.session_state.get(f"{key}_n", 25))
+    # Ten rows to start, grouped by week, so a long journal stays a list you
+    # can scan rather than a wall (his note, 26 Sep: "once there's heaps of
+    # trades, it could be too much")
+    shown = int(st.session_state.get(f"{key}_n", 10))
+    _wk = v["when"].dt.to_period("W-SUN")
+    _wsum = v.groupby(_wk)["r"].agg(["size", "sum"])
     rows = ""
+    _cur_wk = None
     for i, r in v.head(shown).iterrows():
+        _p = _wk.loc[i]
+        if _p != _cur_wk:
+            _cur_wk = _p
+            _n, _s = int(_wsum.loc[_p, "size"]), float(_wsum.loc[_p, "sum"])
+            _sc = GREEN if _s > 0.15 else (RED if _s < -0.15 else t["muted"])
+            rows += (f'<tr class="wk"><td colspan="7">Week of {_p.start_time.strftime("%d %b")}'
+                     f'<span class="mu"> · {_n} trade{"s" if _n != 1 else ""} · </span>'
+                     f'<b style="color:{_sc};">{_h.escape(fmt_r(_s, 1))}</b></td></tr>')
         rc = GREEN if r["r"] > 0.15 else (RED if r["r"] < -0.15 else t["muted"])
         tags = ""
         if r["aplus"] is True:
@@ -1059,8 +1089,10 @@ def trade_explorer(g: pd.DataFrame, key: str = "ea_tx") -> None:
             tags += '<span class="tg bad">rule broken</span>'
         setup = _h.escape(r["setup"] or "—") + (f' <span class="mu">· {_h.escape(r["tf"])}</span>' if r["tf"] else "")
         rows += (f'<tr><td class="w"><b>{r["when"].strftime("%a %d %b")}</b> <span class="mu">{r["when"].strftime("%H:%M") if r["when"].hour or r["when"].minute else ""}</span></td>'
-                 f'<td class="m">{_h.escape(r["session"])}</td><td>{setup}</td><td class="m mu">{_h.escape(r["dir"])}</td>'
-                 f'<td class="rv" style="color:{rc};">{_h.escape(fmt_r(r["r"]))}</td><td class="m">{_path_svg(r)}</td><td>{tags}</td></tr>')
+                 f'<td class="m">{_h.escape(r["session"])}</td><td>{setup}'
+                 + (f'<div class="tgm">{tags}</div>' if tags else '')
+                 + f'</td><td class="m mu">{_h.escape(r["dir"])}</td>'
+                 f'<td class="rv" style="color:{rc};">{_h.escape(fmt_r(r["r"]))}</td><td class="m">{_path_svg(r)}</td><td class="m">{tags}</td></tr>')
     extra = f"""
 .ea-tx{{border-collapse:collapse !important;width:100%;font-size:13.5px;border:0 !important;}}
 .ea-tx th{{font-size:11px;font-weight:700;letter-spacing:.06em;color:{t['muted']};text-transform:uppercase;text-align:left;
@@ -1068,23 +1100,27 @@ def trade_explorer(g: pd.DataFrame, key: str = "ea_tx") -> None:
 .ea-tx td{{padding:8px 8px !important;border:0 !important;border-bottom:1px solid {t['line']} !important;vertical-align:middle;color:{t['ink']};background:none !important;}}
 .ea-tx tr{{background:none !important;}}
 .ea-tx td.w{{white-space:nowrap;}} .ea-tx td.rv{{font-weight:800;white-space:nowrap;}}
+.ea-tx tr.wk td{{font-size:12px;font-weight:700;letter-spacing:.02em;padding:14px 8px 5px !important;
+  color:{t['ink']};border-bottom:1px solid {t['line']} !important;}}
 .ea-tx .mu{{color:{t['muted']};}}
 .ea-tx .tg{{display:inline-block;font-size:11.5px;font-weight:700;border-radius:6px;padding:1px 7px;margin:1px 4px 1px 0;}}
 .ea-tx .tg.good{{background:{'#12301f' if _dark() else '#dcfce7'};color:{'#86efac' if _dark() else '#14532d'};}}
 .ea-tx .tg.bad{{background:{'#3a1d22' if _dark() else '#fde8e8'};color:{'#fca5a5' if _dark() else '#7f1d1d'};}}
-@media (max-width:640px){{.ea-tx td.m,.ea-tx th.m{{display:none;}}}}
+.ea-tx .tgm{{display:none;margin-top:3px;}}
+@media (max-width:640px){{.ea-tx td.m,.ea-tx th.m{{display:none;}} .ea-tx .tgm{{display:block;}}}}
 """
     st.markdown(css(extra) + '<div class="ea-rx ea-rx-scroll"><table class="ea-tx"><tr><th>When</th><th class="m">Session</th>'
-                '<th>Setup</th><th class="m">Dir</th><th>R</th><th class="m">Path (worst → best, ● exit)</th><th>Tags</th></tr>'
+                '<th>Setup</th><th class="m">Dir</th><th>R</th><th class="m">Path (worst → best, ● exit)</th><th class="m">Tags</th></tr>'
                 f'{rows}</table></div>', unsafe_allow_html=True)
     n_all = len(v)
     cap_ = f"Showing {min(shown, n_all)} of {n_all}. Flagged = your Rules tag says No, or a mistake is logged."
-    b1, b2 = st.columns([3, 1])
+    b1, b2 = st.columns([3, 1], vertical_alignment="center")
     with b1:
         st.caption(cap_)
     with b2:
-        if n_all > shown and st.button("Show 25 more", key=f"{key}_more", use_container_width=True):
-            st.session_state[f"{key}_n"] = shown + 25
+        if n_all > shown and st.button(f"Show {min(20, n_all - shown)} more", key=f"{key}_more",
+                                       use_container_width=True):
+            st.session_state[f"{key}_n"] = shown + 20
             st.rerun()
 
     # the trade card
@@ -1206,6 +1242,16 @@ def _blank(v, mistake: bool = False) -> bool:
     return s in ("", "nan", "none", "na", "[]", "null", "nat")
 
 
+def used_tags(df: pd.DataFrame, cols=None) -> list:
+    """The hand tags this journal actually uses (filled on 10%+ of trades).
+    A field the trader never fills (his Conviction) is not a gap on every
+    trade: counting it read "0% complete, 23 need tagging" (26 Sep)."""
+    if df is None or df.empty:
+        return []
+    return [c for c in (cols or TAG_COLS) if c in df.columns
+            and (~df[c].map(lambda v, _m=(c == "Mistake"): _blank(v, _m))).mean() >= 0.10]
+
+
 def journal_health(df: pd.DataFrame) -> dict:
     """Completeness plus each specific problem found, with its count and fix.
     Every check is plain counting; nothing here is a verdict on the trading."""
@@ -1214,11 +1260,7 @@ def journal_health(df: pd.DataFrame) -> dict:
         return out
     g = df.copy()
     n = len(g)
-    # A tag only counts toward "fully tagged" once the trader actually uses it
-    # (10%+ of trades). Counting a field they never fill (his Conviction)
-    # marked every trade untagged: "0% complete, 23 need tagging" (26 Sep).
-    tags = [c for c in TAG_COLS if c in g.columns
-            and (~g[c].map(lambda v, _m=(c == "Mistake"): _blank(v, _m))).mean() >= 0.10]
+    tags = used_tags(g)
     out["total"] = n
     if len(tags) >= 2:
         full_mask = g.apply(lambda r: not any(_blank(r.get(c), c == "Mistake") for c in tags), axis=1)

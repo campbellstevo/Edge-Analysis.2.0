@@ -70,3 +70,52 @@ def test_not_enough_data_is_a_quiet_note_not_a_warning():
     src = (ROOT / "src" / "edge_analysis" / "ui" / "pro_tabs.py").read_text()
     assert not re.search(r'_insight_box\("Need ~', src)
     assert "you have {len(wins)} so far" in src
+
+
+def test_suggested_rules_are_choices_with_real_evidence():
+    from edge_analysis.ui.plan_tabs import rule_recommendations
+    good = [("London session", 0.55, 3), ("A+ setups", 0.30, 13), ("Asia session", 0.17, 13),
+            ("Single entry", 0.11, 6)]
+    bad = [("Non-A+ setups", -1.22, 4), ("New York session", -0.60, 7),
+           ("Good headspace", -0.16, 16), ("Multi-entry", -0.06, 17)]
+    recs = rule_recommendations(good, bad)
+    rules = [r[1] for r in recs]
+    assert rules == ["Skip the New York session", "Only take A+ setups", "Trade the Asia session"]
+    assert not any("headspace" in r.lower() for r in rules)     # not a choice to avoid
+    assert not any("London" in r for r in rules)                # 3 trades is a reading, not a rule
+    assert "−0.60R a trade over 7 trades" in recs[0][2] or "-0.60R a trade over 7 trades" in recs[0][2]
+
+
+def test_a_pair_is_one_rule_and_the_stronger_side_speaks():
+    from edge_analysis.ui.plan_tabs import rule_recommendations
+    recs = rule_recommendations([("A+ setups", 0.30, 13)], [("Non-A+ setups", -0.42, 10)])
+    assert [(r[0], r[1]) for r in recs] == [("avoid:Non-A+ setups", "Only take A+ setups")]
+
+
+def test_weekly_tagging_ignores_fields_never_filled():
+    g = pd.DataFrame({"A+ Setup?": ["Yes", "No", "Yes"], "Mistake": ["NA", "Overtraded", "NA"],
+                      "Conviction (1-5)": [None, None, None]})
+    assert rx.used_tags(g, ["A+ Setup?", "Conviction (1-5)", "Mistake"]) == ["A+ Setup?", "Mistake"]
+
+
+def test_explorer_starts_with_ten_rows_under_week_headers(monkeypatch):
+    import contextlib
+    out = []
+    monkeypatch.setattr(rx.st, "markdown", lambda body, **k: out.append(str(body)))
+    monkeypatch.setattr(rx.st, "caption", lambda body, **k: out.append(str(body)))
+    monkeypatch.setattr(rx.st, "radio", lambda *a, **k: "All")
+    monkeypatch.setattr(rx.st, "selectbox", lambda label, opts, **k: list(opts)[0])
+    monkeypatch.setattr(rx.st, "text_input", lambda *a, **k: "")
+    monkeypatch.setattr(rx.st, "button", lambda *a, **k: False)
+    monkeypatch.setattr(rx.st, "columns", lambda spec, **k: [contextlib.nullcontext()] * (spec if isinstance(spec, int) else len(spec)))
+    n = 30
+    g = pd.DataFrame({"__Date": pd.date_range("2026-08-01 20:00", periods=n, freq="D"),
+                      "Closed RR": [1.0, -1.0, 0.0] * 10})
+    try:
+        rx.trade_explorer(g, key="t_tx")
+    except Exception:
+        pass   # the trade card below the list needs the full widget set
+    table = next(b for b in out if 'class="ea-tx"' in b)
+    assert table.count('class="wk"') >= 2                 # 10 days span two or three weeks
+    assert table.count("<tr><td") == 10                   # ten trades, not 25
+    assert any("Showing 10 of 30" in b for b in out)
