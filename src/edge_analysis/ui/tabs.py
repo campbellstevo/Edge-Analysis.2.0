@@ -416,7 +416,9 @@ def _to_alt_values(df: pd.DataFrame):
             tmp = pd.to_datetime(col, errors="coerce")
             if getattr(tmp.dt, "tz", None) is not None:
                 tmp = tmp.dt.tz_localize(None)
-            d[c] = tmp.dt.to_pydatetime()
+            # tz-naive datetime64: what the old dt.to_pydatetime() round trip
+            # ended up as anyway (pandas re-infers it), minus the deprecation
+            d[c] = tmp
         elif pd.api.types.is_integer_dtype(col):
             d[c] = col.apply(lambda v: None if pd.isna(v) else int(v))
         elif pd.api.types.is_float_dtype(col):
