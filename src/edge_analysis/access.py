@@ -80,8 +80,20 @@ def mode() -> str:
     return raw if raw in MODES else "owner"
 
 
+# The site's owner, built in so sign-in never hangs on a Secrets edit (26 Sep:
+# he could not get EA_OWNER to take). A sha256 of the owner's Notion email,
+# not the email: nothing readable about him is in the code. EA_OWNER, when
+# set, replaces it.
+BUILTIN_OWNERS = {"sha256:7ea6001385579e4f336feaa9705c1d0620a5e7de40c85132bb1f5c78c3da5795"}
+
+
+def _fingerprint(v: str) -> str:
+    import hashlib
+    return "sha256:" + hashlib.sha256(v.strip().lower().encode()).hexdigest()
+
+
 def owners() -> Set[str]:
-    return _split(_secret("EA_OWNER") or _secret("WHOOP_OWNER"))
+    return _split(_secret("EA_OWNER") or _secret("WHOOP_OWNER")) or set(BUILTIN_OWNERS)
 
 
 def allowlist() -> Set[str]:
@@ -120,7 +132,7 @@ def decide(access_mode: str, owner_set: Iterable[str], allow_set: Iterable[str],
     if email:
         me.add(email.strip().lower())
     owner_set = {o.strip().lower() for o in owner_set if o.strip()}
-    if me & owner_set:
+    if me & owner_set or {_fingerprint(m) for m in me} & owner_set:
         return True, "owner"
     if access_mode == "open":
         return True, "open"

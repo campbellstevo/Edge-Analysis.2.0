@@ -246,3 +246,21 @@ def test_unreadable_secrets_are_told_apart_from_missing_ones(monkeypatch):
             raise RuntimeError("No secrets found. Valid paths for a secrets.toml file are ...")
     monkeypatch.setattr(st, "secrets", _None())
     assert not access.secrets_unreadable()
+
+
+def test_builtin_owner_is_a_fingerprint_not_an_email(monkeypatch):
+    monkeypatch.delenv("EA_OWNER", raising=False)
+    monkeypatch.delenv("WHOOP_OWNER", raising=False)
+    src = (ROOT / "src" / "edge_analysis" / "access.py").read_text()
+    assert "@gmail.com" not in src                       # nothing readable about him in code
+    assert access.owners() == access.BUILTIN_OWNERS
+    # the match is by fingerprint, case- and space-insensitive
+    monkeypatch.setattr(access, "BUILTIN_OWNERS", {access._fingerprint(OWNER)})
+    own = access.owners()
+    assert access.decide("owner", own, set(), set(), " Owner@Example.com ") == (True, "owner")
+    assert access.decide("owner", own, set(), set(), STRANGER) == (False, "not_open")
+
+
+def test_ea_owner_replaces_the_builtin_owner(monkeypatch):
+    monkeypatch.setenv("EA_OWNER", OWNER)
+    assert access.owners() == {OWNER}

@@ -188,6 +188,22 @@ from edge_analysis.ui.tabs import render_all_tabs, generate_overall_stats
 from edge_analysis.user_store import get_user, upsert_user, set_user_db, delete_user
 from edge_analysis.data import whoop
 from edge_analysis import access
+# Streamlit Cloud re-reads app.py on an update but can keep an imported module
+# from before it: a fresh app.py then called a function the old access.py
+# lacked (AttributeError on the sign-in page, 26 Sep). Reload it when stale.
+if not hasattr(access, "BUILTIN_OWNERS"):
+    import importlib as _il
+    access = _il.reload(access)
+
+
+def _mask_email(e: str) -> str:
+    """cam\u2022\u2022\u2022@gmail.com: enough for the visitor to recognise their own
+    account, without the page spelling out a full address."""
+    e = str(e or "").strip()
+    if "@" not in e:
+        return e
+    local, dom = e.split("@", 1)
+    return (local[:3] + "\u2022\u2022\u2022@" + dom) if local else e
 
 
 # --------------------------- UI helpers ---------------------------------------
@@ -1406,7 +1422,7 @@ def _render_access_page(denied: dict) -> None:
     why = (denied or {}).get("why") or "not_open"
     title, body = _ACCESS_COPY.get(why, _ACCESS_COPY["not_open"])
     email = str((denied or {}).get("email") or "")
-    who = html.escape(email)
+    who = html.escape(_mask_email(email))
     with st.container():
         st.markdown(
             f"""<div class="ea-gate"></div>{_gate_logo_html()}
@@ -1414,9 +1430,9 @@ def _render_access_page(denied: dict) -> None:
             <div class="ea-gate-sub">{body}</div>""",
             unsafe_allow_html=True)
         if why == "no_owner":
-            st.markdown(f'<div class="ea-gate-code">EA_OWNER = "{who or "you@example.com"}"</div>',
+            st.markdown('<div class="ea-gate-code">EA_OWNER = "your Notion email"</div>',
                         unsafe_allow_html=True)
-            if access.secrets_unreadable():
+            if getattr(access, "secrets_unreadable", lambda: False)():
                 st.markdown('<div class="ea-gate-hint"><b>Your Secrets can\'t be read</b>: the box '
                             'has a formatting error, so nothing in it counts yet. The usual cause is '
                             'curly quotes \u201c \u201d from a phone keyboard or a missing quote. Retype '
@@ -1430,9 +1446,9 @@ def _render_access_page(denied: dict) -> None:
         elif why == "not_open" and who:
             # an owner IS set but isn't this account; for the owner that means
             # a typo in EA_OWNER. A stranger learns nothing they can use.
-            st.markdown(f'<div class="ea-gate-hint">Own this site? The <b>EA_OWNER</b> secret '
-                        f'doesn\'t match <b>{who}</b>, the email Notion gave us. Check it for a '
-                        f'typo, save, then sign in again.</div>', unsafe_allow_html=True)
+            st.markdown('<div class="ea-gate-hint">Own this site? The <b>EA_OWNER</b> secret '
+                        'doesn\'t match the Notion account you signed in with. Check it for a '
+                        'typo, save, then sign in again.</div>', unsafe_allow_html=True)
         if who:
             st.markdown(f'<div><span class="ea-gate-who"><i></i>Signed in to Notion as '
                         f'{who}</span></div>', unsafe_allow_html=True)
