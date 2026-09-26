@@ -142,17 +142,14 @@ def _yes(g, col):
 
 
 # ─────────────────────────── Trading Plan Dashboard ──────────────────────────
-def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
+def plan_model(df_raw: pd.DataFrame):
+    """Everything the Plan tab reads, computed once and drawn by whoever needs
+    it (the Plan tab; Focus reads the checklist and the ranked edges too).
+    None when there are under 10 trades."""
     t = _t()
     g = _prep(df_raw)
-    # (the card header already says "Trading plan" — no second title)
     if g is None or len(g) < 10:
-        t._unavailable("Trading Plan")
-        return
-    n_all = len(g)
-    st.caption(f"Live + Challenge trades only · {n_all} trades · every number below is "
-               "recomputed from your journal on each load.")
-
+        return None
     # No "profitable hours" gate: hours picked by their own average R and then
     # scored on the same trades read as PROVEN on 197 of 200 pure-noise
     # journals (STAT-03), and its fallback was a retired 17:00–02:00 window
@@ -255,13 +252,6 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
     ]
     gates = [gt[:4] for gt in gates if gt[4]]
 
-    st.markdown("#### Pre-trade checklist — every box yes, or pass")
-    if _min_rr_derived and _min_rr_ev:
-        st.markdown(
-            f'<div class="ea-verdict ea-verdict-info">'
-            f'<span class="ea-verdict-tick">\u25CF</span>'
-            f'<span class="ea-verdict-body"><b>Your minimum target: {_min_rr:g}R</b> '
-            f'— {_min_rr_ev}.</span></div>', unsafe_allow_html=True)
     all_pass = pd.Series(True, index=g.index)
     entries = []
     _young = set()
@@ -284,6 +274,49 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
                     key=lambda e: -e[1])
     review = [e for e in entries if e not in proven]
 
+    segs = []
+    named = [("New York session", is_ny), ("London session", is_ldn), ("Asia session", is_asia),
+             ("Right bias + right execution", ok_exec), ("A+ setups", ok_aplus),
+             ("Non-A+ setups", ~ok_aplus & g["A+ Setup?"].notna() if "A+ Setup?" in g.columns else None),
+             ("Good headspace", ok_head), ("Single entry", ok_single),
+             ("Multi-entry", None if ok_single is None else ~ok_single), ("OB/OS extremes", ok_obos),
+             ("True break confirmed", ok_break), ("No-Close entries", bad_model)]
+    for name, mask in named:
+        if mask is None:
+            continue
+        mask = mask.fillna(False)
+        n = int(mask.sum())
+        if n >= 3:
+            segs.append((name, _avg(g.loc[mask, "__rr"]), n))
+    segs = [s for s in segs if s[1] == s[1]]
+    good = sorted([s for s in segs if s[1] > 0.05], key=lambda x: -x[1])[:8]
+    bad = sorted([s for s in segs if s[1] < -0.02], key=lambda x: x[1])[:8]
+    return dict(g=g, entries=entries, proven=proven, review=review, young=_young,
+                all_pass=all_pass, good=good, bad=bad, planned=planned,
+                min_rr=_min_rr, min_rr_ev=_min_rr_ev, min_rr_derived=_min_rr_derived)
+
+
+def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
+    t = _t()
+    m = plan_model(df_raw)
+    # (the card header already says "Trading plan" — no second title)
+    if m is None:
+        t._unavailable("Trading Plan")
+        return
+    g, entries, proven, review, _young = m["g"], m["entries"], m["proven"], m["review"], m["young"]
+    all_pass, good, bad, planned = m["all_pass"], m["good"], m["bad"], m["planned"]
+    _min_rr, _min_rr_ev, _min_rr_derived = m["min_rr"], m["min_rr_ev"], m["min_rr_derived"]
+    n_all = len(g)
+    st.caption(f"Live + Challenge trades only · {n_all} trades · every number below is "
+               "recomputed from your journal on each load.")
+
+    st.markdown("#### Pre-trade checklist — every box yes, or pass")
+    if _min_rr_derived and _min_rr_ev:
+        st.markdown(
+            f'<div class="ea-verdict ea-verdict-info">'
+            f'<span class="ea-verdict-tick">\u25CF</span>'
+            f'<span class="ea-verdict-body"><b>Your minimum target: {_min_rr:g}R</b> '
+            f'— {_min_rr_ev}.</span></div>', unsafe_allow_html=True)
     def _row(i, e, faded=False):
         rule, edge, logged, low, a, b, na, nb, lab_y, lab_n = e
         if rule in _young:
@@ -363,24 +396,6 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
             f"<div style='font-size:11px;font-weight:600;letter-spacing:0.06em;color:#64748b;'>{lab}</div>"
             f"<div style='font-size:22px;font-weight:800;color:{col};'>{val}</div></div>"
             for lab, val, col in cards) + "</div>", unsafe_allow_html=True)
-
-    segs = []
-    named = [("New York session", is_ny), ("London session", is_ldn), ("Asia session", is_asia),
-             ("Right bias + right execution", ok_exec), ("A+ setups", ok_aplus),
-             ("Non-A+ setups", ~ok_aplus & g["A+ Setup?"].notna() if "A+ Setup?" in g.columns else None),
-             ("Good headspace", ok_head), ("Single entry", ok_single),
-             ("Multi-entry", None if ok_single is None else ~ok_single), ("OB/OS extremes", ok_obos),
-             ("True break confirmed", ok_break), ("No-Close entries", bad_model)]
-    for name, mask in named:
-        if mask is None:
-            continue
-        mask = mask.fillna(False)
-        n = int(mask.sum())
-        if n >= 3:
-            segs.append((name, _avg(g.loc[mask, "__rr"]), n))
-    segs = [s for s in segs if s[1] == s[1]]
-    good = sorted([s for s in segs if s[1] > 0.05], key=lambda x: -x[1])[:8]
-    bad = sorted([s for s in segs if s[1] < -0.02], key=lambda x: x[1])[:8]
 
     def _ranklist(title, items, ok):
         sym, col = ("✓", GREEN) if ok else ("✕", RED)

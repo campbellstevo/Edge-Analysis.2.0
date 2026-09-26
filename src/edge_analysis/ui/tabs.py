@@ -5349,12 +5349,10 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
     # header Focus/All segment is the way back; adding any prose here would
     # defeat the point of the mode.
     if st.session_state.get("ea_density_pref") == "Focus":
-        _f_track, _track_label, _track_others = _track_only(f_perf)
-        _month_card(_f_track, styler)
-        _breaker_strip(_track_only(df_all_safe)[0], terse=True)
-        if _verdicts_on():
-            _strengths_card(df_all_safe)
-            _digest_card(df_all_safe)
+        # 26 Sep rebuild: a pre-session briefing (can I trade, the checklist,
+        # lean into / stay away, after the last trade), not a shorter Performance
+        from edge_analysis.ui.focus import render_focus
+        render_focus(f_perf, df_all_safe, styler)
         return
 
     # Speed: render ONLY the active tab. st.tabs runs all six server-side on
