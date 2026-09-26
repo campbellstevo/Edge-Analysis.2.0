@@ -39,7 +39,7 @@ def _exit_optimizer(df, styler) -> None:
     g["__mae"] = mae.values if mae is not None else -1.0
     g = g[pd.notna(g["__mfe"]) & pd.notna(g["__rr"])]
     if len(g) < 10:
-        t._insight_box("Need ~10+ trades with MFE logged for the exit simulator.", "warn"); return
+        t._empty_note(f"The exit simulator needs 10 trades with MFE logged \u2014 you have {len(g)} so far."); return
     n = len(g)
     actual_total = float(g["__rr"].sum()); actual_exp = actual_total / n
     top = float(min(12.0, max(2.0, np.nanpercentile(g["__mfe"], 95))))
@@ -92,7 +92,7 @@ def _mae_stop_optimizer(df, styler) -> None:
     g = g[pd.notna(g["__mae"]) & pd.notna(g["__rr"])]
     wins = g[g["__rr"] > 0]
     if len(wins) < 8:
-        t._insight_box("Need ~8+ winning trades with MAE logged for the stop optimizer.", "warn"); return
+        t._empty_note(f"The stop optimiser needs 8 winning trades with MAE logged \u2014 you have {len(wins)} so far."); return
     mag = (-wins["__mae"]).clip(lower=0)
     stops = np.round(np.arange(0.3, 2.05, 0.1), 2)
     rows = [{"Stop (R)": float(S), "Winners surviving %": round(float((mag <= S).mean() * 100), 1)} for S in stops]
@@ -131,7 +131,7 @@ def _monte_carlo(df, styler) -> None:
         t._unavailable("Monte Carlo"); return
     r = rr.dropna().values
     if len(r) < 20:
-        t._insight_box("Need ~20+ completed trades for a reliable Monte Carlo.", "warn"); return
+        t._empty_note(f"Monte Carlo needs 20 completed trades to be worth reading \u2014 you have {len(r)} so far."); return
 
     st.markdown('<div class="ea-projrows"></div>', unsafe_allow_html=True)
     risk = t._slider_row(
@@ -291,7 +291,7 @@ def _a_game(df, styler) -> None:
                     net=float(sub["__rr"].sum()))
     a = _stat(g[mask]); alls = _stat(g); off = _stat(g[~mask])
     if not a or not alls:
-        t._insight_box("Not enough A-game trades yet (need your manual fields filled).", "warn"); return
+        t._empty_note("Not enough A-game trades tagged yet \u2014 fill A+ Setup in Notion and this fills in."); return
     c1, c2, c3 = st.columns(3)
     with c1: _kpi("A-Game win rate", f"{a['wr']:.0f}%", f"{a['n']} trades · {a['exp']:+.2f}R", "#16a34a")
     with c2: _kpi("All trades", f"{alls['wr']:.0f}%", f"{alls['n']} trades · {alls['exp']:+.2f}R")
@@ -392,6 +392,10 @@ def _cost_drag(df, styler) -> None:
         costs += float(swap.sum())
     gross = net - costs  # PnL is typically net of costs; gross = net minus (negative) costs
     drag_pct = abs(costs) / abs(gross) * 100 if gross else 0.0
+    if t._dollars_hidden():
+        # masked figures read as broken ("net P&L isn't transferring over", 26 Sep)
+        st.caption("Dollar amounts are hidden. Turn on \u22ef \u2192 Show dollar amounts to see "
+                   "net P&L and total costs; the cost drag % below doesn't need them.")
     c1, c2, c3 = st.columns(3)
     # privacy mode masks the dollar figures; the drag % is the point anyway
     with c1: _kpi("Net P&L", t._money(f"${net:,.0f}"), "after costs", "#16a34a" if net >= 0 else "#ef4444")
@@ -409,7 +413,6 @@ def render_pro_tab(f_perf: pd.DataFrame, df_all: pd.DataFrame, styler) -> None:
     if data is None or data.empty:
         _t()._empty_note("Nothing matches these filters — widen them to see trades here.")
         return
-    st.markdown('<div class="section">', unsafe_allow_html=True)
     _section_header("Trade Management")
     _exit_optimizer(data, styler); st.divider()
     _mae_stop_optimizer(data, styler)
@@ -422,4 +425,3 @@ def render_pro_tab(f_perf: pd.DataFrame, df_all: pd.DataFrame, styler) -> None:
     _heatmap_hour_day(data, styler); st.divider()
     _symbol_session_matrix(data, styler); st.divider()
     _cost_drag(data, styler)
-    st.markdown("</div>", unsafe_allow_html=True)

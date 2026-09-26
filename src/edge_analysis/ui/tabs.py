@@ -1413,19 +1413,16 @@ def _account_comparison_tab(f: pd.DataFrame, styler):
             _vals = _vals[~_vals.isin(["", "nan", "NaN", "None"])]
             if _vals.nunique() <= 1:
                 return
-    st.markdown('<div class="section">', unsafe_allow_html=True)
     st.markdown("### Account comparison")
 
     if f is None or f.empty:
         _empty_note("Nothing matches these filters — widen them to see trades here.")
-        st.markdown("</div>", unsafe_allow_html=True)
         return
 
     lower_map = {str(c).strip().lower(): c for c in f.columns}
     acct_col = lower_map.get("account") or lower_map.get("accounts") or lower_map.get("account name")
     if acct_col is None:
         pass
-        st.markdown("</div>", unsafe_allow_html=True)
         return
 
     g = f.copy()
@@ -1433,17 +1430,14 @@ def _account_comparison_tab(f: pd.DataFrame, styler):
     g = g[~g["__Account"].isin(["", "nan", "NaN", "None"])]
     if g.empty:
         pass
-        st.markdown("</div>", unsafe_allow_html=True)
         return
     if g["__Account"].nunique() <= 1:
         st.caption("Only one account in this slice — nothing to compare.")
-        st.markdown("</div>", unsafe_allow_html=True)
         return
 
     counted = g[g["Outcome"].isin(["Win", "BE", "Loss"])]
     if counted.empty:
         pass
-        st.markdown("</div>", unsafe_allow_html=True)
         return
 
     rows = []
@@ -1462,7 +1456,6 @@ def _account_comparison_tab(f: pd.DataFrame, styler):
 
     if not rows:
         pass
-        st.markdown("</div>", unsafe_allow_html=True)
         return
 
     per_row = 3
@@ -1501,26 +1494,22 @@ def _account_comparison_tab(f: pd.DataFrame, styler):
                 f"<b>{rows[0]['account']}</b> — <b>{rows[0]['win_rate']:.1f}%</b> win rate, "
                 f"<b>{rows[0]['net_pnl']:+.1f}R</b> net PnL across {rows[0]['trades']} trades.")
 
-    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ── Early Close Analysis ──────────────────────────────────────────────────────
 def _early_close_tab(df: pd.DataFrame, styler):
-    st.markdown('<div class="section">', unsafe_allow_html=True)
 
     EC_BE  = "Early Close (Ended up being a BE)"
     EC_WIN = "Early Close (Ended up being a win)"
 
     if df is None or df.empty or "Result" not in df.columns:
         pass
-        st.markdown("</div>", unsafe_allow_html=True)
         return
 
     ec = df[df["Result"].isin([EC_BE, EC_WIN])].copy()
 
     if ec.empty:
         pass
-        st.markdown("</div>", unsafe_allow_html=True)
         return
 
     ec["__closed_mid"]   = ec["Closed RR"].apply(_parse_closed_rr_mid)
@@ -1706,7 +1695,6 @@ def _early_close_tab(df: pd.DataFrame, styler):
             f"Early close saves averaging <b>+{be_avg:.1f}R</b> per BE trade — "
             f"meaningful edge. Keep logging so the pattern stays measurable.", "good")
 
-    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ── Psychology helpers ───────────────────────────────────────────────────────
@@ -1952,11 +1940,9 @@ def _psych_3sl_compliance(df: pd.DataFrame, styler) -> None:
 
 
 def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
-    st.markdown('<div class="section">', unsafe_allow_html=True)
 
     if f is None or f.empty:
         _empty_note("Nothing matches these filters — widen them to see trades here.")
-        st.markdown("</div>", unsafe_allow_html=True)
         return
 
     g = f.copy()
@@ -1972,14 +1958,12 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
                 s_dt = s_dt.dt.tz_localize("UTC")
         else:
             _empty_note("Psychology metrics need a date/time per trade — add one in Notion and this fills in.")
-            st.markdown("</div>", unsafe_allow_html=True)
             return
 
     g["__ts"] = s_dt
     g = g[g["__ts"].notna()].sort_values("__ts").reset_index(drop=True)
     if g.empty:
         _empty_note("Nothing dated matches these filters — widen them to see trades here.")
-        st.markdown("</div>", unsafe_allow_html=True)
         return
 
     try:
@@ -2122,7 +2106,6 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
     _psych_bad_beat_tracker(raw)
     _psych_3sl_compliance(raw, styler)
 
-    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ── Section renderers ─────────────────────────────────────────────────────────
@@ -2187,36 +2170,29 @@ def _two_model_sections(counted: pd.DataFrame) -> bool:
 
 
 def _entry_models_tab(f: pd.DataFrame, show_table):
-    st.markdown('<div class="section">', unsafe_allow_html=True)
     if f is None or f.empty:
         _empty_note("Nothing matches these filters — widen them to see trades here.")
-        st.markdown("</div>", unsafe_allow_html=True)
         return
     f_norm = _ensure_entry_models_list(f)
     if "Entry Models List" not in f_norm.columns:
         _empty_note("Appears once trades carry an Entry Model tag.")
-        st.markdown("</div>", unsafe_allow_html=True)
         return
     em = f_norm.copy()
     em = em[em["Entry Models List"].apply(lambda x: isinstance(x, (list, tuple)) and len(x) > 0)]
     if em.empty:
         _empty_note("Appears once trades carry an Entry Model tag.")
-        st.markdown("</div>", unsafe_allow_html=True)
         return
     em = em.explode("Entry Models List", ignore_index=True)
     em = em[em["Entry Models List"].astype(str).str.strip() != ""]
     if em.empty:
         _empty_note("Appears once trades carry an Entry Model tag.")
-        st.markdown("</div>", unsafe_allow_html=True)
         return
     counted = em[em["Outcome"].isin(["Win", "BE", "Loss"])]
     if counted.empty:
         _empty_note("Appears once trades have a Win/Loss/BE result.")
-        st.markdown("</div>", unsafe_allow_html=True)
         return
     if _two_model_sections(f_norm[f_norm["Outcome"].isin(["Win", "BE", "Loss"])]
                            if "Outcome" in f_norm.columns else f_norm):
-        st.markdown("</div>", unsafe_allow_html=True)
         return
     rates = []
     for model, group in counted.groupby("Entry Models List"):
@@ -2265,14 +2241,11 @@ def _entry_models_tab(f: pd.DataFrame, show_table):
                   lambda: render_entry_model_table(df_em, title=None))
     else:
         _empty_note("Appears once trades have a Win/Loss/BE result.")
-    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def _confluences_tab(f: pd.DataFrame, show_table):
-    st.markdown('<div class="section">', unsafe_allow_html=True)
     if f is None or f.empty:
         _empty_note("Nothing matches these filters — widen them to see trades here.")
-        st.markdown("</div>", unsafe_allow_html=True)
         return
     g = f.copy()
     lower_map = {str(c).strip().lower(): c for c in g.columns}
@@ -2303,7 +2276,6 @@ def _confluences_tab(f: pd.DataFrame, show_table):
         # as "covered" by a DIV-vs-Sweep card that only exists for DIV?/Sweep?
         # journals, so a member saw one "DIV & Sweep" row and never GAP.
         _per_tag_confluences(g)
-        st.markdown("</div>", unsafe_allow_html=True)
         return
 
     def _classify_row(row):
@@ -2337,12 +2309,10 @@ def _confluences_tab(f: pd.DataFrame, show_table):
     g = g[g["Confluence"].notna()]
     if g.empty:
         _empty_note("Appears once trades carry DIV / Sweep tags.")
-        st.markdown("</div>", unsafe_allow_html=True)
         return
     counted = g[g["Outcome"].isin(["Win", "BE", "Loss"])]
     if counted.empty:
         _empty_note("Appears once tagged trades have results.")
-        st.markdown("</div>", unsafe_allow_html=True)
         return
     rows = []
     for conf in CONFLUENCE_OPTIONS:
@@ -2360,7 +2330,6 @@ def _confluences_tab(f: pd.DataFrame, show_table):
             ["sweep", "div", "divergence", "div?", "sweep?"])
         conf_df = conf_df[~_covered].reset_index(drop=True)
         if conf_df.empty:
-            st.markdown("</div>", unsafe_allow_html=True)
             return
         st.markdown("### Confluences")
         if not conf_df.empty and "Win %" in conf_df.columns and _verdicts_on() \
@@ -2374,7 +2343,6 @@ def _confluences_tab(f: pd.DataFrame, show_table):
                                  title=None, first_col_label="Confluence")
     else:
         _empty_note("Appears once trades carry confluence tags.")
-    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def _confluence_tags(v) -> list:
@@ -2438,7 +2406,6 @@ def _timing_reshaped(f: pd.DataFrame, df_raw: pd.DataFrame, show_table) -> None:
 
 
 def _sessions_tab(f: pd.DataFrame, show_table):
-    st.markdown('<div class="section">', unsafe_allow_html=True)
     if f.empty or "Session Norm" not in f.columns or f["Session Norm"].isna().all():
         _empty_note("No session data.")
     else:
@@ -2469,35 +2436,28 @@ def _sessions_tab(f: pd.DataFrame, show_table):
         _flip("sess_flip",
               lambda: _rank_dots(df_rates, "Session", "Expectancy (R)"),
               lambda: render_session_performance_table(df_rates, title=None))
-    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def _instruments_tab(f: pd.DataFrame, show_table):
-    st.markdown('<div class="section">', unsafe_allow_html=True)
     if f is None or f.empty:
         _empty_note("Nothing matches these filters — widen them to see trades here.")
-        st.markdown("</div>", unsafe_allow_html=True)
         return
     g = _ensure_instrument_column(f)
     if "Instrument" not in g.columns:
         _empty_note("No instrument/pair column detected.")
-        st.markdown("</div>", unsafe_allow_html=True)
         return
     g = g.copy()
     g["Instrument"] = g["Instrument"].astype(str).str.strip()
     g = g[g["Instrument"] != ""]
     if g["Instrument"].nunique() <= 1:
         # one asset = nothing to compare — stay silent, like account comparison
-        st.markdown("</div>", unsafe_allow_html=True)
         return
     if g.empty:
         _empty_note("No instrument values present.")
-        st.markdown("</div>", unsafe_allow_html=True)
         return
     counted = g[g["Outcome"].isin(["Win", "BE", "Loss"])]
     if counted.empty:
         _empty_note("No counted outcomes yet for any instrument.")
-        st.markdown("</div>", unsafe_allow_html=True)
         return
     rows = []
     for inst, g_inst in counted.groupby("Instrument"):
@@ -2522,22 +2482,18 @@ def _instruments_tab(f: pd.DataFrame, show_table):
         render_entry_model_table(inst_df, title=None)
     else:
         _empty_note("No instrument stats available.")
-    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def _time_days_tab(f: pd.DataFrame, show_table):
-    st.markdown('<div class="section">', unsafe_allow_html=True)
     counted = f[f["Outcome"].isin(["Win", "BE", "Loss"])]
     day_col = "DayName" if "DayName" in counted.columns else ("Day" if "Day" in counted.columns else None)
     if not day_col or counted.empty:
         _empty_note("No day-of-week signal in current slice.")
-        st.markdown("</div>", unsafe_allow_html=True)
         return
     order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
     df_days = counted[counted[day_col].isin(order)].copy()
     if df_days.empty:
         _empty_note("No Mon–Fri data in current slice.")
-        st.markdown("</div>", unsafe_allow_html=True)
         return
     df_days["__Day"] = pd.Categorical(df_days[day_col], categories=order, ordered=True)
 
@@ -2568,14 +2524,11 @@ def _time_days_tab(f: pd.DataFrame, show_table):
           lambda: _line_metric(_line_rows, "", get_chart_styler(), value="Avg R",
                                x_order=["Mon", "Tue", "Wed", "Thu", "Fri"], x_title=""),
           lambda: render_day_performance_table(perf.sort_values("Day"), title=None))
-    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def _gap_alignment_tab(f: pd.DataFrame, show_table):
-    st.markdown('<div class="section">', unsafe_allow_html=True)
     if f is None or f.empty or "Gap Alignment" not in f.columns:
         _empty_note("No GAP Alignment data in current slice.")
-        st.markdown("</div>", unsafe_allow_html=True)
         return
     g = f.copy()
     counted = g[g["Outcome"].isin(["Win", "BE", "Loss"])]
@@ -2583,7 +2536,6 @@ def _gap_alignment_tab(f: pd.DataFrame, show_table):
     counted = counted[~counted["Gap Alignment"].isin(["", "nan", "NaN", "None"])]
     if counted.empty:
         _empty_note("No counted outcomes with GAP Alignment set.")
-        st.markdown("</div>", unsafe_allow_html=True)
         return
     rows = []
     for ga, group in counted.groupby("Gap Alignment"):
@@ -2597,7 +2549,6 @@ def _gap_alignment_tab(f: pd.DataFrame, show_table):
                                  title="GAP alignment", first_col_label="GAP alignment")
     else:
         _empty_note("No GAP Alignment stats available.")
-    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def _parse_target_rr_label(label: str):
@@ -2619,10 +2570,8 @@ def _parse_target_rr_label(label: str):
 
 
 def _target_rr_tab(f: pd.DataFrame, show_table):
-    st.markdown('<div class="section">', unsafe_allow_html=True)
     if f is None or f.empty or "Targeted RR" not in f.columns:
         _empty_note("No Target RR data in current slice.")
-        st.markdown("</div>", unsafe_allow_html=True)
         return
     g = f.copy()
     counted = g[g["Outcome"].isin(["Win", "BE", "Loss"])]
@@ -2630,7 +2579,6 @@ def _target_rr_tab(f: pd.DataFrame, show_table):
     counted = counted[counted["Targeted RR"] != ""]
     if counted.empty:
         _empty_note("No counted outcomes with Target RR set.")
-        st.markdown("</div>", unsafe_allow_html=True)
         return
     rows = []
     for target, group in counted.groupby("Targeted RR"):
@@ -2648,7 +2596,6 @@ def _target_rr_tab(f: pd.DataFrame, show_table):
         render_entry_model_table(df_rr, title="Target R:R", first_col_label="Target R:R")
     else:
         _empty_note("No Target RR stats available.")
-    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def _parse_rr_value(v):
@@ -3659,12 +3606,10 @@ def _conditions_tab(f: pd.DataFrame, show_table):
     if not present_cols:
         return
 
-    st.markdown('<div class="section">', unsafe_allow_html=True)
     st.markdown("### Conditions")
 
     if f is None or f.empty:
         _empty_note("Nothing matches these filters — widen them to see trades here.")
-        st.markdown("</div>", unsafe_allow_html=True)
         return
 
     g = f.copy()
@@ -3684,7 +3629,6 @@ def _conditions_tab(f: pd.DataFrame, show_table):
 
     if counted.empty:
         _empty_note("No Conditions values in current slice.")
-        st.markdown("</div>", unsafe_allow_html=True)
         return
 
     def _expectancy(grp):
@@ -3693,85 +3637,65 @@ def _conditions_tab(f: pd.DataFrame, show_table):
 
     tf_titles = {"Conditions ETF": "Entry TF", "Conditions MTF": "Middle TF",
                  "Conditions HTF": "Higher TF"}
-    st.caption("Average R per trade in each market state \u00b7 small samples show dimmed.")
-    all_rows = []
-    grid = []
+    st.caption("Average R per trade in each market state, by timeframe.")
+    # One small grid (timeframe down, state across) in the house style, then
+    # one takeaway under it built from the same cells — the old verdict box
+    # sat above a ranked list and, with one cell over its 8-trade floor, named
+    # that cell as both best and lowest (his notes, 26 Sep).
+    from edge_analysis.ui import reshape as rx
+    _long = []
     for col in present_cols:
-        col_data = counted[counted[col].notna()].copy()
-        cells = {}
+        col_data = counted[counted[col].notna()]
         for state in ("Trending", "Ranging"):
             grp = col_data[col_data[col].astype(str).str.contains(state, case=False, na=False)]
-            rr = grp["__rr"].dropna()
-            if len(rr) > 0:
-                avg = float(rr.mean())
-                _big = len(grp) >= 3
-                cells[state] = (f"{avg:+.2f}R \u00b7 {len(grp)}t",
-                                ("#16a34a" if avg >= 0 else "#ef4444") if _big
-                                else "#a8b0c2")
-                if _big:
-                    all_rows.append({"Condition": f"{tf_titles.get(col, col)} \u00b7 {state}",
-                                     "Expectancy": avg, "N": len(grp)})
-            else:
-                cells[state] = ("\u2014", "#c3c9d4")
-        grid.append((tf_titles.get(col, col), cells))
-    bar_rows = []
-    for col in present_cols:
-        col_data = counted[counted[col].notna()].copy()
-        for state in ("Trending", "Ranging"):
-            grp = col_data[col_data[col].astype(str).str.contains(state, case=False, na=False)]
-            rr = grp["__rr"].dropna()
-            if len(rr) > 0:
-                avg = float(rr.mean())
-                # every state shows; under 3 trades the bar renders dimmed
-                bar_rows.append({"Category": f"{tf_titles.get(col, col)} \u00b7 {state}",
-                                 "Avg R": round(avg, 2), "Trades": len(grp)})
-                if len(grp) >= 3:
-                    all_rows.append({"Condition": f"{tf_titles.get(col, col)} \u00b7 {state}",
-                                     "Expectancy": avg, "N": len(grp)})
-
-    # verdict first (8+ trades a side), then the evidence
-    all_rows = [r for r in all_rows if r.get("N", 0) >= 8]
-    if all_rows:
-        best_ind = max(all_rows, key=lambda x: x["Expectancy"])
-        worst_ind = min(all_rows, key=lambda x: x["Expectancy"])
-        _insight_box(
-            f"Best condition: <b>{best_ind['Condition']}</b> "
-            f"(<b>{best_ind['Expectancy']:+.2f}R</b> per trade). "
-            f"{'Worst' if worst_ind['Expectancy'] < 0 else 'Lowest'}: <b>{worst_ind['Condition']}</b> "
-            f"(<b>{worst_ind['Expectancy']:+.2f}R</b>)."
-        )
-    if not bar_rows:
+            for _i, _row in grp.iterrows():
+                if pd.notna(_row["__rr"]):
+                    _long.append({"tf": tf_titles.get(col, col), "state": state,
+                                  "__r": float(_row["__rr"]), "Outcome": _row.get("Outcome")})
+    if not _long:
         _empty_note("No market states logged with a result yet.")
-    else:
-        _rank_dots(bar_rows, "Category", "Avg R")
-
-    st.markdown("</div>", unsafe_allow_html=True)
+        return
+    _lg = pd.DataFrame(_long)
+    _tfs = [tf_titles.get(c, c) for c in present_cols]
+    rx.heat_grid(_lg, "tf", "state", _tfs, ["Trending", "Ranging"], metric="Expectancy",
+                 min_n=5, row_head="Timeframe", totals=False, name_w="110px")
+    _cells = (_lg.groupby(["tf", "state"])["__r"].agg(["mean", "size"]).reset_index())
+    _cells = _cells[_cells["size"] >= 5]
+    _note = "Hatched cells have under 5 trades."
+    if len(_cells) >= 2:
+        _hi = _cells.loc[_cells["mean"].idxmax()]
+        _lo = _cells.loc[_cells["mean"].idxmin()]
+        _same_tf = _hi["tf"] == _lo["tf"]
+        _name = (lambda c: c["state"].lower()) if _same_tf else (lambda c: f"{c['tf']} {c['state'].lower()}")
+        if _hi["mean"] - _lo["mean"] >= 0.1:
+            _note = (f"{_name(_hi).capitalize()} pays best: {rx.fmt_r(_hi['mean'])} a trade over "
+                     f"{int(_hi['size'])} trades, against {rx.fmt_r(_lo['mean'])} over "
+                     f"{int(_lo['size'])} {_name(_lo)}"
+                     f"{' on the ' + _hi['tf'] if _same_tf else ''}. " + _note)
+        else:
+            _note = "No real difference between the states you trade. " + _note
+    st.caption(_note)
 
 
 def _timeframes_tab(f: pd.DataFrame, show_table):
-    st.markdown('<div class="section">', unsafe_allow_html=True)
     if f is None or f.empty:
         _empty_note("Nothing matches these filters — widen them to see trades here.")
-        st.markdown("</div>", unsafe_allow_html=True)
         return
     lower_map = {str(c).strip().lower(): c for c in f.columns}
     tf_col = (lower_map.get("entry timeframe") or lower_map.get("timeframe")
               or lower_map.get("time frame") or lower_map.get("tf"))
     if tf_col is None:
         _empty_note("No 'Timeframe' column found in current data.")
-        st.markdown("</div>", unsafe_allow_html=True)
         return
     g = f.copy()
     g["__TF"] = g[tf_col].astype(str).str.strip()
     g = g[~g["__TF"].isin(["", "nan", "NaN", "None"])]
     if g.empty:
         _empty_note("No timeframe values present.")
-        st.markdown("</div>", unsafe_allow_html=True)
         return
     counted = g[g["Outcome"].isin(["Win", "BE", "Loss"])]
     if counted.empty:
         _empty_note("No counted outcomes yet for any timeframe.")
-        st.markdown("</div>", unsafe_allow_html=True)
         return
     _TF_ORDER = {
         "1m": 1, "2m": 2, "3m": 3, "5m": 5, "10m": 10, "15m": 15, "30m": 30, "45m": 45,
@@ -3798,7 +3722,6 @@ def _timeframes_tab(f: pd.DataFrame, show_table):
                             "Avg RR": avg_rr, "Profit Factor": profit_factor}))
     if not rows:
         _empty_note("No timeframe stats available.")
-        st.markdown("</div>", unsafe_allow_html=True)
         return
     tf_df = (pd.DataFrame(rows)
              .assign(_sort=lambda d: d["Timeframe"].apply(_tf_sort_key))
@@ -3814,7 +3737,6 @@ def _timeframes_tab(f: pd.DataFrame, show_table):
             render_timeframe_table(_tfp, title="Timeframe pairing \u2014 "
                                                "structure \u2192 trigger",
                                    first_col_label="Pairing")
-            st.markdown("</div>", unsafe_allow_html=True)
             return
     st.markdown("### Timeframes")
     if (not tf_df.empty and "Win %" in tf_df.columns
@@ -3825,14 +3747,11 @@ def _timeframes_tab(f: pd.DataFrame, show_table):
             f"<b>{best_tf['Win %']:.1f}%</b> win rate across {int(best_tf['Trades'])} trades. "
             f"Concentrating executions on your best timeframe cuts the noise.")
     render_timeframe_table(tf_df, title=None)
-    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def _coach_tab(f: pd.DataFrame):
-    st.markdown('<div class="section">', unsafe_allow_html=True)
     st.markdown("## Edge Coach (disabled for now)")
     _empty_note("Coach is hidden for now.")
-    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ── Coverage tab ──────────────────────────────────────────────────────────────
@@ -3889,10 +3808,8 @@ def _data_tab(f_all: pd.DataFrame, show_table):
     """Live field checklist: the CONNECTED journal's own columns and how
     filled each one is — schema-driven, so any user's template shows its
     own truth (no hardcoded expected-column list)."""
-    st.markdown('<div class="section">', unsafe_allow_html=True)
     if f_all is None or f_all.empty:
         _empty_note("Appears once trades are logged.")
-        st.markdown("</div>", unsafe_allow_html=True)
         return
     import html as _h3
     n = len(f_all)
@@ -3917,7 +3834,6 @@ def _data_tab(f_all: pd.DataFrame, show_table):
         rows.append((cs, filled))
     if not rows:
         _empty_note("Appears once trades are logged.")
-        st.markdown("</div>", unsafe_allow_html=True)
         return
     rows.sort(key=lambda x: (x[1] / n, x[0].lower()))
     gaps = [(nm, fl) for nm, fl in rows if fl < n]
@@ -3944,12 +3860,10 @@ def _data_tab(f_all: pd.DataFrame, show_table):
                     + (f"<span style='font-size:12.5px;color:#64748b;padding:5px 4px;'>"
                        f"+{more} more</span>" if more > 0 else "")
                     + "</div>", unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ── Notion templates UI ───────────────────────────────────────────────────────
 def render_connect_notion_templates_ui():
-    st.markdown('<div class="section">', unsafe_allow_html=True)
     st.markdown("## Connect Notion / Templates")
     c1, c2 = st.columns(2)
     with c1:
@@ -3996,7 +3910,6 @@ def render_connect_notion_templates_ui():
         if issues:
             st.info("Checks:\n\n- " + "\n- ".join(issues))
         st.dataframe(df.head(25), use_container_width=True)
-    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ── Projections Tab ───────────────────────────────────────────────────────────
@@ -4846,7 +4759,6 @@ def _compute_refinements(stats: dict) -> dict:
 
 
 def _refinements_tab(f_perf: pd.DataFrame, df_all_safe: pd.DataFrame, styler):
-    st.markdown('<div class="section">', unsafe_allow_html=True)
 
     st.markdown("""
     <style>
@@ -4894,7 +4806,6 @@ def _refinements_tab(f_perf: pd.DataFrame, df_all_safe: pd.DataFrame, styler):
 
     if f_perf is None or f_perf.empty:
         _empty_note("Nothing matches these filters — widen them to see trades here.")
-        st.markdown("</div>", unsafe_allow_html=True)
         return
 
     stats = _build_refinements_stats(f_perf, df_all_safe)
@@ -4939,7 +4850,6 @@ def _refinements_tab(f_perf: pd.DataFrame, df_all_safe: pd.DataFrame, styler):
     if st.button("Re-run analysis", key="refinements_rerun"):
         st.rerun()
 
-    st.markdown("</div>", unsafe_allow_html=True)
 
 
 
@@ -4967,7 +4877,6 @@ def _salty_execution_quality_tab(f: pd.DataFrame) -> None:
     if g.empty:
         return
 
-    st.markdown('<div class="section">', unsafe_allow_html=True)
     st.markdown("### Execution quality (deviation score)")
     st.caption("How far your actual entry deviated from your planned entry.")
 
@@ -4999,17 +4908,14 @@ def _salty_execution_quality_tab(f: pd.DataFrame) -> None:
     else:
         _empty_note("Not enough data for deviation score analysis.")
 
-    st.markdown("</div>", unsafe_allow_html=True)
 
 # ── Salty early close (simplified — no Targeted RR) ──────────────────────────
 def _early_close_tab_salty(df: pd.DataFrame, styler):
     """Simplified early close section for Salty schema (no Targeted RR column)."""
-    st.markdown('<div class="section">', unsafe_allow_html=True)
     st.markdown("### Early close profitability")
 
     if df is None or df.empty:
         _unavailable("Early Close Analysis")
-        st.markdown("</div>", unsafe_allow_html=True)
         return
 
     # Salty has "Hit Full TP" (mapped from "Did price hit full TP without you?")
@@ -5018,7 +4924,6 @@ def _early_close_tab_salty(df: pd.DataFrame, styler):
 
     if hit_col is None or rr_col is None:
         _unavailable("Early Close Analysis (requires Hit Full TP + Closed RR)")
-        st.markdown("</div>", unsafe_allow_html=True)
         return
 
     g = df.copy()
@@ -5027,7 +4932,6 @@ def _early_close_tab_salty(df: pd.DataFrame, styler):
 
     if g.empty:
         _empty_note("No early close data with RR values.")
-        st.markdown("</div>", unsafe_allow_html=True)
         return
 
     hit_yes = g[g[hit_col].astype(str).str.strip().str.upper().isin(["YES", "Y", "TRUE", "1"])]
@@ -5065,7 +4969,6 @@ def _early_close_tab_salty(df: pd.DataFrame, styler):
             f"Avg RR when TP was hit: <b>{avg_rr_hit:+.2f}R</b>. "
             f"Log 'Targeted RR' in your Notion template to unlock full early close analysis.", "warn")
 
-    st.markdown("</div>", unsafe_allow_html=True)
 
 def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
     """Card 2 — Month by month: month cards or the stacked race, records, evidence strip."""
@@ -5404,8 +5307,11 @@ def _whoop_enabled() -> bool:
 
 
 def _gap(px: int = 26) -> None:
-    """Light vertical spacing between related blocks (softer than st.divider)."""
-    st.markdown(f"<div style='height:{px}px'></div>", unsafe_allow_html=True)
+    """Light vertical spacing between related blocks (softer than st.divider).
+    Marked ea-gap so the theme can drop a spacer that lands next to another
+    one — a section with nothing to show left two stacked gaps (his "random
+    spaces in between", 26 Sep)."""
+    st.markdown(f"<div class='ea-gap' style='height:{px}px'></div>", unsafe_allow_html=True)
 
 
 def _flip(key: str, chart_fn, table_fn) -> None:
@@ -5543,17 +5449,17 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                         # simulator as bars; the detail sits one click deeper
                         from edge_analysis.ui import reshape as rx
                         if rx.management_overview(_data, styler):
-                            _gap(10)
-                            with st.expander("Closes, execution, stops and missed runners"):
-                                _close_style_section(
-                                    _data if (_data is not None and "Targeted RR" in _data.columns)
-                                    else df_all_safe, styler)
-                                _gap(18)
-                                _execution_section(_data, styler)
-                                _gap(18)
-                                _mae_stop_optimizer(_data, styler)
-                                _gap(18)
-                                _missed_runner_section(_data, styler)
+                            # shown, not folded away: he didn't want to open a box for them
+                            _gap(18)
+                            _close_style_section(
+                                _data if (_data is not None and "Targeted RR" in _data.columns)
+                                else df_all_safe, styler)
+                            _gap(18)
+                            _execution_section(_data, styler)
+                            _gap(18)
+                            _mae_stop_optimizer(_data, styler)
+                            _gap(18)
+                            _missed_runner_section(_data, styler)
                         else:
                             _mae_mfe_section(_data, styler)
                             _gap(18)

@@ -1213,8 +1213,12 @@ def journal_health(df: pd.DataFrame) -> dict:
     if df is None or df.empty:
         return out
     g = df.copy()
-    tags = [c for c in TAG_COLS if c in g.columns]
     n = len(g)
+    # A tag only counts toward "fully tagged" once the trader actually uses it
+    # (10%+ of trades). Counting a field they never fill (his Conviction)
+    # marked every trade untagged: "0% complete, 23 need tagging" (26 Sep).
+    tags = [c for c in TAG_COLS if c in g.columns
+            and (~g[c].map(lambda v, _m=(c == "Mistake"): _blank(v, _m))).mean() >= 0.10]
     out["total"] = n
     if len(tags) >= 2:
         full_mask = g.apply(lambda r: not any(_blank(r.get(c), c == "Mistake") for c in tags), axis=1)
@@ -1252,14 +1256,6 @@ def journal_health(df: pd.DataFrame) -> dict:
                                     else f"{k} trades contradict themselves",
                                     "Rules Followed says yes (or A+ says yes), but the mistake logged is a rule break "
                                     "(no A+ setup, overtraded, revenge).", "Review them"))
-    # the double-confirmation box never ticked while both models are filled
-    if {"Entry Model 1", "Entry Model 2", "Double Confirmation?"} <= set(g.columns):
-        both = g["Entry Model 1"].map(_txt).ne("") & g["Entry Model 2"].map(_txt).ne("")
-        ticked = g["Double Confirmation?"].map(_yes).eq(True)
-        if int(both.sum()) >= 3 and not ticked.any():
-            out["problems"].append(("warn", int(both.sum()), "Double Confirmation? is never ticked",
-                                    f"Both entry models are filled on {int(both.sum())} trades, but the box is empty "
-                                    "on all of them. Make it a formula, or tick it.", "Fix the field"))
     # MAE measured past the close on losing trades
     if "MAE (R)" in g.columns and "Closed RR" in g.columns:
         mae = pd.to_numeric(g["MAE (R)"], errors="coerce")

@@ -1369,39 +1369,70 @@ def inject_theme():
     .ea-verdict-bad {{ border-left-color: #ef4444; }}
     .ea-verdict-bad .ea-verdict-tick {{ color: #ef4444; }}
 
-    /* ⋯ menu items: quiet left-aligned rows, not buttons */
-    div[data-testid="stPopoverBody"]:has(.ea-moremenu) button {{
-        background: transparent !important; border: none !important; box-shadow: none !important;
-        padding: 7px 10px !important; border-radius: 9px !important; text-align: left !important;
-        justify-content: flex-start !important; min-height: 0 !important;
-        transition: background 150ms ease;
-    }}
-    div[data-testid="stPopoverBody"]:has(.ea-moremenu) button p {{
-        font-size: 13.5px !important; font-weight: 500 !important; color: #334155 !important;
-        text-align: left !important; width: 100%; margin: 0 !important;
-    }}
-    div[data-testid="stPopoverBody"]:has(.ea-moremenu) button:hover {{ background: #f4f2ff !important; }}
-    div[data-testid="stPopoverBody"]:has(.ea-moremenu) button:hover p {{ color: #4800ff !important; }}
-    div[data-testid="stPopoverBody"]:has(.ea-moremenu) div[data-testid="stElementContainer"] {{
-        margin: 0 !important;
-    }}
+    /* ⋯ menu (26 Sep rebuild): one row height, one text size, an icon per
+       row, group labels with room under them. Every row is 34px so the list
+       reads as a menu, not a stack of buttons. */
     div[data-testid="stPopoverBody"]:has(.ea-moremenu) div[data-testid="stVerticalBlock"] {{
         gap: 0 !important;
     }}
-    div[data-testid="stPopoverBody"]:has(.ea-moremenu) button {{
-        padding: 7px 12px !important; min-height: 34px !important;
+    div[data-testid="stPopoverBody"]:has(.ea-moremenu) div[data-testid="stElementContainer"] {{
+        margin: 0 !important;
     }}
-    /* Group headers own their band: fixed height, nothing can paint over it */
+    div[data-testid="stPopoverBody"]:has(.ea-moremenu) button {{
+        background: transparent !important; border: none !important; box-shadow: none !important;
+        padding: 0 10px !important; min-height: 34px !important; height: 34px !important;
+        border-radius: 8px !important; justify-content: flex-start !important; gap: 10px !important;
+        transition: background 120ms ease;
+    }}
+    div[data-testid="stPopoverBody"]:has(.ea-moremenu) button > div {{
+        justify-content: flex-start !important; gap: 10px !important;
+    }}
+    div[data-testid="stPopoverBody"]:has(.ea-moremenu) button p {{
+        font-size: 13.5px !important; font-weight: 500 !important; color: #334155 !important;
+        text-align: left !important; margin: 0 !important; line-height: 1.2 !important;
+    }}
+    div[data-testid="stPopoverBody"]:has(.ea-moremenu) button [data-testid="stIconMaterial"] {{
+        font-size: 18px !important; color: #94a3b8 !important; margin: 0 !important;
+    }}
+    div[data-testid="stPopoverBody"]:has(.ea-moremenu) button:hover {{ background: #f4f2ff !important; }}
+    div[data-testid="stPopoverBody"]:has(.ea-moremenu) button:hover p,
+    div[data-testid="stPopoverBody"]:has(.ea-moremenu) button:hover [data-testid="stIconMaterial"] {{
+        color: #4800ff !important;
+    }}
+    /* the dollars switch sits in the same 34px row as everything else */
+    div[data-testid="stPopoverBody"]:has(.ea-moremenu) [data-testid="stCheckbox"] {{
+        min-height: 34px !important; padding: 0 10px !important; display: flex; align-items: center;
+    }}
+    div[data-testid="stPopoverBody"]:has(.ea-moremenu) [data-testid="stCheckbox"] label {{
+        gap: 4px !important; align-items: center !important;
+    }}
+    div[data-testid="stPopoverBody"]:has(.ea-moremenu) [data-testid="stCheckbox"] p {{
+        font-size: 13.5px !important; font-weight: 500 !important; color: #334155 !important;
+    }}
+    div[data-testid="stPopoverBody"]:has(.ea-moremenu) [data-testid="stTooltipIcon"] {{
+        margin-left: auto !important;
+    }}
+    div[data-testid="stPopoverBody"]:has(.ea-moremenu) [data-testid="stCaptionContainer"] {{
+        padding: 4px 10px 2px !important;
+    }}
+    div[data-testid="stPopoverBody"]:has(.ea-moremenu) [data-testid="stCaptionContainer"] p {{
+        font-size: 11.5px !important; line-height: 1.35 !important; margin: 0 !important;
+    }}
+    /* group labels: 12px above, 4px below, never touching the first row */
     div[data-testid="stPopoverBody"]:has(.ea-moremenu)
         div[data-testid="stElementContainer"]:has(.ea-menu-eyebrow) {{
-        margin: 0 !important; padding: 13px 12px 9px !important;
-        position: relative; z-index: 2;
+        margin: 0 !important; padding: 0 10px 4px !important;
     }}
     div[data-testid="stPopoverBody"]:has(.ea-moremenu) .ea-menu-eyebrow {{
-        line-height: 1.2 !important;
+        line-height: 1.2 !important; padding-top: 8px;
+    }}
+    /* markdown's own -1rem bottom margin pulled the next row up over the label */
+    div[data-testid="stPopoverBody"]:has(.ea-moremenu)
+        div[data-testid="stElementContainer"]:has(.ea-menu-eyebrow) [data-testid="stMarkdownContainer"] {{
+        margin-bottom: 0 !important;
     }}
     div[data-testid="stPopoverBody"]:has(.ea-moremenu) .ea-menu-sep {{
-        margin: 8px -6px 0 !important;
+        margin: 8px 0 4px !important;
     }}
 
     /* Tab-nav radio styled as the tab pills (st.tabs replaced for speed) */
@@ -1669,8 +1700,8 @@ def inject_theme():
         border-radius: 12px !important;
     }}
     div[data-testid="stPopoverBody"]:has(.ea-moremenu) {{
-        min-width: 0 !important; width: 248px !important;
-        max-height: 78vh !important; overflow-y: auto !important;
+        min-width: 0 !important; width: 268px !important;
+        max-height: 86vh !important; overflow-y: auto !important;
         padding: 6px 8px 10px !important; border-radius: 12px !important;
     }}
 
@@ -2127,6 +2158,14 @@ def inject_dark_overlay():
     div[data-testid="stPopoverBody"]:has(.ea-moremenu) button p { color: #c7cddb !important; }
     div[data-testid="stPopoverBody"]:has(.ea-moremenu) button:hover { background: #232a3a !important; }
     div[data-testid="stPopoverBody"]:has(.ea-moremenu) button:hover p { color: #ffffff !important; }
+    div[data-testid="stPopoverBody"]:has(.ea-moremenu) button [data-testid="stIconMaterial"] { color: #7c8699 !important; }
+    div[data-testid="stPopoverBody"]:has(.ea-moremenu) button:hover [data-testid="stIconMaterial"] { color: #ffffff !important; }
+    div[data-testid="stPopoverBody"]:has(.ea-moremenu) { --ea-mm-here: rgba(124,92,255,0.18); --ea-mm-here-fg: #b3a1ff; }
+    div[data-testid="stPopoverBody"]:has(.ea-moremenu) [data-testid="stCheckbox"] p { color: #c7cddb !important; }
+    div[data-testid="stPopoverBody"]:has(.ea-moremenu) [data-testid="stCheckbox"] label > div:first-child { background: #3a4356 !important; }
+    div[data-testid="stPopoverBody"]:has(.ea-moremenu) [data-testid="stCheckbox"] input:checked + div,
+    div[data-testid="stPopoverBody"]:has(.ea-moremenu) [data-testid="stCheckbox"] label:has(input:checked) > div:first-child { background: #7c5cff !important; }
+    div[data-testid="stPopoverBody"]:has(.ea-moremenu) [data-testid="stTooltipIcon"] svg { color: #7c8699 !important; stroke: #7c8699 !important; }
     .proj-table-header, .proj-table-total { background: #232a3a !important; color: #e8ebf1 !important; }
     .proj-table-row { border-color: rgba(255,255,255,0.08) !important; }
     .proj-table-row:nth-child(even) { background: #1a2030 !important; }
@@ -2468,6 +2507,14 @@ _BAR_CSS = """
 [data-testid="stElementContainer"]:has(.ea-mk), [data-testid="stElementContainer"]:has(.ea-bar-css),
 [data-testid="stElementContainer"]:has(> [data-testid="stMarkdown"] [data-testid="stMarkdownContainer"] > style:only-child) {
     display: none !important; }   /* style-only blocks each added a 12px gap above the bar */
+/* An empty markdown block drew nothing but still took a 12px flex gap; a
+   spacer beside another spacer, or at the end of a card, only added air.
+   Together they made the "random spaces" (26 Sep): a section with nothing to
+   show left two gaps back to back. */
+[data-testid="stElementContainer"]:has(> [data-testid="stMarkdown"] [data-testid="stMarkdownContainer"]:empty),
+[data-testid="stElementContainer"]:has(.ea-gap):has(+ [data-testid="stElementContainer"] .ea-gap),
+[data-testid="stElementContainer"]:has(.ea-gap):last-child {
+    display: none !important; }
 /* with the bar on the page, the page starts at the bar */
 [data-testid="stMainBlockContainer"]:has(:is(.ea-bar, .ea-pbar)) { padding-top: 0 !important; }
 /* the bar container: full-bleed white band, flush with the top of the page */

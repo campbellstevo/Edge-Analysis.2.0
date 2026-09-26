@@ -191,12 +191,14 @@ def _close_style_section(df: pd.DataFrame, styler) -> None:
     reach_pct = float("nan")
     if "__mfe" in early.columns and early["__mfe"].notna().any():
         would_hit = early[pd.notna(early["__mfe"]) & (early["__mfe"] >= early["__tgt"] - tol)]
-        if len(would_hit):
-            left_prov = float((would_hit["__tgt"] - would_hit["__rr"]).clip(lower=0).sum())
+        # MFE logged and no early close ever reached target = a real 0R, not a dash
+        left_prov = (float((would_hit["__tgt"] - would_hit["__rr"]).clip(lower=0).sum())
+                     if len(would_hit) else 0.0)
         rest = early[pd.notna(early["__mfe"]) & (early["__mfe"] < early["__tgt"] - tol)]
         if len(rest):
             reach_pct = float((rest["__mfe"].clip(lower=0) / rest["__tgt"]).mean() * 100)
-    c1, c2, c3, c4 = st.columns(4)
+    _cols = st.columns(4 if left_prov == left_prov else 3)
+    c1, c2, c3 = _cols[:3]
     with c1:
         _kpi("Ran to set TP", f"{len(hit)}",
              f"avg {float(hit['__rr'].mean()):+.2f}R" if len(hit) else "none yet", "#16a34a")
@@ -206,10 +208,11 @@ def _close_style_section(df: pd.DataFrame, styler) -> None:
     with c3:
         _kpi("Stopped out", f"{len(stopped)}",
              f"avg {float(stopped['__rr'].mean()):+.2f}R" if len(stopped) else "none", "#ef4444")
-    with c4:
-        _kpi("Provably left behind", "\u2014" if left_prov != left_prov else f"{left_prov:.1f}R",
-             "early closes whose peak DID reach the target",
-             "#ef4444" if left_prov == left_prov and left_prov >= 1 else PURPLE)
+    if left_prov == left_prov:     # needs MFE; without it the tile is dropped, not dashed
+        with _cols[3]:
+            _kpi("Provably left behind", f"{left_prov:.1f}R",
+                 "cut early, then hit target",
+                 "#ef4444" if left_prov >= 1 else PURPLE)
     if reach_pct == reach_pct:
         st.caption(f"The other early closes peaked at {reach_pct:.0f}% of target on average — "
                    "cutting those may have saved you from the reversal; the data can't say.")
@@ -459,7 +462,6 @@ def render_mt5_tab(f_perf: pd.DataFrame, df_all: pd.DataFrame, styler) -> None:
     if data is None or data.empty:
         _t()._empty_note("Nothing matches these filters — widen them to see trades here.")
         return
-    st.markdown('<div class="section">', unsafe_allow_html=True)
 
     _section_header("Performance & Money")
     _dollar_pnl_section(data, styler)
@@ -486,7 +488,6 @@ def render_mt5_tab(f_perf: pd.DataFrame, df_all: pd.DataFrame, styler) -> None:
     st.divider()
     _execution_section(data, styler)
 
-    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ============================================================================

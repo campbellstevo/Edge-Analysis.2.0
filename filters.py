@@ -385,52 +385,66 @@ def render_filters(
     _eyebrow_div = ("<div class='ea-menu-sep' style='border-top:1px solid "
                     "rgba(148,163,184,0.22);'></div>" + _eyebrow)
     with _more:
-        st.markdown('<div class="ea-moremenu"></div>', unsafe_allow_html=True)
+        # 26 Sep clean-up (his "the settings look a bit dodgy"): five short
+        # groups, a real switch for dollars, and the owner diagnostics as one
+        # line instead of two wrapping paragraphs that forced the menu to scroll.
         _cur = st.session_state.get(SessionKeys.NAV_PAGE, PageNames.DASHBOARD)
-        st.markdown(_eyebrow.format("VIEW"), unsafe_allow_html=True)
-        if mobile and _focus_ok:
-            _render_focus_toggle("ea-mfo")
-        st.button(("\u2713 " if _cur == PageNames.DASHBOARD else "") + PageNames.DASHBOARD,
-                  key="mm_dash", use_container_width=True,
+        _here = "mm_tmpl" if _cur == PageNames.CONNECT else "mm_dash"
+        # the page you're on is tinted, not ticked
+        st.markdown('<div class="ea-moremenu"></div><style>div[data-testid="stPopoverBody"] '
+                    f'.st-key-{_here} button {{ background: var(--ea-mm-here, #f4f2ff) !important; }} '
+                    f'div[data-testid="stPopoverBody"] .st-key-{_here} button p, '
+                    f'div[data-testid="stPopoverBody"] .st-key-{_here} button [data-testid="stIconMaterial"] '
+                    '{ color: var(--ea-mm-here-fg, #4800ff) !important; font-weight: 600 !important; }</style>',
+                    unsafe_allow_html=True)
+        st.markdown(_eyebrow.format("GO TO"), unsafe_allow_html=True)
+        st.button(PageNames.DASHBOARD, key="mm_dash", use_container_width=True,
+                  icon=":material/space_dashboard:",
                   on_click=_go, args=(PageNames.DASHBOARD,))
-        st.button(PageNames.CONNECT, key="mm_tmpl", use_container_width=True,
+        st.button("Your journal & template", key="mm_tmpl", use_container_width=True,
+                  icon=":material/menu_book:",
                   on_click=_go, args=(PageNames.CONNECT,))
 
-        def _flip_privacy():
-            st.session_state["ea_privacy"] = not st.session_state.get("ea_privacy")
+        def _set_dollars():
+            st.session_state["ea_privacy"] = not bool(st.session_state.get("mm_dollars"))
             st.session_state["ea_privacy_dirty"] = True
 
-        _pv_lab = ("Show dollar amounts"
-                   if st.session_state.get("ea_privacy")
-                   else "✓  Dollars shown \u00b7 hide them")
-        st.button(_pv_lab, key="mm_privacy", use_container_width=True,
-                  on_click=_flip_privacy)
-        st.markdown(_eyebrow_div.format("ACTIONS"), unsafe_allow_html=True)
+        st.markdown(_eyebrow_div.format("DISPLAY"), unsafe_allow_html=True)
+        if mobile and _focus_ok:
+            _render_focus_toggle("ea-mfo")
+        _show_d = not bool(st.session_state.get("ea_privacy"))
+        if st.session_state.get("mm_dollars") is not None and st.session_state["mm_dollars"] != _show_d:
+            st.session_state["mm_dollars"] = _show_d     # keep the switch true to the setting
+        # off by default so the site can be shown without showing the account
+        st.toggle("Show dollar amounts", value=_show_d, key="mm_dollars", on_change=_set_dollars)
+        st.markdown(_eyebrow_div.format("TOOLS"), unsafe_allow_html=True)
         st.button("Refresh data", key="mm_refresh", use_container_width=True,
-                  on_click=_refresh)
+                  icon=":material/refresh:", on_click=_refresh)
         # Auto-log writes MT5-shaped rows (Symbol, Position ID, Open Time…): a
         # journal on another template rejects every one and it retries forever
         # (roadmap 1.10, D6). Offered to MT5 journals and the demo only.
         if (st.session_state.get("ea_demo")
                 or st.session_state.get("detected_schema") == "mt5"):
             st.button("Auto-log my trades", key="mm_broker", use_container_width=True,
-                      on_click=_flag, args=("ea_show_broker",))
+                      icon=":material/bolt:", on_click=_flag, args=("ea_show_broker",))
         if _fb:
             st.button("Send feedback", key="mm_fb", use_container_width=True,
-                      on_click=_flag, args=("ea_show_feedback",))
+                      icon=":material/rate_review:", on_click=_flag, args=("ea_show_feedback",))
         st.markdown(_eyebrow_div.format("HELP"), unsafe_allow_html=True)
         st.button("Getting started", key="mm_setup", use_container_width=True,
-                  on_click=_flag, args=("ea_show_setup",))
+                  icon=":material/flag:", on_click=_flag, args=("ea_show_setup",))
         st.button("What the stats mean", key="mm_help", use_container_width=True,
-                  on_click=_flag, args=("ea_show_help",))
+                  icon=":material/help:", on_click=_flag, args=("ea_show_help",))
         st.button("Privacy & terms", key="mm_legal", use_container_width=True,
-                  on_click=_flag, args=("ea_show_legal",))
+                  icon=":material/lock:", on_click=_flag, args=("ea_show_legal",))
         if st.session_state.get("ea_is_owner"):
             st.markdown(_eyebrow_div.format("OWNER"), unsafe_allow_html=True)
-            st.button("Send a test error", key="mm_testerr", use_container_width=True,
-                      on_click=_flag, args=("ea_send_test_error",))
-            st.caption(_server_clock_line())
-            st.caption(_store_line())
+            st.button("Check error alerts", key="mm_testerr", use_container_width=True,
+                      icon=":material/notifications_active:",
+                      on_click=_flag, args=("ea_send_test_error",),
+                      help="Sends a pretend error to your error tracker (Sentry) so you can "
+                           "confirm a real crash would reach your phone. Nothing breaks.")
+            st.caption(_owner_status_line())
     if st.session_state.pop("ea_show_qr", False):
         if _qr_dialog is not None:
             _qr_dialog()
@@ -469,6 +483,22 @@ def render_filters(
                 _fb_body_safe()
 
     return sel_inst, sel_em, sel_sess, date_range, sel_acct, sel_tot
+
+
+def _owner_status_line() -> str:
+    """Owner-only, one line: the server's clock (the 'this week / this month'
+    surfaces read it, TZ-04) and whether the user store's last write held."""
+    from datetime import datetime as _dt
+    now = _dt.now().astimezone()
+    try:
+        from edge_analysis.user_store import list_users, mirror_status
+        n = len(list_users())
+        ms = mirror_status()
+        store = "store FAILED" if ms.get("error") else "store OK"
+        users = f"{n} user{'s' if n != 1 else ''}"
+    except Exception:
+        users, store = "users unknown", "store unreadable"
+    return f"Server {now:%a %H:%M} {now.tzname() or ''} \u00b7 {users} \u00b7 {store}"
 
 
 def _server_clock_line() -> str:

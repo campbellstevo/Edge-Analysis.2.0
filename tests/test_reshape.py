@@ -175,9 +175,16 @@ def test_journal_health_names_each_problem():
     assert h["full"] == 7 and round(h["pct"]) == 70          # "NA" is a logged answer
     assert "3 trades need tagging" in titles                  # tagging stopped at the end
     assert "2 trades contradict themselves" in titles         # rules ticked + rule-break mistake
-    assert "Double Confirmation? is never ticked" in titles
+    assert not any("Double Confirmation" in t for t in titles)   # a given in his journal, not a gap
     assert "MAE runs past the exit on 2 losses" in titles     # -3.5 and -2.2 on ~-1.1R stops
     assert "3 fields never filled" in titles
+
+
+def test_unused_tag_fields_do_not_make_trades_untagged():
+    g = _dc_journal()
+    g["Conviction (1-5)"] = None                        # a field he never fills
+    h = rx.journal_health(g)
+    assert h["full"] == 7 and "3 trades need tagging" in [p[2] for p in h["problems"]]
 
 
 def test_journal_health_is_quiet_on_a_clean_journal():
