@@ -296,18 +296,28 @@ def plan_model(df_raw: pd.DataFrame):
              ("Good headspace", ok_head), ("Single entry", ok_single),
              ("Multi-entry", None if ok_single is None else ~ok_single), ("OB/OS extremes", ok_obos),
              ("True break confirmed", ok_break), ("No-Close entries", bad_model)]
+    # each slice also gets a chance test (5.3): a permutation p against the
+    # rest, Holm across every slice, so a suggestion can say whether it
+    # beats chance or is an early read
+    from edge_analysis.digest import _perm_p, _holm_pass
+    _pv = []
     for name, mask in named:
         if mask is None:
             continue
-        mask = mask.fillna(False)
+        mask = mask.fillna(False).astype(bool)
         n = int(mask.sum())
         if n >= 3:
-            segs.append((name, _avg(g.loc[mask, "__rr"]), n))
-    segs = [s for s in segs if s[1] == s[1]]
+            avg = _avg(g.loc[mask, "__rr"])
+            if avg == avg:
+                segs.append((name, avg, n))
+                _rest = _avg(g.loc[~mask, "__rr"])
+                _pv.append((name, _perm_p(g["__rr"], mask, lower=not (avg >= _rest))))
+    _keep = _holm_pass([p_ for _n, p_ in _pv])
+    beats = {_pv[i][0] for i in _keep}
     good = sorted([s for s in segs if s[1] > 0.05], key=lambda x: -x[1])[:8]
     bad = sorted([s for s in segs if s[1] < -0.02], key=lambda x: x[1])[:8]
     return dict(g=g, entries=entries, proven=proven, review=review, young=_young,
-                all_pass=all_pass, good=good, bad=bad, planned=planned,
+                all_pass=all_pass, good=good, bad=bad, planned=planned, beats=beats,
                 min_rr=_min_rr, min_rr_ev=_min_rr_ev, min_rr_derived=_min_rr_derived)
 
 
@@ -438,7 +448,7 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
                 + _ranklist("COSTING R — AVERAGE PER TRADE", bad, False)
                 + "</div>", unsafe_allow_html=True)
 
-    _rules_section(good, bad)
+    _rules_section(good, bad, m.get("beats"))
 
     if planned is not None and planned.notna().sum() >= 10:
         st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
@@ -551,7 +561,7 @@ def rule_recommendations(good, bad):
     return [r[:4] for r in sorted(best.values(), key=lambda r: -r[4])]
 
 
-def _rules_section(good, bad) -> None:
+def _rules_section(good, bad, beats=None) -> None:
     t = _t()
     st.markdown("#### My rules")
     st.caption(("Your own rules, plus any you add from the suggestions under them. "
@@ -618,9 +628,12 @@ def _rules_section(good, bad) -> None:
                    f"{REC_MIN_R:.2f}R a trade either way. Add one to make it yours.")
         for rid, rule, ev, keep in pending:
             c1, c2, c3 = st.columns([10, 1.4, 1], vertical_alignment="center")
+            _slice = rid.split(":", 1)[-1]
+            _ev = ev + (" \u00b7 beats chance" if beats and _slice in beats
+                        else " \u00b7 early read, not yet beyond chance" if beats is not None else "")
             with c1:
                 st.markdown(_row("\u2713" if keep else "\u2715", "keep" if keep else "avoid",
-                                 rule, ev, "ea-rec"), unsafe_allow_html=True)
+                                 rule, _ev, "ea-rec"), unsafe_allow_html=True)
             with c2:
                 if st.button("Add", key=f"rec_ok_{rid}", icon=":material/add:",
                              type="primary", use_container_width=True):

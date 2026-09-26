@@ -221,9 +221,15 @@ def _checklist_html(proven: list, mine: list, t: dict) -> str:
     return f'<div class="ea-rx ea-fo-list">{rows}</div>'
 
 
-def _lean_html(lean: list, stay: list, t: dict) -> str:
+def _lean_html(lean: list, stay: list, t: dict, beats=None) -> str:
+    def _ev(rid, ev):
+        if beats is None:
+            return ev
+        return ev + (" \u00b7 beats chance" if rid.split(":", 1)[-1] in beats else " \u00b7 early read")
+
     def col(title, c, items, empty):
-        body = "".join(f"<p><b>{_h.escape(r)}</b><small>{_h.escape(ev)}</small></p>" for _rid, r, ev, _k in items)
+        body = "".join(f"<p><b>{_h.escape(r)}</b><small>{_h.escape(_ev(rid, ev))}</small></p>"
+                       for rid, r, ev, _k in items)
         return (f'<div class="ea-fo-col" style="border-top:3px solid {c};"><div class="h" style="color:{c};">{title}</div>'
                 f'{body or f"<small>{empty}</small>"}</div>')
     return ('<div class="ea-rx ea-fo-two">'
@@ -308,8 +314,8 @@ def render_focus(f_perf: pd.DataFrame, df_all: pd.DataFrame, styler) -> None:
                 st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
                 T._card_header("Lean into, stay away from",
                                "The things you choose, with 5+ trades and a real gap behind them.")
-                st.markdown(rx.css(_CSS.format(bg="", bc="", c="", **t)) + _lean_html(lean, stay, t),
-                            unsafe_allow_html=True)
+                st.markdown(rx.css(_CSS.format(bg="", bc="", c="", **t))
+                            + _lean_html(lean, stay, t, m.get("beats")), unsafe_allow_html=True)
 
     # 4. After your last trade
     a = after_last(g)
