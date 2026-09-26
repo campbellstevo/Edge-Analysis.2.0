@@ -4740,6 +4740,10 @@ def _compute_refinements(stats: dict) -> dict:
         n_ok = n_ and n_.get("Trades", 0) >= 8
         if not (y_ok or n_ok):
             continue
+        # the flagged side needs its own sample: "Don't trade with X" came
+        # from 4 trades with X because the other side had 15 (26 Sep)
+        if not (y and y.get("Trades", 0) >= 5):
+            continue
         ya = y["Avg R"] if y else float("nan")
         na = n_["Avg R"] if n_ else float("nan")
         gap = (ya - na) if (y and n_) else float("nan")
