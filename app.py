@@ -1270,8 +1270,12 @@ def _render_login_page():
         # Without OAuth secrets the card still renders — the sign-in button is
         # replaced by a line saying why.
         if auth_url:
-            st.markdown(f'<a href="{auth_url}" class="ea-gate-cta" target="_self">'
-                        f'<span class="n">N</span>Sign in with Notion</a>', unsafe_allow_html=True)
+            # target="_blank", as the working sign-in always had: Streamlit Cloud
+            # runs the app inside a frame, and Notion refuses to load in one
+            # ("app.notion.com refused to connect", 26 Sep — _self broke it)
+            st.markdown(f'<a href="{auth_url}" class="ea-gate-cta" target="_blank" '
+                        f'rel="noopener"><span class="n">N</span>Sign in with Notion</a>',
+                        unsafe_allow_html=True)
         else:
             st.markdown('<p class="ea-gate-small" style="color:#b45309;">Notion sign-in '
                         'isn\'t set up on this server yet.</p>', unsafe_allow_html=True)
@@ -1412,10 +1416,17 @@ def _render_access_page(denied: dict) -> None:
         if why == "no_owner":
             st.markdown(f'<div class="ea-gate-code">EA_OWNER = "{who or "you@example.com"}"</div>',
                         unsafe_allow_html=True)
-            st.markdown('<div class="ea-gate-hint">Already added it? Type the quotes as plain '
-                        '<b>"</b> (a phone keyboard makes them curly, which breaks the whole '
-                        'Secrets file), press Save, wait about a minute, then sign in again.</div>',
-                        unsafe_allow_html=True)
+            if access.secrets_unreadable():
+                st.markdown('<div class="ea-gate-hint"><b>Your Secrets can\'t be read</b>: the box '
+                            'has a formatting error, so nothing in it counts yet. The usual cause is '
+                            'curly quotes \u201c \u201d from a phone keyboard or a missing quote. Retype '
+                            'every quote as a plain <b>"</b>, press Save, wait a minute, then sign in '
+                            'again.</div>', unsafe_allow_html=True)
+            else:
+                st.markdown('<div class="ea-gate-hint">Already added it? The site can read your '
+                            'Secrets but found no <b>EA_OWNER</b> in them. Check the spelling of the '
+                            'name, press Save, wait about a minute, then sign in again.</div>',
+                            unsafe_allow_html=True)
         elif why == "not_open" and who:
             # an owner IS set but isn't this account; for the owner that means
             # a typo in EA_OWNER. A stranger learns nothing they can use.

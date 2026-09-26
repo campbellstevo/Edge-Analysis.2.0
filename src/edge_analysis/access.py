@@ -63,6 +63,17 @@ def _split(raw: str) -> Set[str]:
     return out
 
 
+def secrets_unreadable() -> bool:
+    """True when a Secrets file exists but won't parse (curly quotes, a
+    missing quote): then no secret in it counts, EA_OWNER included."""
+    try:
+        import streamlit as st
+        list(st.secrets.keys())
+        return False
+    except Exception as ex:           # StreamlitSecretNotFoundError either way
+        return "pars" in str(ex).lower()
+
+
 def mode() -> str:
     raw = _secret("EA_ACCESS").strip().lower()
     raw = _ALIASES.get(raw, raw)

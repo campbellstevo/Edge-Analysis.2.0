@@ -221,3 +221,28 @@ def test_owner_pasted_under_a_toml_section_is_found(monkeypatch):
     monkeypatch.delenv("WHOOP_OWNER", raising=False)
     monkeypatch.setattr(st, "secrets", _Sec({"notion": {"client_id": "x", "EA_OWNER": OWNER}}))
     assert access.owners() == {OWNER}
+
+
+def test_notion_sign_in_leaves_the_streamlit_frame():
+    # Streamlit Cloud runs the app in a frame and Notion refuses to load in one:
+    # target="_self" gave "app.notion.com refused to connect" (26 Sep 2026)
+    src = (ROOT / "app.py").read_text()
+    i = src.index('class="ea-gate-cta"')
+    tag = src[src.rindex("<a ", 0, i): src.index(">", i)]
+    assert 'target="_blank"' in tag and "_self" not in tag
+
+
+def test_unreadable_secrets_are_told_apart_from_missing_ones(monkeypatch):
+    import streamlit as st
+
+    class _Broken:
+        def keys(self):
+            raise RuntimeError("Error parsing secrets file at /app/secrets.toml: bad quote")
+    monkeypatch.setattr(st, "secrets", _Broken())
+    assert access.secrets_unreadable()
+
+    class _None:
+        def keys(self):
+            raise RuntimeError("No secrets found. Valid paths for a secrets.toml file are ...")
+    monkeypatch.setattr(st, "secrets", _None())
+    assert not access.secrets_unreadable()
