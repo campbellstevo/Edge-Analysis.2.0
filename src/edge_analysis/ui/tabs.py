@@ -3681,10 +3681,19 @@ def _conditions_tab(f: pd.DataFrame, show_table):
         _same_tf = _hi["tf"] == _lo["tf"]
         _name = (lambda c: c["state"].lower()) if _same_tf else (lambda c: f"{c['tf']} {c['state'].lower()}")
         if _hi["mean"] - _lo["mean"] >= 0.1:
+            # the best and worst of several cells: a permutation test between
+            # the two, Bonferroni over the pairs there were to pick from (5.3)
+            from edge_analysis.digest import _perm_p
+            _two = _lg[((_lg["tf"] == _hi["tf"]) & (_lg["state"] == _hi["state"]))
+                       | ((_lg["tf"] == _lo["tf"]) & (_lg["state"] == _lo["state"]))]
+            _is_hi = (_two["tf"] == _hi["tf"]) & (_two["state"] == _hi["state"])
+            _pairs = max(1, len(_cells) * (len(_cells) - 1) // 2)
+            _beats = _perm_p(_two["__r"], _is_hi, lower=False) <= 0.05 / _pairs
             _note = (f"{_name(_hi).capitalize()} pays best: {rx.fmt_r(_hi['mean'])} a trade over "
                      f"{int(_hi['size'])} trades, against {rx.fmt_r(_lo['mean'])} over "
                      f"{int(_lo['size'])} {_name(_lo)}"
-                     f"{' on the ' + _hi['tf'] if _same_tf else ''}. " + _note)
+                     f"{' on the ' + _hi['tf'] if _same_tf else ''}"
+                     f"{' (beats chance)' if _beats else ' (an early read, not yet beyond chance)'}. " + _note)
         else:
             _note = "No real difference between the states you trade. " + _note
     st.caption(_note)
