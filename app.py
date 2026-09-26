@@ -23,6 +23,49 @@ from datetime import date as DateType
 import pandas as pd
 import streamlit as st
 
+
+def _own_modules() -> dict:
+    """The app's own loaded modules (not the venv, not tests, not app.py)."""
+    out = {}
+    for n, m in list(sys.modules.items()):
+        f = str(getattr(m, "__file__", "") or "")
+        if (n != "__main__" and f.startswith(str(_ROOT)) and "site-packages" not in f
+                and "/tests/" not in f.replace("\\", "/")):
+            out[n] = m
+    return out
+
+
+def _drop_stale_modules() -> None:
+    """Streamlit Cloud re-runs app.py after a push but can keep the modules it
+    imported before (the 26 Sep AttributeError on the sign-in page). When any
+    of the app's files is newer than its loaded copy, drop them all, so the
+    imports below load every one fresh and in their natural order."""
+    mods = _own_modules()
+    for m in mods.values():
+        t = getattr(m, "_ea_loaded_at", None)
+        try:
+            if t is not None and os.path.getmtime(m.__file__) > t:
+                break
+        except OSError:
+            continue
+    else:
+        return
+    for n in mods:
+        sys.modules.pop(n, None)
+
+
+def _stamp_modules() -> None:
+    now = time.time()
+    for m in _own_modules().values():
+        if getattr(m, "_ea_loaded_at", None) is None:
+            try:
+                m._ea_loaded_at = now
+            except Exception:
+                pass
+
+
+_drop_stale_modules()
+
 # Import theme functions up front for consolidated styling
 from edge_analysis.ui.theme import inject_theme, inject_header, inject_header_bar, inject_dark_overlay, setup_favicon, get_chart_styler
 
@@ -194,6 +237,7 @@ from edge_analysis import access
 if not hasattr(access, "BUILTIN_OWNERS"):
     import importlib as _il
     access = _il.reload(access)
+_stamp_modules()   # see _drop_stale_modules: every module above is now current
 
 
 def _mask_email(e: str) -> str:
