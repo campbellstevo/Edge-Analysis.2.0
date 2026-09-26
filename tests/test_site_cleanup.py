@@ -130,3 +130,13 @@ def test_live_money_leads_when_the_journal_has_a_live_track_record(monkeypatch):
     state["ea_tot_default"] = "Live money"
     assert filters._tot_default_for(opts) == "Live money"
     assert filters._tot_default_for(["Executed", "All", "Forward test", "Live"]) == "Executed"
+
+
+def test_trade_card_links_only_to_notion():
+    g = pd.DataFrame({"__Date": pd.to_datetime(["2026-09-21 16:33", "2026-09-22 09:10", "2026-09-23 10:00"]),
+                      "Closed RR": [1.0, -1.0, 0.0],
+                      "__url": ["https://www.notion.so/Trade-abc123", "javascript:alert(1)", None]})
+    x = rx.explorer_frame(g)
+    urls = dict(zip(x["r"], x["url"]))
+    assert urls[1.0] == "https://www.notion.so/Trade-abc123"
+    assert urls[-1.0] == "" and urls[0.0] == ""

@@ -4292,10 +4292,13 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
     s = active_stats
     ret_sign = "+" if s["total_return"] >= 0 else ""
     prob_profit = float(np.mean(final_balances > starting_balance))
+    # a simulation can't make anything certain: never print 100.0% or 0.0%
+    _pp_txt = ("over 99%" if prob_profit >= 0.995 else
+               "under 1%" if prob_profit <= 0.005 else f"{prob_profit:.0%}")
     # "Prob. of Profit" read 100.0% because the simulation never samples the
     # uncertainty in its own win rate (PROJ-01): owner-only until it does.
     _prob_cell = (f'<div class="proj-stat-cell"><div class="proj-stat-label">Prob. of Profit</div>'
-                  f'<div class="proj-stat-value">{prob_profit:.1%}</div></div>'
+                  f'<div class="proj-stat-value">{_pp_txt}</div></div>'
                   if _verdicts_on() else "")
 
     st.markdown(f"""
@@ -4333,8 +4336,14 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
     """, unsafe_allow_html=True)
 
     # ── Monthly breakdown ─────────────────────────────────────────────────────
-    st.markdown("#### Monthly breakdown")
     monthly = monthly_breakdown(active_idx)
+    # on a phone the years stack into one very long table: fold it away
+    _phone_mb = st.session_state.get("layout_mode") == "mobile"
+    if _phone_mb:
+        _mb_box = st.expander(f"Monthly breakdown \u00b7 {len(monthly)} months")
+    else:
+        st.markdown("#### Monthly breakdown")
+        _mb_box = st.container()
 
     years_dict: dict = {}
     for row in monthly:
@@ -4344,7 +4353,7 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
 
     for row_start in range(0, len(year_list), 3):
         chunk = year_list[row_start: row_start + 3]
-        cols  = st.columns(len(chunk))
+        cols  = _mb_box.columns(len(chunk))
         for col, yr in zip(cols, chunk):
             yr_rows        = years_dict[yr]
             # months compound: the year is end balance / start balance − 1,
@@ -4383,7 +4392,7 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
             with col:
                 st.markdown(header + body + footer, unsafe_allow_html=True)
 
-        st.markdown("<br>", unsafe_allow_html=True)
+        _mb_box.markdown("<br>", unsafe_allow_html=True)
 
     # ── Win rate CI ───────────────────────────────────────────────────────────
     st.markdown("---")

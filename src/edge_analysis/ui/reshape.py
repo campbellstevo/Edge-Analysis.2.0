@@ -29,10 +29,11 @@ def _tokens() -> dict:
     if _dark():
         return dict(ink="#e8ebf1", muted="#9aa4b4", line="#2a3040", soft="#1a1f2b",
                     base="#161b27", h1="#1f2533", h2="#262d3d", zero="#3a4356",
-                    grey="#3a4256", few="#6b7280", pos_fg="#dcfce7", neg_fg="#fee2e2")
+                    grey="#3a4256", few="#8c95a6", pos_fg="#dcfce7", neg_fg="#fee2e2")
+    # "few" marks a thin sample; it stays readable (4.5:1+), just quieter
     return dict(ink="#0f172a", muted="#64748b", line="#e6e8f0", soft="#f8fafc",
                 base="#ffffff", h1="#f1f5f9", h2="#e8edf3", zero="#cbd5e1",
-                grey="#cbd5e1", few="#94a3b8", pos_fg="#14532d", neg_fg="#7f1d1d")
+                grey="#cbd5e1", few="#687184", pos_fg="#14532d", neg_fg="#7f1d1d")
 
 
 def css(extra: str = "") -> str:
@@ -82,17 +83,44 @@ def css(extra: str = "") -> str:
     return re.sub(r"\n\s*\n", "\n", s)
 
 
+def _rgb(h: str) -> tuple:
+    h = h.lstrip("#")
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def _lum(c: tuple) -> float:
+    def ch(v):
+        v /= 255
+        return v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
+    r, g, b = c
+    return 0.2126 * ch(r) + 0.7152 * ch(g) + 0.0722 * ch(b)
+
+
+def contrast(a: str, b: str) -> float:
+    la, lb = _lum(_rgb(a)), _lum(_rgb(b))
+    return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
+
+
 def heat(v, cap: float = 1.0) -> tuple[str, str]:
-    """Diverging cell colour (background, text) for a value around zero."""
+    """Diverging cell colour (background, text) for a value around zero.
+    Solid colours blended from a pale tint to a deep shade, and the text is
+    whichever of white or ink reads better on that cell: white on a
+    half-transparent red measured 2.3:1 (26 Sep sweep)."""
     t = _tokens()
     if v is None or pd.isna(v):
         return t["h1"], t["muted"]
     x = max(-1.0, min(1.0, float(v) / (cap or 1.0)))
-    a = 0.14 + 0.6 * abs(x)
-    strong = a > 0.5
-    if x >= 0:
-        return f"rgba(22,163,74,{a:.2f})", ("#ffffff" if strong else t["pos_fg"])
-    return f"rgba(220,38,38,{a:.2f})", ("#ffffff" if strong else t["neg_fg"])
+    k = 0.12 + 0.88 * abs(x)
+    if _dark():
+        lo, hi = ("#17271f", "#15803d") if x >= 0 else ("#2a1a1f", "#b91c1c")
+    else:
+        lo, hi = ("#e8f7ee", "#15803d") if x >= 0 else ("#fdecec", "#b91c1c")
+    a, b = _rgb(lo), _rgb(hi)
+    bg = "#" + "".join(f"{round(a[i] + (b[i] - a[i]) * k):02x}" for i in range(3))
+    dark_ink = "#0f172a" if not _dark() else "#0b1020"
+    light_ink = "#ffffff"
+    fg = light_ink if contrast(light_ink, bg) >= contrast(dark_ink, bg) else dark_ink
+    return bg, fg
 
 
 def fmt_r(v, d: int = 2) -> str:
@@ -180,6 +208,23 @@ def metric_picker(key: str) -> str:
 
 
 # ── hour bars (replaces the 24-hour wheel) ──────────────────────────────────
+def trade_window(hours: set, pad: int = 1) -> list:
+    """The hours worth drawing: the shortest run around the clock that holds
+    every traded hour, an hour either side. An evening trader got a phone
+    chart opening on 00–10, empty (26 Sep). All 24 when the day is mostly used."""
+    hs = sorted(int(h) % 24 for h in hours)
+    if not hs:
+        return list(range(24))
+    # the longest empty stretch between traded hours (wrapping) is left out
+    gaps = [((hs[(i + 1) % len(hs)] - hs[i]) % 24 or 24, hs[i]) for i in range(len(hs))]
+    gap, before = max(gaps)
+    start = (before + gap) % 24          # first traded hour after the gap
+    span = 24 - gap + 1
+    if span + 2 * pad >= 18:
+        return list(range(24))
+    return [(start - pad + i) % 24 for i in range(span + 2 * pad)]
+
+
 def hour_bars(df: pd.DataFrame, metric: str = "Expectancy", min_n: int = 8) -> bool:
     """Diverging bar per entry hour with its value on the bar and the trade
     count under it. Returns False when the journal carries no entry times."""
@@ -203,7 +248,8 @@ def hour_bars(df: pd.DataFrame, metric: str = "Expectancy", min_n: int = 8) -> b
     mx = mx or 1.0
     t = _tokens()
     cols = []
-    for h in range(24):
+    _hours = trade_window(set(by))
+    for h in _hours:
         s = by.get(h)
         up = dn = ""
         if s and s["n"]:
@@ -229,8 +275,8 @@ def hour_bars(df: pd.DataFrame, metric: str = "Expectancy", min_n: int = 8) -> b
            f'<span><i style="background:{t["grey"]}"></i>under {min_n} trades</span>'
            f'<span>{"R per trade" if metric == "Expectancy" else ("net R" if metric == "Net R" else "win rate")} on each bar · '
            f'hour, then trades, underneath{(" · " + wr_note) if wr_note else ""}</span></div>')
-    st.markdown(css() + f'<div class="ea-rx ea-rx-scroll"><div class="ea-hb">{"".join(cols)}</div></div>' + cap,
-                unsafe_allow_html=True)
+    st.markdown(css() + f'<div class="ea-rx ea-rx-scroll"><div class="ea-hb" style="min-width:{len(_hours) * 32}px;">'
+                f'{"".join(cols)}</div></div>' + cap, unsafe_allow_html=True)
     return True
 
 
@@ -929,6 +975,12 @@ def _yes(v) -> bool | None:
     return None
 
 
+def _notion_link(v) -> str:
+    """The row's own Notion page, or "" — only Notion's own hosts are linked."""
+    u = str(v or "").strip()
+    return u if re.match(r"^https://(www\.)?notion\.(so|site)/[\w\-./?=&#%]+$", u) else ""
+
+
 def explorer_frame(g: pd.DataFrame) -> pd.DataFrame:
     """One tidy row per trade for the explorer, newest first."""
     em1 = _first_col(g, "Entry Model", "Entry Model 1")
@@ -962,6 +1014,7 @@ def explorer_frame(g: pd.DataFrame) -> pd.DataFrame:
         if c in g.columns:
             tags[lab] = g[c].map(_txt)
     out["tags"] = [{k: v.at[i] for k, v in tags.items() if v.at[i]} for i in g.index]
+    out["url"] = g["__url"].map(_notion_link) if "__url" in g.columns else ""
     out = out[out["r"].notna() & out["when"].notna()]
     return out.sort_values("when", ascending=False)
 
@@ -1165,6 +1218,8 @@ def trade_explorer(g: pd.DataFrame, key: str = "ea_tx") -> None:
 .ea-tc .rec{{background:{'#221c44' if _dark() else '#f3f0ff'};border-radius:10px;padding:10px 13px;margin-top:12px;font-size:14px;line-height:1.5;color:{t['ink']};}}
 .ea-tc .nt{{font-size:14px;color:{t['ink']};background:{t['soft']};border:1px dashed {t['line']};border-radius:10px;padding:9px 12px;margin-top:10px;white-space:pre-wrap;}}
 .ea-tc .mu{{color:{t['muted']};}}
+.ea-tc a.nl{{display:inline-block;margin-top:12px;font-size:13.5px;font-weight:700;color:{'#b3a1ff' if _dark() else PURPLE};text-decoration:none;}}
+.ea-tc a.nl:hover{{text-decoration:underline;}}
 """
     when = r["when"].strftime("%a %d %b %Y") + (f' · {r["when"].strftime("%H:%M")}' if r["when"].hour or r["when"].minute else "")
     head = " · ".join(x_ for x_ in (r["setup"], r["tf"], r["dir"]) if x_) or "Trade"
@@ -1174,7 +1229,10 @@ def trade_explorer(g: pd.DataFrame, key: str = "ea_tx") -> None:
             f'<div class="e" style="margin-top:12px;">HOW THE TRADE MOVED</div>{_big_path(r)}'
             f'<div class="kv">{kvh}</div>'
             + (f'<div class="rec">{rec}</div>' if rec else "")
-            + f'<div class="e" style="margin-top:12px;">YOUR NOTES</div>{notes}</div>')
+            + f'<div class="e" style="margin-top:12px;">YOUR NOTES</div>{notes}'
+            + (f'<a class="nl" href="{_h.escape(r["url"])}" target="_blank" rel="noopener">'
+               'Open this trade in Notion \u2197</a>' if r.get("url") else "")
+            + '</div>')
     st.markdown(css(extra) + card, unsafe_allow_html=True)
 
 

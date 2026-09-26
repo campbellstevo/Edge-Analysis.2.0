@@ -351,6 +351,11 @@ def load_trades_from_notion(token: str, database_id: str, page_size: int = 100) 
 
     rows = [_flatten_props(r.get("properties", {})) for r in results]
     df = pd.DataFrame(rows)
+    # each row's own Notion page, for "Open in Notion" on the trade card; it
+    # rides along as a column so any row filtering keeps it aligned
+    _urls = [r.get("url") for r in results]
+    if not df.empty:
+        df["__url"] = _urls
 
     if df.empty:
         return pd.DataFrame(columns=["Date", "Pair", "Session", "Entry Model", "Result", "Closed RR", "PnL"])
@@ -361,6 +366,7 @@ def load_trades_from_notion(token: str, database_id: str, page_size: int = 100) 
     if schema == "salty":
         df = pd.DataFrame([_flatten_props(r.get("properties", {}), formulas=True)
                            for r in results])
+        df["__url"] = _urls
         df = normalise_salty_df(df)
         # After normalisation, "Closed RR" came from "R Result"
         rr_source = ["Closed RR"]

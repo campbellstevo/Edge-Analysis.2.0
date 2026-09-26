@@ -207,3 +207,10 @@ def test_before_after_splits_on_the_chosen_day(monkeypatch):
     assert "Before 21 Jul" in html
     assert "0.00R" in html and "+0.50R" in html          # 20 trades each side: 0.0 vs +0.5
     assert "nothing re-scored" in html
+
+
+def test_hour_window_hugs_the_hours_traded_even_past_midnight():
+    assert rx.trade_window({19, 20, 23, 1}) == [18, 19, 20, 21, 22, 23, 0, 1, 2]
+    assert rx.trade_window({9, 10}) == [8, 9, 10, 11]
+    assert rx.trade_window(set(range(0, 24, 2))) == list(range(24))   # all day: every hour
+    assert rx.trade_window(set()) == list(range(24))

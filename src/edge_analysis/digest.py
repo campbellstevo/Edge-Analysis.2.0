@@ -39,9 +39,12 @@ def _rr(df: pd.DataFrame):
     return None
 
 
-def _gap_finding(df, rr, mask, kind, label, note_yes, min_n=_MIN_N):
+def _gap_finding(df, rr, mask, kind, label, note_yes, min_n=_MIN_N, need_loss=False):
     """Generic split: trades inside `mask` vs the rest. R at stake = how much
-    the offending slice underperforms the trader's own baseline, summed."""
+    the offending slice underperforms the trader's own baseline, summed.
+    need_loss: the slice must lose money itself. "Bench" a setup averaging
+    +0.21R because the rest made +0.33R was advice to shelve a winner
+    (26 Sep, his journal)."""
     mask = mask.fillna(False) if hasattr(mask, "fillna") else mask
     n_in, n_out = int(mask.sum()), int((~mask).sum())
     if n_in < min_n or n_out < min_n:
@@ -51,7 +54,7 @@ def _gap_finding(df, rr, mask, kind, label, note_yes, min_n=_MIN_N):
         return None
     avg_in, avg_out = float(a.mean()), float(b.mean())
     gap = avg_out - avg_in
-    if gap <= 0.05:
+    if gap <= 0.05 or (need_loss and avg_in >= 0):
         return None
     stake = gap * n_in
     return {
@@ -103,7 +106,7 @@ def findings(df: pd.DataFrame, min_n: int = _MIN_N) -> list:
                 continue
             f = _gap_finding(df, rr, vals == sess, "session",
                             f"{sess} is below your average",
-                            f"{sess} trades", min_n)
+                            f"{sess} trades", min_n, need_loss=True)
             if f:
                 out.append(f)
 
@@ -118,7 +121,7 @@ def findings(df: pd.DataFrame, min_n: int = _MIN_N) -> list:
             exr = pd.to_numeric(ex["__rr"], errors="coerce")
             for m in ex["__m"].unique():
                 f = _gap_finding(ex, exr, ex["__m"] == m, "model",
-                                f"Bench {m}", f"{m} entries", min_n)
+                                f"Bench {m}", f"{m} entries", min_n, need_loss=True)
                 if f:
                     out.append(f)
 
