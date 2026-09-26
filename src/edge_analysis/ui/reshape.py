@@ -212,7 +212,8 @@ def metric_picker(key: str) -> str:
 def trade_window(hours: set, pad: int = 1) -> list:
     """The hours worth drawing: the shortest run around the clock that holds
     every traded hour, an hour either side. An evening trader got a phone
-    chart opening on 00–10, empty (26 Sep). All 24 when the day is mostly used."""
+    chart opening on 00–10, empty (26 Sep). All 24 only when the gap is under
+    three hours."""
     hs = sorted(int(h) % 24 for h in hours)
     if not hs:
         return list(range(24))
@@ -221,7 +222,7 @@ def trade_window(hours: set, pad: int = 1) -> list:
     gap, before = max(gaps)
     start = (before + gap) % 24          # first traded hour after the gap
     span = 24 - gap + 1
-    if span + 2 * pad >= 18:
+    if span + 2 * pad >= 22:
         return list(range(24))
     return [(start - pad + i) % 24 for i in range(span + 2 * pad)]
 

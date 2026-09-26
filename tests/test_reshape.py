@@ -214,3 +214,7 @@ def test_hour_window_hugs_the_hours_traded_even_past_midnight():
     assert rx.trade_window({9, 10}) == [8, 9, 10, 11]
     assert rx.trade_window(set(range(0, 24, 2))) == list(range(24))   # all day: every hour
     assert rx.trade_window(set()) == list(range(24))
+
+
+def test_a_day_trader_from_eight_to_eleven_skips_the_night():
+    assert rx.trade_window({8, 10, 11, 12, 15, 16, 18, 21, 22, 23}) == list(range(7, 24)) + [0]
