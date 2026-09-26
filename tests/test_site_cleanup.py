@@ -140,3 +140,19 @@ def test_trade_card_links_only_to_notion():
     urls = dict(zip(x["r"], x["url"]))
     assert urls[1.0] == "https://www.notion.so/Trade-abc123"
     assert urls[-1.0] == "" and urls[0.0] == ""
+
+
+def test_an_untagged_trade_has_no_answers_yet():
+    from edge_analysis.data.notion_adapter import untagged_checks_unknown
+    g = pd.DataFrame({
+        "Mental State": ["Clear & Calm", "Tired", None, None],
+        "Mistake": ["NA", "Overtraded", None, "NA"],
+        "Rules Followed?": [True, False, False, False],
+        "A+ Setup?": [True, False, False, True],
+    })
+    out = untagged_checks_unknown(g)
+    assert list(out["Rules Followed?"]) == [True, False, None, False]   # row 3: nothing tagged
+    assert list(out["A+ Setup?"]) == [True, False, None, True]
+    # a journal that uses no other tags keeps every box as it is
+    only = pd.DataFrame({"Rules Followed?": [True, False]})
+    assert list(untagged_checks_unknown(only)["Rules Followed?"]) == [True, False]

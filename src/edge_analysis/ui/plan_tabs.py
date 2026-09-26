@@ -90,10 +90,18 @@ def _fmt_r(v, plus=True) -> str:
     return f"{v:+.2f}R" if plus else f"{v:.2f}R"
 
 
+def _blankish(s: pd.Series) -> pd.Series:
+    return s.isna() | s.astype(str).str.strip().str.lower().isin(["", "nan", "none", "[]"])
+
+
 def _col_contains(g, col, pat):
+    """True / False per trade, and <NA> where the tag is blank: an untagged
+    trade is neither side of the comparison (26 Sep)."""
     if col not in g.columns:
         return pd.Series(False, index=g.index)
-    return g[col].astype(str).str.contains(pat, case=False, na=False)
+    out = g[col].astype(str).str.contains(pat, case=False, na=False).astype("boolean")
+    out[_blankish(g[col])] = pd.NA
+    return out
 
 
 def min_rr_recommendation(g, rr_col="__rr", planned_col="Planned R:R",
@@ -136,9 +144,12 @@ def min_rr_recommendation(g, rr_col="__rr", planned_col="Planned R:R",
 
 
 def _yes(g, col):
+    """Yes / no per trade, <NA> where the tag is blank (see _col_contains)."""
     if col not in g.columns:
         return pd.Series(False, index=g.index)
-    return g[col].astype(str).str.strip().str.lower().isin(["yes", "true", "__yes__", "1"])
+    out = g[col].astype(str).str.strip().str.lower().isin(["yes", "true", "__yes__", "1"]).astype("boolean")
+    out[_blankish(g[col])] = pd.NA
+    return out
 
 
 # ─────────────────────────── Trading Plan Dashboard ──────────────────────────
@@ -220,10 +231,12 @@ def plan_model(df_raw: pd.DataFrame):
     ok_room = planned >= _min_rr
     ok_obos = _yes(g, "Oversold or Overbought?")
 
-    def seg(mask):
-        a = _avg(g.loc[mask, "__rr"]); b = _avg(g.loc[~mask, "__rr"])
-        na, nb = int(mask.sum()), int((~mask).sum())
-        return a, b, na, nb
+    def seg(mask, known=None):
+        # both sides only from trades where the tag was answered
+        known = pd.Series(True, index=g.index) if known is None else known
+        yes, no = mask & known, ~mask & known
+        a = _avg(g.loc[yes, "__rr"]); b = _avg(g.loc[no, "__rr"])
+        return a, b, int(yes.sum()), int(no.sum())
 
     # A box shows only when THIS journal logs what it needs. A member on
     # another template saw the owner's playbook (headspace, A+, true break)
@@ -261,8 +274,9 @@ def plan_model(df_raw: pd.DataFrame):
             entries.append((rule, float("nan"), False, False, float("nan"), float("nan"),
                             0, 0, lab_y, lab_n))
             continue
-        mask = mask.fillna(False) if hasattr(mask, "fillna") else mask
-        a, b, na, nb = seg(mask)
+        known = mask.notna().astype(bool) if hasattr(mask, "notna") else None
+        mask = mask.fillna(False).astype(bool) if hasattr(mask, "fillna") else mask
+        a, b, na, nb = seg(mask, known)
         logged = (na + nb) >= 5 and min(na, nb) >= 1
         low = logged and min(na, nb) < 3
         if na >= 3:
@@ -701,7 +715,10 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
     if give == give and (max(net, 0.0) + float(give)) > 0:
         comps.append(max(net, 0.0) / (max(net, 0.0) + float(give)))
     grade = None
-    if comps and n >= 3:
+    # A process grade reads the tags: a week that is mostly untagged gets
+    # none rather than an F for trades nobody has scored yet (26 Sep)
+    _tagged_enough = full_n is None or (n and full_n >= n / 2)
+    if comps and n >= 3 and _tagged_enough:
         _sc = sum(comps) / len(comps) * 100
         grade = "A" if _sc >= 85 else "B" if _sc >= 70 else "C" if _sc >= 55 else "D" if _sc >= 40 else "F"
 

@@ -333,6 +333,47 @@ def normalise_mt5_df(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ── main loader ──────────────────────────────────────────────────────────────
+# Checkbox tags a trader ticks by hand. Notion stores an unticked box as
+# False, so a trade nobody has tagged yet reads "rules broken, not A+".
+HAND_CHECKS = ["Rules Followed?", "A+ Setup?", "Double Confirmation?", "Clear Bias/Prepared",
+               "True Break?", "Oversold or Overbought?", "Multi Entry Model Setup"]
+# Hand tags that say a trade HAS been tagged when any of them is filled
+TAG_SIGNALS = ["Mental State", "Mistake", "Conviction (1-5)", "Entry Model 1", "Entry Model",
+               "Execution/Bias", "Conditions MTF", "Comment"]
+
+
+def _blank(v) -> bool:
+    if v is None or (isinstance(v, float) and pd.isna(v)):
+        return True
+    return str(v).strip().lower() in ("", "nan", "none", "[]")
+
+
+def untagged_checks_unknown(df: pd.DataFrame) -> pd.DataFrame:
+    """On a trade with none of the journal's hand tags filled, an unticked
+    checkbox is "not answered", not "No" (26 Sep: his six untagged trades
+    read "Rules followed 0 of 3", grade F, and "rule broken" on each).
+    Only tag columns the journal actually uses (10%+ filled) decide what
+    "untagged" means; a ticked box and a select's "No" are never touched."""
+    if df is None or df.empty:
+        return df
+    checks = [c for c in HAND_CHECKS if c in df.columns]
+    signals = [c for c in TAG_SIGNALS if c in df.columns
+               and (~df[c].map(_blank)).mean() >= 0.10]
+    if not checks or not signals:
+        return df
+    untagged = df[signals].apply(lambda r: all(_blank(v) for v in r), axis=1)
+    if not untagged.any():
+        return df
+    df = df.copy()
+    for c in checks:
+        is_false = df[c].map(lambda v: v is False)
+        mask = untagged & is_false
+        if mask.any():
+            df[c] = df[c].astype(object)
+            df.loc[mask, c] = None
+    return df
+
+
 def load_trades_from_notion(token: str, database_id: str, page_size: int = 100) -> pd.DataFrame:
     client = Client(auth=token)
 
@@ -407,4 +448,4 @@ def load_trades_from_notion(token: str, database_id: str, page_size: int = 100) 
     if any(field in df.columns for field in PNL_FIELDS):
         df["PnL"] = pd.to_numeric(df.apply(lambda r: _first_nonempty(r, PNL_FIELDS), axis=1), errors="coerce")
 
-    return df
+    return untagged_checks_unknown(df)
