@@ -307,7 +307,13 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
     all_pass, good, bad, planned = m["all_pass"], m["good"], m["bad"], m["planned"]
     _min_rr, _min_rr_ev, _min_rr_derived = m["min_rr"], m["min_rr_ev"], m["min_rr_derived"]
     n_all = len(g)
-    st.caption(f"Live + Challenge trades only · {n_all} trades · every number below is "
+    _kinds = (g["Type of Trade"].astype(str) if "Type of Trade" in g.columns
+              else pd.Series("", index=g.index))
+    _has_live = _kinds.str.contains("Live|Funded", case=False, na=False).any()
+    _has_ch = _kinds.str.contains("Challenge|Combine|Evaluation", case=False, na=False).any()
+    _which = ("Live + Challenge trades" if _has_live and _has_ch else
+              "Live trades" if _has_live else "Challenge trades" if _has_ch else "Executed trades")
+    st.caption(f"{_which} only · {n_all} trades · every number below is "
                "recomputed from your journal on each load.")
 
     st.markdown("#### Pre-trade checklist — every box yes, or pass")

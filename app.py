@@ -1999,6 +1999,16 @@ def render_dashboard(mobile: bool):
                 _extra.append("Live money")
             if _extra:
                 tot_opts = _extra + ["All"] + _tot
+    # A funded/live account and a prop challenge are two track records with two
+    # playbooks: their trades never mix by default (his rule 8, 25 Aug: the
+    # Topstep Asia trades read as Fusion breaches). Live money leads once the
+    # live side has a real sample; a challenge-only journal is left as it was.
+    st.session_state.pop("ea_tot_default", None)
+    if "Live money" in tot_opts and "Type of Trade" in df.columns:
+        _live_n = int(df["Type of Trade"].astype(str).str.contains(
+            "live|funded", case=False, na=False).sum())
+        if _live_n >= 10:
+            st.session_state["ea_tot_default"] = "Live money"
 
     if "Date" in df.columns:
         min_date = df["Date"].min().date()

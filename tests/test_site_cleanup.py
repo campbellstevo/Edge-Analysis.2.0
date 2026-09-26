@@ -119,3 +119,14 @@ def test_explorer_starts_with_ten_rows_under_week_headers(monkeypatch):
     assert table.count('class="wk"') >= 2                 # 10 days span two or three weeks
     assert table.count("<tr><td") == 10                   # ten trades, not 25
     assert any("Showing 10 of 30" in b for b in out)
+
+
+def test_live_money_leads_when_the_journal_has_a_live_track_record(monkeypatch):
+    import filters
+    state = {}
+    monkeypatch.setattr(filters.st, "session_state", state)
+    opts = ["Live money", "All", "Challenge", "Live"]
+    assert filters._tot_default_for(opts) == "All"            # app.py hasn't decided
+    state["ea_tot_default"] = "Live money"
+    assert filters._tot_default_for(opts) == "Live money"
+    assert filters._tot_default_for(["Executed", "All", "Forward test", "Live"]) == "Executed"

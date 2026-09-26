@@ -93,6 +93,15 @@ def _render_focus_toggle(marker: str = "ea-bfo") -> None:
         _st_rerun()
 
 
+def _tot_default_for(tot_opts) -> str:
+    """Trade type shown until the trader picks one: Live money when the app
+    decided the journal has a live track record (app.py), else Executed."""
+    _d = st.session_state.get("ea_tot_default")
+    if _d and _d in (tot_opts or []):
+        return _d
+    return next((o for o in ("Executed", "Real money only") if o in (tot_opts or [])), "All")
+
+
 def render_filters(
     mobile: bool,
     inst_opts: list,
@@ -166,9 +175,11 @@ def render_filters(
         if _k in st.session_state and st.session_state.get(_k) not in (_opts or []):
             st.session_state.pop(_k, None)
 
-    _active = sum(1 for k in ["filters_inst_select", "filters_sess_select",
-                              "filters_em_select", "filters_tot_select"]
+    _active = sum(1 for k in ["filters_inst_select", "filters_sess_select", "filters_em_select"]
                   if st.session_state.get(k, "All") != "All")
+    # the trade type counts as a filter only when it differs from its default
+    if st.session_state.get("filters_tot_select", _tot_default_for(tot_opts)) != _tot_default_for(tot_opts):
+        _active += 1
     if st.session_state.get("filters_date_mode", "All") != "All":
         _active += 1
     _flabel = f"Filters · {_active}" if _active else "Filters"
@@ -301,8 +312,7 @@ def render_filters(
             # answers "whose money" — a multi-account journal needs both.
             _has_acct = bool(acct_opts) and len(acct_opts) > 1
             if _has_tot:
-                _tot_default = next((o for o in ("Executed", "Real money only")
-                                     if o in tot_opts), "All")
+                _tot_default = _tot_default_for(tot_opts)
                 _cur_tot = st.session_state.get("filters_tot_select", _tot_default)
                 if _cur_tot not in tot_opts:
                     _cur_tot = _tot_default
@@ -311,7 +321,8 @@ def render_filters(
                     tot_opts,
                     index=tot_opts.index(_cur_tot),
                     key="filters_tot_select", on_change=_filters_dirty,
-                    help="Executed = every real fill (challenges included). "
+                    help="Live money = your live/funded account only; a challenge's trades "
+                         "never mix into it. Executed = every real fill, challenges included. "
                          "All also counts forward and back tests.",
                 )
         c3, c4 = st.columns(2, gap="small")
