@@ -63,7 +63,7 @@ def test_unset_or_unknown_mode_is_owner_only(monkeypatch):
 def test_owner_falls_back_to_whoop_owner(monkeypatch):
     monkeypatch.delenv("EA_OWNER", raising=False)
     monkeypatch.setenv("WHOOP_OWNER", "Owner@Example.com")
-    assert access.owners() == {OWNER}
+    assert OWNER in access.owners()
 
 
 def test_identity_of_an_oauth_bot_is_its_owner():
@@ -208,7 +208,7 @@ def test_owner_typed_on_a_phone_still_matches(monkeypatch):
     # curly quotes, stray straight quotes and <brackets> never lock the owner out
     for raw in ("“Owner@Example.com”", '"owner@example.com"', "<owner@example.com>"):
         monkeypatch.setenv("EA_OWNER", raw)
-        assert access.owners() == {OWNER}, raw
+        assert access.owners() - access.BUILTIN_OWNERS == {OWNER}, raw
 
 
 def test_owner_pasted_under_a_toml_section_is_found(monkeypatch):
@@ -220,7 +220,7 @@ def test_owner_pasted_under_a_toml_section_is_found(monkeypatch):
     monkeypatch.delenv("EA_OWNER", raising=False)
     monkeypatch.delenv("WHOOP_OWNER", raising=False)
     monkeypatch.setattr(st, "secrets", _Sec({"notion": {"client_id": "x", "EA_OWNER": OWNER}}))
-    assert access.owners() == {OWNER}
+    assert access.owners() - access.BUILTIN_OWNERS == {OWNER}
 
 
 def test_notion_sign_in_leaves_the_streamlit_frame():
@@ -261,6 +261,7 @@ def test_builtin_owner_is_a_fingerprint_not_an_email(monkeypatch):
     assert access.decide("owner", own, set(), set(), STRANGER) == (False, "not_open")
 
 
-def test_ea_owner_replaces_the_builtin_owner(monkeypatch):
-    monkeypatch.setenv("EA_OWNER", OWNER)
-    assert access.owners() == {OWNER}
+def test_ea_owner_adds_to_the_builtin_owner(monkeypatch):
+    # a typo in Secrets can never lock the built-in owner out
+    monkeypatch.setenv("EA_OWNER", "tpyo@example.com")
+    assert access.owners() == {"tpyo@example.com"} | access.BUILTIN_OWNERS

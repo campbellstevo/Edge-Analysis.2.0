@@ -82,8 +82,8 @@ def mode() -> str:
 
 # The site's owner, built in so sign-in never hangs on a Secrets edit (26 Sep:
 # he could not get EA_OWNER to take). A sha256 of the owner's Notion email,
-# not the email: nothing readable about him is in the code. EA_OWNER, when
-# set, replaces it.
+# not the email: nothing readable about him is in the code. It always counts,
+# alongside EA_OWNER, so a typo in Secrets can never lock the owner out.
 BUILTIN_OWNERS = {"sha256:7ea6001385579e4f336feaa9705c1d0620a5e7de40c85132bb1f5c78c3da5795"}
 
 
@@ -93,7 +93,7 @@ def _fingerprint(v: str) -> str:
 
 
 def owners() -> Set[str]:
-    return _split(_secret("EA_OWNER") or _secret("WHOOP_OWNER")) or set(BUILTIN_OWNERS)
+    return _split(_secret("EA_OWNER") or _secret("WHOOP_OWNER")) | set(BUILTIN_OWNERS)
 
 
 def allowlist() -> Set[str]:
