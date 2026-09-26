@@ -773,8 +773,18 @@ def _digest_card(f: pd.DataFrame) -> None:
                          "Your three biggest leaks across your executed history "
                          "\u2014 fix the top one first.")
             _n_ex = int(len(f)) if f is not None else 0
-            _empty_note(f"Leaks appear once 5+ trades share a pattern \u2014 "
-                        f"{_n_ex} executed so far, nothing recurring yet.")
+            _empty_note(f"Nothing here yet beats chance \u2014 a leak shows once 5+ trades share a "
+                        f"pattern that luck can't explain. {_n_ex} executed so far.")
+            # what leans that way, said as exactly that — not a verdict
+            try:
+                _watch = [w for w in findings(f, gate=False) if not w.get("proven")][:2]
+            except Exception:
+                _watch = []
+            if _watch:
+                _dash = " \u2014 "
+                st.caption("Watching, not proven yet: " + " \u00b7 ".join(
+                    f"{w['label'].replace(' is below your average', '')} "
+                    f"({w['evidence'].split(_dash)[0]})" for w in _watch))
         return
     import html as _h2
     with st.container(border=True):

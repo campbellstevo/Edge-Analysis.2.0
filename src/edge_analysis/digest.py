@@ -25,9 +25,46 @@ Honesty rules:
 """
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 
 _MIN_N = 5
+ALPHA = 0.05       # family-wise, across every slice tested on one journal
+_B = 1000          # shuffles per slice
+
+
+def _perm_p(x, mask, lower: bool) -> float:
+    """One-sided permutation p-value that the slice's mean is lower (a leak)
+    or higher (a strength) than everything else, from _B random relabellings
+    of the same trades. Seeded, so a page never flickers between reruns."""
+    x = np.asarray(pd.to_numeric(pd.Series(x), errors="coerce"), dtype=float)
+    m = np.asarray(mask, dtype=bool)
+    ok = ~np.isnan(x)
+    x, m = x[ok], m[ok]
+    n, k = len(x), int(m.sum())
+    if k == 0 or k == n:
+        return 1.0
+    tot = x.sum()
+
+    def stat(sum_in):
+        return sum_in / k - (tot - sum_in) / (n - k)
+    obs = stat(x[m].sum())
+    rng = np.random.default_rng(7)
+    idx = np.argsort(rng.random((_B, n)), axis=1)[:, :k]
+    null = stat(x[idx].sum(axis=1))
+    hits = (null <= obs) if lower else (null >= obs)
+    return float((1 + hits.sum()) / (_B + 1))
+
+
+def _holm_pass(ps: list, alpha: float = ALPHA) -> set:
+    """Indices of the p-values Holm's step-down keeps at family-wise alpha."""
+    order = sorted(range(len(ps)), key=lambda i: ps[i])
+    keep, m = set(), len(ps)
+    for rank, i in enumerate(order):
+        if ps[i] > alpha / (m - rank):
+            break
+        keep.add(i)
+    return keep
 
 
 def _rr(df: pd.DataFrame):
@@ -39,7 +76,7 @@ def _rr(df: pd.DataFrame):
     return None
 
 
-def _gap_finding(df, rr, mask, kind, label, note_yes, min_n=_MIN_N, need_loss=False):
+def _gap_finding(df, rr, mask, kind, label, note_yes, min_n=_MIN_N, need_loss=False, tested=None):
     """Generic split: trades inside `mask` vs the rest. R at stake = how much
     the offending slice underperforms the trader's own baseline, summed.
     need_loss: the slice must lose money itself. "Bench" a setup averaging
@@ -52,6 +89,11 @@ def _gap_finding(df, rr, mask, kind, label, note_yes, min_n=_MIN_N, need_loss=Fa
     a, b = rr[mask], rr[~mask]
     if not (a.notna().any() and b.notna().any()):
         return None
+    # every slice that met the sample floor counts toward the correction,
+    # whether or not it looks like a leak (5.3: honest verdicts)
+    pv = _perm_p(rr, mask, lower=True)
+    if tested is not None:
+        tested.append(pv)
     avg_in, avg_out = float(a.mean()), float(b.mean())
     gap = avg_out - avg_in
     if gap <= 0.05 or (need_loss and avg_in >= 0):
@@ -59,7 +101,7 @@ def _gap_finding(df, rr, mask, kind, label, note_yes, min_n=_MIN_N, need_loss=Fa
     stake = gap * n_in
     return {
         "kind": kind, "label": label, "stake": round(stake, 1),
-        "n": n_in,
+        "n": n_in, "p": pv, "_t": len(tested) - 1 if tested is not None else None,
         "evidence": (f"{n_in} {note_yes} averaged {avg_in:+.2f}R vs "
                      f"{avg_out:+.2f}R everywhere else — "
                      f"{stake:.1f}R at stake"),
@@ -67,17 +109,22 @@ def _gap_finding(df, rr, mask, kind, label, note_yes, min_n=_MIN_N, need_loss=Fa
 
 
 def _col_yes(df, col):
+    """Yes/no per trade, <NA> where the tag wasn't answered (an untagged
+    trade's unticked box is not a "no" — see untagged_checks_unknown)."""
     if col not in df.columns:
         return None
     v = df[col]
     if v.dtype == bool:
         return v
-    return v.astype(str).str.strip().str.lower().isin(
-        ["yes", "true", "__yes__", "1"])
+    out = v.astype(str).str.strip().str.lower().isin(["yes", "true", "__yes__", "1"]).astype("boolean")
+    blank = v.isna() | v.astype(str).str.strip().str.lower().isin(["", "nan", "none", "[]"])
+    out[blank] = pd.NA
+    return out
 
 
-def findings(df: pd.DataFrame, min_n: int = _MIN_N) -> list:
-    """Ranked list of what to fix, most R at stake first."""
+def findings(df: pd.DataFrame, min_n: int = _MIN_N, gate: bool = True) -> list:
+    """Ranked list of what to fix, most R at stake first. gate=False skips
+    the chance test: only for a "watching, not proven" line, never a verdict."""
     out = []
     if df is None or df.empty:
         return out
@@ -96,6 +143,7 @@ def findings(df: pd.DataFrame, min_n: int = _MIN_N) -> list:
         return out
     ok = rr.notna()
     df, rr = df[ok], rr[ok]
+    tested: list = []
 
     # 1. Sessions that bleed
     sess_col = next((c for c in ("Session Norm", "Session") if c in df.columns), None)
@@ -106,7 +154,7 @@ def findings(df: pd.DataFrame, min_n: int = _MIN_N) -> list:
                 continue
             f = _gap_finding(df, rr, vals == sess, "session",
                             f"{sess} is below your average",
-                            f"{sess} trades", min_n, need_loss=True)
+                            f"{sess} trades", min_n, need_loss=True, tested=tested)
             if f:
                 out.append(f)
 
@@ -121,15 +169,18 @@ def findings(df: pd.DataFrame, min_n: int = _MIN_N) -> list:
             exr = pd.to_numeric(ex["__rr"], errors="coerce")
             for m in ex["__m"].unique():
                 f = _gap_finding(ex, exr, ex["__m"] == m, "model",
-                                f"Bench {m}", f"{m} entries", min_n, need_loss=True)
+                                f"Bench {m}", f"{m} entries", min_n, need_loss=True, tested=tested)
                 if f:
                     out.append(f)
 
     # 3. Rule breaks
     rules = _col_yes(df, "Rules Followed?")
     if rules is not None:
-        f = _gap_finding(df, rr, ~rules, "rules", "Follow your rules",
-                        "rule-break trades", min_n)
+        known = rules.notna() if hasattr(rules, "notna") else pd.Series(True, index=df.index)
+        known = known.astype(bool)
+        rk = rules[known].astype(bool)
+        f = _gap_finding(df[known], rr[known], ~rk, "rules", "Follow your rules",
+                        "rule-break trades", min_n, tested=tested)
         if f:
             out.append(f)
 
@@ -189,9 +240,19 @@ def findings(df: pd.DataFrame, min_n: int = _MIN_N) -> list:
             | ms.str.contains("impuls") | ms.str.contains("tired") \
             | ms.str.contains("rush")
         f = _gap_finding(df, rr, rough, "mental", "Don't trade tired or stressed",
-                        "trades taken stressed or fatigued", min_n)
+                        "trades taken stressed or fatigued", min_n, tested=tested)
         if f:
             out.append(f)
+
+    # A comparison survives only if it beats chance across everything tested
+    # on this journal (permutation p, Holm at 5% family-wise). Without it the
+    # list fired on 75-90% of pure-noise journals (26 Sep measure).
+    keep = _holm_pass(tested)
+    if gate:
+        out = [f for f in out if f.get("_t") is None or f["_t"] in keep]
+    for f in out:
+        f["proven"] = f.get("_t") is None or f["_t"] in keep
+        f.pop("_t", None)
 
     # One finding per kind — the worst of each — then rank by stake.
     best = {}
@@ -202,7 +263,7 @@ def findings(df: pd.DataFrame, min_n: int = _MIN_N) -> list:
     return sorted(best.values(), key=lambda f: -f["stake"])
 
 
-def _edge_finding(df, rr, mask, kind, label, note_yes, min_n=8):
+def _edge_finding(df, rr, mask, kind, label, note_yes, min_n=8, tested=None):
     """Positive mirror of _gap_finding: how much a decision-time bucket EARNS
     above the trader's own baseline. Strengths carry a stricter evidence bar
     than leaks (n >= 8, gap >= 0.15R/trade): praising noise creates bad habits
@@ -214,6 +275,9 @@ def _edge_finding(df, rr, mask, kind, label, note_yes, min_n=8):
     a, b = rr[mask], rr[~mask]
     if not (a.notna().any() and b.notna().any()):
         return None
+    pv = _perm_p(rr, mask, lower=False)
+    if tested is not None:
+        tested.append(pv)
     avg_in, avg_out = float(a.mean()), float(b.mean())
     gap = avg_in - avg_out
     if gap < 0.15:
@@ -223,6 +287,7 @@ def _edge_finding(df, rr, mask, kind, label, note_yes, min_n=8):
         return None
     return {
         "kind": kind, "label": label, "edge": round(edge, 1), "n": n_in,
+        "p": pv, "_t": len(tested) - 1 if tested is not None else None,
         "evidence": (f"{n_in} {note_yes} averaged {avg_in:+.2f}R vs "
                      f"{avg_out:+.2f}R everywhere else"),
     }
@@ -248,6 +313,7 @@ def strengths(df: pd.DataFrame, min_n: int = 8) -> list:
         return out
     ok = rr.notna()
     df, rr = df[ok], rr[ok]
+    tested: list = []
 
     # 1. The session that pays
     sess_col = next((c for c in ("Session Norm", "Session") if c in df.columns), None)
@@ -257,7 +323,7 @@ def strengths(df: pd.DataFrame, min_n: int = 8) -> list:
             if not sess or sess.lower() in ("nan", "none", ""):
                 continue
             f = _edge_finding(df, rr, vals == sess, "session",
-                              f"Lean on {sess}", f"{sess} trades", min_n)
+                              f"Lean on {sess}", f"{sess} trades", min_n, tested=tested)
             if f:
                 out.append(f)
 
@@ -272,7 +338,7 @@ def strengths(df: pd.DataFrame, min_n: int = 8) -> list:
             exr = pd.to_numeric(ex["__rr"], errors="coerce")
             for m in ex["__m"].unique():
                 f = _edge_finding(ex, exr, ex["__m"] == m, "model",
-                                  f"{m} is your edge", f"{m} entries", min_n)
+                                  f"{m} is your edge", f"{m} entries", min_n, tested=tested)
                 if f:
                     out.append(f)
 
@@ -284,7 +350,7 @@ def strengths(df: pd.DataFrame, min_n: int = 8) -> list:
                 continue
             f = _edge_finding(df, rr, tf == t, "timeframe",
                               f"{t} entries are paying", f"{t}-entry trades",
-                              min_n)
+                              min_n, tested=tested)
             if f:
                 out.append(f)
 
@@ -294,10 +360,14 @@ def strengths(df: pd.DataFrame, min_n: int = 8) -> list:
         calm = ms.str.contains("clear") | ms.str.contains("calm")
         f = _edge_finding(df, rr, calm, "mental",
                           "Protect the clear-and-calm state",
-                          "trades taken clear and calm", min_n)
+                          "trades taken clear and calm", min_n, tested=tested)
         if f:
             out.append(f)
 
+    keep = _holm_pass(tested)
+    out = [f for f in out if f.get("_t") is None or f["_t"] in keep]
+    for f in out:
+        f.pop("_t", None)
     best = {}
     for f in out:
         k = f["kind"]
