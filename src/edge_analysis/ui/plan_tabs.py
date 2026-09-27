@@ -841,67 +841,13 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
         st.caption(f"{n} trade{'s' if n != 1 else ''} \u2014 too few to grade the week's process.")
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
-    # scoreboard — a column the journal never fills (P&L, MFE, lots on an
-    # R-only template) is left out, not shown as a column of dashes
-    def _any_num(col):
-        return col in wk.columns and pd.to_numeric(wk[col], errors="coerce").notna().any()
-
-    _show_pnl, _show_mfe, _show_lots = _any_num("PnL"), _any_num("MFE (R)"), _any_num("Lot Size")
-    _show_pnl = _show_pnl and not t._dollars_hidden()   # not a column of "•••"
-    st.markdown("#### Trade by trade")
-    rows = ""
-    for _, r in wk.iterrows():
-        rv = float(r["__rr"])
-        res = "Win" if rv > 0.15 else ("Loss" if rv < -0.15 else "BE")
-        rescol = GREEN if res == "Win" else (RED if res == "Loss" else "#64748b")
-        day = r["__dt"].strftime("%a")
-        sess = t._clean_text(r.get("Session"))[:18]
-        dirn = t._clean_text(r.get("Direction"))
-        pnl = pd.to_numeric(pd.Series([r.get("PnL")]), errors="coerce").iloc[0]
-        pnl_s = "—" if pd.isna(pnl) else _t()._money(f"{'-' if pnl < 0 else '+'}${abs(pnl):,.2f}")
-        mfe_v = pd.to_numeric(pd.Series([r.get("MFE (R)")]), errors="coerce").iloc[0]
-        mfe_s = "—" if pd.isna(mfe_v) else f"+{mfe_v:.2f}R"
-        lots = pd.to_numeric(pd.Series([r.get("Lot Size")]), errors="coerce").iloc[0]
-        lots_s = "—" if pd.isna(lots) else f"{lots:g}"
-        import html as _hh
-        extras = ""
-        for _tc in ["A+ Setup?", "Conviction (1-5)", "Rules Followed?", "Mistake"]:
-            if _tc not in wk.columns:
-                continue
-            _raw = r.get(_tc)
-            if isinstance(_raw, bool):
-                _v = "Yes" if _raw else "No"
-            else:
-                _v = str(_raw if _raw is not None else "").strip()
-            if _v.lower() in ("", "nan", "none", "na", "[]"):
-                # an untagged field is flagged amber; a blank Mistake is no mistake
-                _dc = "#64748b" if _tc == "Mistake" else "#b45309"
-                extras += f"<td class='text' style='color:{_dc};'>—</td>"
-            else:
-                _vl = _v.lower()
-                if _tc != "Mistake":
-                    _v = "Yes" if _vl in ("yes", "true", "__yes__", "1") else (
-                        "No" if _vl in ("no", "false", "__no__", "0") else _v)
-                extras += f"<td class='text'>{_hh.escape(_v[:26])}</td>"
-        rows += (f"<tr><td class='text'>{day} · {sess}</td><td class='text'>{dirn}</td>"
-                 f"<td class='text' style='color:{rescol};font-weight:700;'>{res}</td>"
-                 f"<td class='num' style='color:{GREEN if rv >= 0 else RED};font-weight:700;'>{rv:+.2f}</td>"
-                 + (f"<td class='num'>{pnl_s}</td>" if _show_pnl else "")
-                 + (f"<td class='num'>{mfe_s}</td>" if _show_mfe else "")
-                 + (f"<td class='num'>{lots_s}</td>" if _show_lots else "")
-                 + extras + "</tr>")
-    _tag_ths = "".join(
-        f"<th class='text'>{_l}</th>" for _c, _l in (("A+ Setup?", "A+"), ("Conviction (1-5)", "Conv"),
-                                                     ("Rules Followed?", "Rules"), ("Mistake", "Mistake"))
-        if _c in wk.columns)
+    # round 21: the week's trades one by one are the "Week of ..." group in
+    # Every trade right below this card (path, tags, notes, and each opens
+    # into its trade card), so the scoreboard table that repeated them is gone
     st.markdown(
-        "<div class='table-wrap ea-keepcols'><table><thead><tr><th class='text'>Day / Session</th>"
-        "<th class='text'>Dir</th><th class='text'>Result</th><th class='num'>R</th>"
-        + ("<th class='num'>P&L</th>" if _show_pnl else "")
-        + ("<th class='num'>MFE</th>" if _show_mfe else "")
-        + ("<th class='num'>Lots</th>" if _show_lots else "")
-        + _tag_ths + "</tr></thead>"
-        f"<tbody>{rows}</tbody></table></div>", unsafe_allow_html=True)
+        f"<div style='font-size:14px;margin:2px 0 8px;'>The week's {n} trade{'s' if n != 1 else ''}, one by one, "
+        f"are under <b>Week of {sel_p.start_time.strftime('%d %b')}</b> in Every trade below \u2014 "
+        f"open any of them there.</div>", unsafe_allow_html=True)
 
     # what worked / didn't
     sess_s = wk.get("Session", pd.Series("", index=wk.index)).astype(str)
