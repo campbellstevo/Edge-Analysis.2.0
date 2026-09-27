@@ -59,3 +59,21 @@ def test_a_criterion_every_tagged_trade_has_is_not_a_comparison(monkeypatch):
     out = _capture(monkeypatch, tabs)
     tabs._entry_criteria(_df())
     assert not any("Double confirmation" in o for o in out)
+
+
+def test_context_board_rows(monkeypatch):
+    from edge_analysis.ui import reshape as rx
+    n = 20
+    df = pd.DataFrame({"Closed RR": [1.0] * 10 + [-1.0] * 10,
+                       "Conditions MTF": [["Ranging"]] * 10 + [["Trending"]] * 10,
+                       "Opposing Weak Structure?": [False] * 16 + [True] * 4,
+                       "Oversold or Overbought?": [False] * n,               # never ticked: no row
+                       "News Aspect": [["Closed before news >2hs"]] * 5 + [["No News"]] * 15})
+    rows = {r["label"]: r for r in rx.context_frame(df)}
+    assert set(rows) == {"Conditions (MTF)", "Opposing weak structure", "News"}
+    assert {p[0] for p in rows["News"]["parts"]} == {"Closed before news", "No news"}
+    out = []
+    monkeypatch.setattr(rx.st, "markdown", lambda body, **k: out.append(body))
+    assert rx.context_board(df)
+    assert "ranging</b> (conditions (mtf)): +10.0R over 10" in out[0]
+    assert "beats chance" in out[0]          # 10 vs 10 at +1/-1 is not luck

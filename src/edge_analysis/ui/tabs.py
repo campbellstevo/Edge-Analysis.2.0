@@ -5718,18 +5718,28 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
             _card_header("Market conditions",
                          "The market around your trades \u2014 trend, volatility, news and gaps.")
             with _budget(1):
-                _conditions_tab(f_perf, show_table)
-                _gap(18)
-                _obos_section(f_perf)
-                _gap(18)
-                _confluence_board(f_perf, scope="external")
-                _gap(18)
-                _liquidity_windows(f_perf)
-                # weekday × hour now lives on Entry → Timing for every journal
-                # (the day × time grid), not as an MT5-only ranked list here
-                if _mt5:
+                from edge_analysis.ui import reshape as _rxc
+                # Round 11 (mockup M6): one board when the journal tags 2+ kinds
+                # of context; the older sections stay for journals that don't
+                if _rxc.context_board(f_perf, _verdicts_on()):
+                    _one_inst = ("Instrument" not in f_perf.columns
+                                 or f_perf["Instrument"].astype(str).nunique() <= 1)
+                    if _mt5 and not _one_inst:
+                        _gap(18)
+                        _symbol_session_matrix(_data, styler)
+                else:
+                    _conditions_tab(f_perf, show_table)
                     _gap(18)
-                    _symbol_session_matrix(_data, styler)
+                    _obos_section(f_perf)
+                    _gap(18)
+                    _confluence_board(f_perf, scope="external")
+                    _gap(18)
+                    _liquidity_windows(f_perf)
+                    # weekday × hour now lives on Entry → Timing for every journal
+                    # (the day × time grid), not as an MT5-only ranked list here
+                    if _mt5:
+                        _gap(18)
+                        _symbol_session_matrix(_data, styler)
                     from edge_analysis.ui.pro_tabs import cost_in_r as _cir, cost_line as _cl, COST_WARN_R as _cw
                     _c0 = _cir(_data)
                     if _c0 is not None and _c0["total"] < _cw:

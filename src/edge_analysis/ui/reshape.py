@@ -710,6 +710,126 @@ def breakeven_rows(df: pd.DataFrame) -> bool:
     return True
 
 
+_CONTEXT_ROWS = [
+    ("Conditions MTF", "Conditions (MTF)"), ("Conditions HTF", "Conditions (HTF)"),
+    ("Conditions ETF", "Conditions (ETF)"), ("Tiers in pricing MTF", "Tier in pricing (MTF)"),
+    ("Tiers in pricing HTF", "Tier in pricing (HTF)"), ("Opposing Weak Structure?", "Opposing weak structure"),
+    ("Oversold or Overbought?", "Overbought / oversold"), ("News Aspect", "News"),
+    ("Volatility", "Volatility"), ("GAP Alignment", "Gap"), ("GAP Alignment?", "Gap"),
+]
+
+
+def _news_bucket(v: str) -> str:
+    s = v.lower()
+    if s.startswith("closed before"):
+        return "Closed before news"
+    if s.startswith("traded through"):
+        return "Held through news"
+    return {"no news": "No news", "post news": "After news"}.get(s, v)
+
+
+def context_frame(df: pd.DataFrame) -> list[dict]:
+    """[{label, parts: [(value, n, net R, mask)]}] for each market-context
+    column the journal fills, 2+ values with 3+ trades between them."""
+    rcol = next((c for c in ("Closed RR", "PnL_from_RR") if c in df.columns), None)
+    if df is None or df.empty or rcol is None:
+        return []
+    r = pd.to_numeric(df[rcol], errors="coerce")
+    rows, seen = [], set()
+    for col, label in _CONTEXT_ROWS:
+        if col not in df.columns or label in seen:
+            continue
+        if col.endswith("?"):
+            yn = df[col].map(_yes)
+            if not (yn == True).any():      # noqa: E712  never ticked: no row
+                continue
+            vals = yn.map({True: "Yes", False: "No"})
+            if col == "Opposing Weak Structure?":
+                vals = vals.map({"Yes": "Against it", "No": "Clear"})
+        else:
+            vals = df[col].map(_txt).str.split(",").str[0].str.strip()
+            if col == "News Aspect":
+                vals = vals.map(lambda v: _news_bucket(v) if v else v)
+        vals = vals.where(r.notna(), None)
+        parts = []
+        for v, sub in r.groupby(vals):
+            if v in (None, "") or str(v).lower() in ("nan", "none", "na"):
+                continue
+            parts.append((str(v), int(sub.count()), float(sub.sum()), (vals == v).to_numpy()))
+        parts = [p for p in parts if p[1] >= 1]
+        if len(parts) >= 2 and sum(p[1] for p in parts) >= 5:
+            seen.add(label)
+            rows.append({"label": label, "parts": sorted(parts, key=lambda p: -p[1])})
+    return rows
+
+
+def context_board(df: pd.DataFrame, verdicts: bool = True) -> bool:
+    """Round-11 mockup M6: every market-context tag as one row, segments sized
+    by trades and coloured by net R, one sentence on top. Best/worst values are
+    tested with Holm across every value on the board. False under 2 rows."""
+    rows = context_frame(df)
+    if len(rows) < 2:
+        return False
+    from edge_analysis.digest import _perm_p, _holm_pass
+    rcol = next(c for c in ("Closed RR", "PnL_from_RR") if c in df.columns)
+    x = pd.to_numeric(df[rcol], errors="coerce")
+    keys, ps = [], []
+    for row in rows:
+        for v, n, net, m in row["parts"]:
+            if n >= 5 and n < int(x.notna().sum()) - 1:
+                for d in ("good", "bad"):
+                    keys.append((row["label"], v, d))
+                    ps.append(_perm_p(x, m, lower=d == "bad"))
+    passed = {keys[i] for i in _holm_pass(ps)}
+    t = _tokens()
+    cand = [(row["label"], v, n, net) for row in rows for v, n, net, _ in row["parts"] if n >= 3]
+    head = ""
+    if cand:
+        best = max(cand, key=lambda c: c[3])
+        worst = min(cand, key=lambda c: c[3])
+
+        def lab(c, d):
+            return ("beats chance" if (c[0], c[1], d) in passed else "early read")
+        bits = []
+        if best[3] > 0 and (verdicts or (best[0], best[1], "good") in passed):
+            bits.append(f"You've made the most in <b>{_h.escape(best[1].lower())}</b> ({_h.escape(best[0].lower())}): "
+                        f"{_h.escape(fmt_r(best[3], 1))} over {best[2]} <span class='ea-cx-l'>{lab(best, 'good')}</span>")
+        if worst[3] < 0 and worst != best and (verdicts or (worst[0], worst[1], "bad") in passed):
+            bits.append(f"<b>{_h.escape(worst[1].lower())}</b> ({_h.escape(worst[0].lower())}) cost "
+                        f"{_h.escape(fmt_r(worst[3], 1))} over {worst[2]} <span class='ea-cx-l'>{lab(worst, 'bad')}</span>")
+        head = ". ".join(bits) + ("." if bits else "")
+    body = ""
+    for row in rows:
+        segs = ""
+        for v, n, net, _ in row["parts"]:
+            bg = ("rgba(22,163,74,.26)" if net > 0 else "rgba(220,38,38,.24)") if abs(net) >= 0.05 else t["soft"]
+            segs += (f'<div class="ea-cx-s" style="flex:{n};background:{bg}" title="{_h.escape(v)}: {n} trades, {_h.escape(fmt_r(net, 1))}">'
+                     f'<div class="v">{_h.escape(v)}</div><div class="r">{_h.escape(fmt_r(net, 1))} '
+                     f'<span>\u00b7 {n}</span></div></div>')
+        tot = sum(p[1] for p in row["parts"])
+        body += (f'<div class="ea-cx-row"><div class="ea-cx-h"><span>{_h.escape(row["label"])}</span>'
+                 f'<span class="n">{tot} tagged</span></div><div class="ea-cx-b">{segs}</div></div>')
+    extra = f"""
+.ea-cx-head{{font-size:15px;line-height:1.45;margin:0 0 12px;color:{t['ink']};}}
+.ea-cx-l{{font-size:11px;font-weight:700;color:{t['few']};white-space:nowrap;}}
+.ea-cx-row{{margin:0 0 12px;}}
+.ea-cx-h{{display:flex;justify-content:space-between;font-size:11.5px;font-weight:800;letter-spacing:.06em;
+  text-transform:uppercase;color:{t['muted']};margin-bottom:5px;}}
+.ea-cx-h .n{{font-weight:600;letter-spacing:0;text-transform:none;}}
+.ea-cx-b{{display:flex;gap:4px;}}
+.ea-cx-s{{min-width:0;border-radius:8px;padding:7px 9px;color:{t['ink']};}}
+.ea-cx-s .v{{font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}}
+.ea-cx-s .r{{font-size:14.5px;font-weight:800;white-space:nowrap;}}
+.ea-cx-s .r span{{font-size:12px;font-weight:600;color:{t['muted']};}}
+@media (max-width:640px){{.ea-cx-b{{flex-wrap:wrap;}} .ea-cx-s{{flex:1 1 45% !important;}}}}
+"""
+    st.markdown(css(extra) + f'<div class="ea-rx"><div class="ea-cx-head">{head}</div>{body}'
+                f'<div class="ea-rx-cap">Width = trades, colour = net R. Replaces the conditions grid, the '
+                f'factors board and the hour/instrument lists that repeated your sessions.</div></div>',
+                unsafe_allow_html=True)
+    return True
+
+
 def exit_whatif(g: pd.DataFrame) -> tuple[pd.DataFrame, float]:
     """The exit simulator's own model (pro_tabs._exit_optimizer): a target
     fills when MFE reached it, else a −1R stop if MAE got there, else the
