@@ -4839,6 +4839,51 @@ def _compute_refinements(stats: dict) -> dict:
     return {"working": working[:5], "holding_back": holding[:5], "refinements": refine[:5]}
 
 
+def _scorecard_card(f_perf: pd.DataFrame) -> None:
+    from edge_analysis import scorecard as sc_
+    from edge_analysis.ui.focus import dated
+    g = dated(f_perf) if f_perf is not None else None
+    if g is None:
+        st.caption("The scorecard needs trades with a date and a result.")
+        return
+    kind = st.radio("Period", sc_.PERIODS, index=0, key="ea_sc_period", horizontal=True,
+                    label_visibility="collapsed") or "This week"
+    sc = sc_.build(g, kind)
+    md = sc_.to_markdown(sc)
+    if not sc or not sc.get("n"):
+        st.caption(f"No trades {kind.lower()}. Pick another period.")
+        return
+    from edge_analysis.ui import reshape as rx
+    t = rx._tokens()
+    col = "#16a34a" if sc["net"] > 0 else ("#ef4444" if sc["net"] < 0 else t["muted"])
+    rules = (f" \u00b7 rules followed {sc['rules'][0]} of {sc['rules'][1]}" if sc.get("rules") and sc["rules"][1] else "")
+    st.markdown(rx.css() + f'<div class="ea-rx" style="margin:4px 0 10px;"><div style="font-size:13px;color:{t["muted"]};'
+                f'font-weight:700;letter-spacing:.06em;text-transform:uppercase;">{_html.escape(sc["title"])}</div>'
+                f'<div style="font-size:28px;font-weight:800;color:{col};">{_html.escape(rx.fmt_r(sc["net"], 1))}</div>'
+                f'<div style="font-size:14px;color:{t["ink"]};">{sc["n"]} trade{"s" if sc["n"] != 1 else ""} \u00b7 '
+                f'{sc["win"]} won, {sc["be"]} break-even, {sc["loss"]} lost{rules}</div></div>',
+                unsafe_allow_html=True)
+    with st.expander("See it as it'll look in Notion (copy button top right)"):
+        st.code(md, language=None, wrap_lines=True)
+    c1, c2 = st.columns(2)
+    with c1:
+        st.download_button("Download (.md)", md, file_name=f"scorecard-{sc['title'].lower().replace(' ', '-')}.md",
+                           mime="text/markdown", use_container_width=True, key="ea_sc_dl")
+    with c2:
+        _tok = st.session_state.get("user_notion_token") or st.session_state.get("override_NOTION_TOKEN")
+        _db = st.session_state.get("override_DATABASE_ID")
+        if st.button("Send to Notion", type="primary", use_container_width=True, key="ea_sc_send",
+                     disabled=not (_tok and _db) or bool(st.session_state.get("ea_demo"))):
+            ok, msg = sc_.send_to_notion(_tok, str(_db), sc["title"], md)
+            st.session_state["ea_sc_msg"] = (ok, msg, kind)
+    _m = st.session_state.get("ea_sc_msg")
+    if _m and _m[2] == kind:
+        (st.success if _m[0] else st.info)(("Added to Notion, next to your journal. " + (f"[Open it]({_m[1]})" if _m[1] else ""))
+                                           if _m[0] else _m[1])
+    st.caption("Paste it into your Notion scorecard page, or Send to Notion to add it as a page beside your journal. "
+               "No dollar figures on it.")
+
+
 def _refinement_masks(f_perf: pd.DataFrame) -> dict:
     """{claim key: (R per trade, mask)} for every slice a Refinements claim can
     be built on, so each claim can be tested against chance (D4)."""
@@ -5781,6 +5826,12 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                 _card_header("Refinements", "Data-backed tweaks worth testing next.")
                 with _budget(1):
                     _refinements_tab(f_perf, df_all_safe, styler, result=_ref, members=_members)
+
+        # Round 9: the week/month scorecard that goes into Notion (his 27 Sep ask)
+        with st.container(border=True):
+            st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
+            _card_header("Scorecard", "Your week or month on one page, R only, ready for Notion.")
+            _scorecard_card(f_perf)
 
         with st.container(border=True):
             st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
