@@ -83,7 +83,11 @@ def after_last(g: pd.DataFrame, min_n: int = 5) -> dict | None:
     the same streak before (and after a win, for comparison)."""
     if g is None or len(g) < 2:
         return None
-    res = [_res(r) for r in g["__rr"]]
+    ocol = next((c for c in ("Outcome", "Outcome Canonical", "Result") if c in g.columns), None)
+    oc = g[ocol].astype(str).str.strip().str.lower() if ocol else None
+    tags = {"win": "win", "loss": "loss", "be": "be", "breakeven": "be"}
+    res = [tags.get(o, _res(r)) if oc is not None else _res(r)
+           for o, r in zip(oc if oc is not None else [None] * len(g), g["__rr"])]
     rr = list(g["__rr"])
     kind = res[-1]
     streak = 1
@@ -107,137 +111,142 @@ def after_last(g: pd.DataFrame, min_n: int = 5) -> dict | None:
 
 # ----------------------------- drawing ----------------------------------------
 
-def _spark(path: list, tgt: float, stop: float, t: dict) -> str:
-    """The month so far as a line between its stop and target."""
-    w, h, pad = 260, 64, 6
-    pts = [0.0] + [float(v) for v in path]
-    lo, hi = min(min(pts), stop), max(max(pts), tgt)
-    span = (hi - lo) or 1.0
-
-    def y(v):
-        return pad + (hi - v) / span * (h - 2 * pad)
-    n = max(1, len(pts) - 1)
-    line = " ".join(f"{pad + i / n * (w - 2 * pad):.1f},{y(v):.1f}" for i, v in enumerate(pts))
-    return (f'<svg viewBox="0 0 {w} {h}" width="100%" height="{h}" preserveAspectRatio="none" '
-            f'role="img" aria-label="This month so far">'
-            f'<line x1="0" x2="{w}" y1="{y(tgt):.1f}" y2="{y(tgt):.1f}" stroke="{GREEN}" stroke-dasharray="4 4" stroke-width="1.2"/>'
-            f'<line x1="0" x2="{w}" y1="{y(stop):.1f}" y2="{y(stop):.1f}" stroke="{RED}" stroke-dasharray="4 4" stroke-width="1.2"/>'
-            f'<line x1="0" x2="{w}" y1="{y(0):.1f}" y2="{y(0):.1f}" stroke="{t["zero"]}" stroke-width="1"/>'
-            f'<polyline points="{line}" fill="none" stroke="{PURPLE if not rx._dark() else "#a78bfa"}" stroke-width="2.2" '
-            f'stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>')
-
-
 _CSS = """
-.ea-fo{{display:flex;flex-direction:column;gap:14px;}}
+.ea-fo{{display:flex;flex-direction:column;gap:12px;}}
 .ea-fo-head{{display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:12px;
   background:{bg};border:1px solid {bc};}}
 .ea-fo-dot{{flex:none;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;
   font-size:17px;font-weight:800;color:#fff;background:{c};}}
 .ea-fo-head b{{display:block;font-size:17px;color:{c};}}
-.ea-fo-head span{{display:block;font-size:13px;color:{muted};}}
-.ea-fo-grid{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;}}
-.ea-fo-k{{background:{soft};border:1px solid {line};border-radius:10px;padding:10px 12px;min-width:0;}}
-.ea-fo-k .l{{font-size:10.5px;font-weight:700;letter-spacing:.07em;color:{muted};text-transform:uppercase;}}
-.ea-fo-k .v{{font-size:20px;font-weight:800;line-height:1.25;}}
-.ea-fo-k .s{{font-size:12px;color:{muted};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}}
-.ea-fo-spark{{display:flex;align-items:center;gap:12px;}}
-.ea-fo-spark .lg{{font-size:11.5px;color:{muted};line-height:1.6;white-space:nowrap;}}
+.ea-fo-head span{{display:block;font-size:13.5px;color:{ink};}}
+.ea-fo-bar{{position:relative;height:12px;border-radius:6px;background:{soft};border:1px solid {line};margin:18px 2px 20px;}}
+.ea-fo-bar i{{position:absolute;top:-1px;bottom:-1px;}}
+.ea-fo-bar .z{{width:2px;background:{zero};}}
+.ea-fo-bar i.m{{top:-6px;bottom:-6px;width:4px;margin-left:-2px;border-radius:2px;background:{ink};}}
+.ea-fo-bar span{{position:absolute;top:15px;transform:translateX(-50%);font-size:11.5px;color:{muted};white-space:nowrap;}}
+.ea-fo-bar span.l{{transform:none;}} .ea-fo-bar span.r{{transform:translateX(-100%);}}
+.ea-fo-bar span.m{{top:-27px;font-weight:800;color:{ink};font-size:12.5px;}}
+.ea-fo-line{{font-size:14px;color:{ink};line-height:1.45;}}
+.ea-fo-line small{{color:{muted};font-size:13px;}}
 .ea-fo-list{{display:flex;flex-direction:column;gap:6px;}}
-.ea-fo-i{{display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid {line};border-radius:10px;background:{base};}}
+.ea-fo-i{{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid {line};border-radius:10px;background:{base};}}
 .ea-fo-i .n{{flex:none;width:22px;height:22px;border-radius:6px;border:2px solid {zero};}}
-.ea-fo-i .t{{flex:1;min-width:0;font-size:14px;font-weight:600;color:{ink};}}
-.ea-fo-i .e{{flex:none;font-size:12px;font-weight:800;border-radius:999px;padding:2px 9px;}}
-.ea-fo-sub{{font-size:11px;font-weight:700;letter-spacing:.07em;color:{muted};margin:4px 0 0;}}
-.ea-fo-two{{display:grid;grid-template-columns:1fr 1fr;gap:12px;}}
-.ea-fo-col{{border:1px solid {line};border-radius:12px;padding:12px 14px;background:{base};}}
-.ea-fo-col .h{{margin:0 0 6px;font-size:12px;font-weight:800;letter-spacing:.07em;}}
-.ea-fo-col p{{margin:6px 0 0;font-size:14px;color:{ink};line-height:1.35;}}
-.ea-fo-col small{{display:block;font-size:12px;color:{muted};}}
-.ea-fo-note{{font-size:14.5px;color:{ink};line-height:1.45;}}
-@media (max-width:640px){{.ea-fo-grid{{grid-template-columns:1fr 1fr;}} .ea-fo-two{{grid-template-columns:1fr;}}
-  .ea-fo-spark{{flex-direction:column;align-items:stretch;}}}}
+.ea-fo-i .t{{flex:1;min-width:0;font-size:14px;font-weight:650;color:{ink};line-height:1.3;}}
+.ea-fo-i .t small{{display:block;font-size:12px;font-weight:500;color:{muted};margin-top:2px;overflow-wrap:anywhere;}}
+.ea-fo-i .e{{flex:none;font-size:12px;font-weight:800;border-radius:999px;padding:2px 9px;white-space:nowrap;}}
 """
 
 _STATES = {
-    "clear": ("✓", GREEN, "Clear to trade"),
-    "target": ("★", PURPLE, "Target reached — protect it"),
-    "careful": ("!", AMBER, "Careful — close to your stop"),
-    "stop": ("■", RED, "Stopped for the month"),
+    "clear": ("\u2713", GREEN, "Clear to trade"),
+    "target": ("\u2605", PURPLE, "Target reached \u2014 protect it"),
+    "careful": ("!", AMBER, "Careful \u2014 close to your stop"),
+    "stop": ("\u25a0", RED, "Stopped for the month"),
 }
 
 
-def _right_now_html(s: dict, label: str | None, t: dict) -> str:
+def _month_bar(s: dict) -> str:
+    """Where the month sits between its stop and its target."""
+    lo = min(s["stop"], s["mtd"])
+    hi = max(s["tgt"], s["mtd"])
+    span = (hi - lo) or 1.0
+
+    def X(v):
+        return (v - lo) / span * 100
+    tone = RED if s["state"] == "stop" else (AMBER if s["state"] == "careful" else
+                                            (GREEN if s["mtd"] >= 0 else RED))
+    mx = X(s["mtd"])
+    fill = (f'<i style="left:{min(X(0), mx):.1f}%;width:{abs(mx - X(0)):.1f}%;background:{tone};'
+            f'opacity:.55;border-radius:6px;"></i>')
+    return (f'<div class="ea-fo-bar">{fill}<i class="z" style="left:{X(0):.1f}%"></i>'
+            f'<i class="m" style="left:{mx:.1f}%"></i>'
+            f'<span class="m" style="left:{mx:.1f}%">{fmt_r(s["mtd"], 1)}</span>'
+            f'<span class="l" style="left:0;color:{RED};">stop {fmt_r(s["stop"], 1)}</span>'
+            f'<span class="r" style="left:100%;color:{GREEN};">target {fmt_r(s["tgt"], 1)}</span></div>')
+
+
+def _right_now_html(s: dict, label: str | None, t: dict, after: str = "") -> str:
     icon, c, head = _STATES[s["state"]]
+    to_tgt = s["tgt"] - s["mtd"]
     if s["state"] == "stop":
-        sub = f"Past your {fmt_r(s['stop'], 1)} max loss. Flat until the 1st — that's the rule that keeps the account."
+        sub = f"Past your {fmt_r(s['stop'], 1)} max loss. Flat until the 1st \u2014 that's the rule that keeps the account."
     elif s["state"] == "careful":
         sub = f"{s['room']:.1f}R above your {fmt_r(s['stop'], 1)} stop. Half size, A+ only, or sit this one out."
     elif s["state"] == "target":
         sub = f"{fmt_r(s['mtd'], 1)} against a {fmt_r(s['tgt'], 1)} target. Anything more is a bonus; a giveback isn't."
     else:
-        sub = f"{s['room']:.1f}R of room above your {fmt_r(s['stop'], 1)} stop."
+        sub = (f"{s['month_name']} {fmt_r(s['mtd'], 1)} \u00b7 {s['room']:.1f}R of room to your stop"
+               + (f" \u00b7 {to_tgt:.1f}R to target" if to_tgt > 0 else ""))
     if label:
-        sub += f" · {_h.escape(label)}"
+        sub += f" \u00b7 {_h.escape(label)}"
     bg = c + ("22" if rx._dark() else "12")
-    head_css = _CSS.format(bg=bg, bc=c + "55", c=c, **t)
+    css = _CSS.format(bg=bg, bc=c + "55", c=c, **t)
     last = s["last"]
-    if last is not None:
-        lr = float(last["__rr"])
-        last_v = (f'<div class="v" style="color:{GREEN if lr > 0.15 else (RED if lr < -0.15 else t["muted"])};">'
-                  f'{fmt_r(lr)}</div><div class="s">{last["__dt"].strftime("%a %d %b")}</div>')
-    else:
-        last_v = '<div class="v">—</div><div class="s">no trades yet</div>'
-    mc = GREEN if s["mtd"] >= 0 else RED
-    wc = GREEN if s["week_r"] > 0.05 else (RED if s["week_r"] < -0.05 else t["muted"])
-    rc = RED if s["state"] == "stop" else (AMBER if s["state"] == "careful" else t["ink"])
-    tiles = (
-        f'<div class="ea-fo-k"><div class="l">{s["month_name"]}</div><div class="v" style="color:{mc};">{fmt_r(s["mtd"], 1)}</div>'
-        f'<div class="s">{s["n_month"]} trades · target {fmt_r(s["tgt"], 1)}</div></div>'
-        f'<div class="ea-fo-k"><div class="l">Room to stop</div><div class="v" style="color:{rc};">'
-        f'{max(0.0, s["room"]):.1f}R</div><div class="s">stop at {fmt_r(s["stop"], 1)}</div></div>'
-        f'<div class="ea-fo-k"><div class="l">This week</div><div class="v" style="color:{wc};">{fmt_r(s["week_r"], 1)}</div>'
-        f'<div class="s">{s["n_week"]} trade{"s" if s["n_week"] != 1 else ""}</div></div>'
-        f'<div class="ea-fo-k"><div class="l">Last trade</div>{last_v}</div>')
-    spark = ""
-    if s["path"]:
-        spark = (f'<div class="ea-fo-spark"><div style="flex:1;min-width:0;">{_spark(s["path"], s["tgt"], s["stop"], t)}</div>'
-                 f'<div class="lg"><span style="color:{GREEN};">- - target {fmt_r(s["tgt"], 1)}</span><br>'
-                 f'<span style="color:{RED};">- - stop {fmt_r(s["stop"], 1)}</span></div></div>')
-    return (rx.css(head_css) + f'<div class="ea-rx ea-fo"><div class="ea-fo-head"><div class="ea-fo-dot">{icon}</div>'
-            f'<div><b>{head}</b><span>{sub}</span></div></div><div class="ea-fo-grid">{tiles}</div>{spark}</div>')
+    bits = [f"This week {fmt_r(s['week_r'], 1)} over {s['n_week']} trade{'s' if s['n_week'] != 1 else ''}"]
+    if last is not None and not after:           # the after-line already names the last trade
+        bits.append(f"last trade {last['__dt'].strftime('%a %d %b')}")
+    joined = " \u00b7 ".join(bits)
+    line = f'<div class="ea-fo-line">{joined}.' + (f" {after}" if after else "") + "</div>"
+    return (rx.css(css) + f'<div class="ea-rx ea-fo"><div class="ea-fo-head"><div class="ea-fo-dot">{icon}</div>'
+            f'<div><b>{head}</b><span>{sub}</span></div></div>{_month_bar(s)}{line}</div>')
 
 
-def _checklist_html(proven: list, mine: list, t: dict, beats=None) -> str:
+def _checklist_html(items: list[dict], t: dict) -> str:
     rows = ""
-    for e in proven[:5]:
-        rule, edge = e[0], e[1]
-        _early = beats is not None and rule not in beats
-        rule = rule.replace(" (from your data)", "")
-        rows += (f'<div class="ea-fo-i"><span class="n"></span><span class="t">{_h.escape(rule)}'
-                 + (f' <small style="font-weight:500;color:{t["muted"]};">\u00b7 early read</small>' if _early else "")
-                 + f'</span><span class="e" style="color:{GREEN};background:{GREEN}1a;">+{edge:.2f}R</span></div>')
-    if mine:
-        rows += '<div class="ea-fo-sub">YOUR OWN RULES</div>'
-        for rule in mine[:8]:
-            rows += (f'<div class="ea-fo-i"><span class="n"></span><span class="t">{_h.escape(rule)}</span></div>')
+    for it in items:
+        chip = ""
+        if it.get("chip"):
+            cc = it.get("color", PURPLE)
+            chip = f'<span class="e" style="color:{cc};background:{cc}1f;">{_h.escape(it["chip"])}</span>'
+        sub = f'<small>{_h.escape(it["sub"])}</small>' if it.get("sub") else ""
+        rows += (f'<div class="ea-fo-i"><span class="n"></span><span class="t">{_h.escape(it["text"])}{sub}</span>'
+                 f'{chip}</div>')
     return f'<div class="ea-rx ea-fo-list">{rows}</div>'
 
 
-def _lean_html(lean: list, stay: list, t: dict, beats=None) -> str:
-    def _ev(rid, ev):
-        if beats is None:
-            return ev
-        return ev + (" \u00b7 beats chance" if rid.split(":", 1)[-1] in beats else " \u00b7 early read")
+def _proven_label(rule: str) -> str:
+    rule = rule.replace(" (from your data)", "")
+    if rule.startswith("Your proven "):
+        rule = rule[len("Your proven "):]
+        rule = rule[:1].upper() + rule[1:]
+    return rule
 
-    def col(title, c, items, empty):
-        body = "".join(f"<p><b>{_h.escape(r)}</b><small>{_h.escape(_ev(rid, ev))}</small></p>"
-                       for rid, r, ev, _k in items)
-        return (f'<div class="ea-fo-col" style="border-top:3px solid {c};"><div class="h" style="color:{c};">{title}</div>'
-                f'{body or f"<small>{empty}</small>"}</div>')
-    return ('<div class="ea-rx ea-fo-two">'
-            + col("LEAN INTO", GREEN, lean, "Nothing clears the bar yet.")
-            + col("STAY AWAY FROM", RED, stay, "Nothing clears the bar yet.")
-            + "</div>")
+
+def checklist_items(proven: list, recs: list, lesson_groups: list, mine: list,
+                    beats=None, gate_beats=None) -> list[dict]:
+    """One list of pre-trade gates: what your numbers back, the lessons you
+    keep writing, then your own rules. Numbers say 'beats chance' or 'early read'."""
+    import re as _re
+    from edge_analysis.ui.lessons import THEME_CHECK
+    items, seen = [], set()
+
+    def _add(it):
+        k = it["text"].lower()
+        if k not in seen:
+            seen.add(k)
+            items.append(it)
+    for e in proven[:3]:
+        early = gate_beats is not None and e[0] not in gate_beats
+        _add({"text": _proven_label(e[0]), "sub": "your numbers \u00b7 " + ("early read" if early else "beats chance"),
+              "chip": f"+{e[1]:.2f}R".replace("+-", "\u2212"), "color": GREEN})
+    keep = [r for r in recs if r[3]][:1] + [r for r in recs if not r[3]][:1]
+    for rid, rule, ev, k in keep:
+        m = _re.search(r"[+\-\u2212]\d+(\.\d+)?R", ev)
+        n = _re.search(r"over (\d+) trades", ev)
+        early = beats is not None and rid.split(":", 1)[-1] not in beats
+        _add({"text": rule, "sub": (f"{n.group(1)} trades" if n else ev) + " \u00b7 "
+              + ("early read" if early else "beats chance"),
+              "chip": m.group(0) if m else "", "color": GREEN if k else RED})
+    for gp in lesson_groups[:3]:
+        q = THEME_CHECK.get(gp["theme"])
+        if not q:
+            continue
+        note = min((r["text"] for r in gp["rows"]), key=len)
+        note = note if len(note) <= 80 else note[:78].rstrip() + "\u2026"
+        _add({"text": q, "sub": f"\u201c{note}\u201d \u00b7 your note, {gp['n']}\u00d7",
+              "chip": f"{gp['n']}\u00d7", "color": PURPLE if not rx._dark() else "#a78bfa"})
+    for rule in mine[:8]:
+        _add({"text": rule, "sub": "your rule"})
+    return items
 
 
 def _after_text(a: dict) -> str:
@@ -265,6 +274,7 @@ def _after_text(a: dict) -> str:
 
 def render_focus(f_perf: pd.DataFrame, df_all: pd.DataFrame, styler) -> None:
     from edge_analysis.ui import tabs as T
+    from edge_analysis.ui import lessons as _ls
     from edge_analysis.ui.plan_tabs import plan_model, rule_recommendations, _rules_state
     t = rx._tokens()
 
@@ -280,52 +290,32 @@ def render_focus(f_perf: pd.DataFrame, df_all: pd.DataFrame, styler) -> None:
     g = dated(track)
     with st.container(border=True):
         st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
-        T._card_header("Right now", "Can you trade today — the month against its lines, "
-                                     "this week, and your last trade.")
+        T._card_header("Right now", "Can you trade today: the month between its stop and target.")
         if g is None:
             st.caption("Your briefing starts once trades carry a date and a result.")
             return
-        st.markdown(_right_now_html(right_now(g, tgt, stop), label, t), unsafe_allow_html=True)
+        a = after_last(g)
+        st.markdown(_right_now_html(right_now(g, tgt, stop), label, t, _after_text(a) if a else ""),
+                    unsafe_allow_html=True)
 
-    # 2. Before you take a trade
+    # 2. Before you take a trade: numbers, your notes, your rules in one list
     m = plan_model(df_all)
     state = _rules_state()
     texts = state.get("texts") or {}
     mine = list(state.get("custom") or []) + [texts.get(rid, rid.split(":", 1)[-1])
                                               for rid in (state.get("accepted") or [])]
-    proven = (m or {}).get("proven") or []
+    recs = rule_recommendations(m["good"], m["bad"]) if m else []
+    groups = _ls.summary(track)["groups"]
+    items = checklist_items((m or {}).get("proven") or [], recs, groups, mine,
+                            (m or {}).get("beats"), (m or {}).get("gate_beats"))
     with st.container(border=True):
         st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
         T._card_header("Before you take a trade",
-                       "Every box yes, or pass. The first ones have earned their place in your journal "
-                       "(their edge in R a trade); the rest are yours.")
-        if proven or mine:
-            st.markdown(rx.css(_CSS.format(bg="", bc="", c="", **t))
-                        + _checklist_html(proven, mine, t, (m or {}).get("gate_beats")),
+                       "Every box yes, or pass. From your numbers, the lessons you keep writing, and your rules.")
+        if items:
+            st.markdown(rx.css(_CSS.format(bg="", bc="", c="", **t)) + _checklist_html(items, t),
                         unsafe_allow_html=True)
         else:
-            st.caption("No checklist yet — a tag earns a place here once it has 5+ trades at a positive "
-                       "average, and you can write your own rules on Plan.")
-
-    # 3. Lean into / stay away from
-    if m:
-        recs = rule_recommendations(m["good"], m["bad"])
-        lean = [r for r in recs if r[3]][:2]
-        stay = [r for r in recs if not r[3]][:2]
-        if lean or stay:
-            with st.container(border=True):
-                st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
-                T._card_header("Lean into, stay away from",
-                               "The things you choose, with 5+ trades and a real gap behind them.")
-                st.markdown(rx.css(_CSS.format(bg="", bc="", c="", **t))
-                            + _lean_html(lean, stay, t, m.get("beats")), unsafe_allow_html=True)
-
-    # 4. After your last trade
-    a = after_last(g)
-    if a:
-        with st.container(border=True):
-            st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
-            T._card_header("After your last trade", "How your next trade has gone after a result like it.")
-            st.markdown(rx.css(_CSS.format(bg="", bc="", c="", **t))
-                        + f'<div class="ea-rx ea-fo-note">{_after_text(a)}</div>', unsafe_allow_html=True)
+            st.caption("No checklist yet: a tag earns a place here once it has 5+ trades at a positive "
+                       "average, a lesson once you've written it twice, and you can add your own rules on Plan.")
     st.caption("Everything else is one switch away: turn Focus off in the header.")

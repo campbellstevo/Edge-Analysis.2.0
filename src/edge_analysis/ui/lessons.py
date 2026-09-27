@@ -30,6 +30,17 @@ THEMES: list[tuple[str, list[re.Pattern]]] = [
     ("Patience and rules", [re.compile(r"patien|\bwait|overtrad|revenge|\brules?\b|discipline|a\+", _I)]),
     ("News", [re.compile(r"\bnews\b|\bcpi\b|\bnfp\b|fomc", _I)]),
 ]
+# The pre-trade question each theme turns into on Focus's checklist
+THEME_CHECK = {
+    "Breakeven": "Do I know where breakeven goes?",
+    "Taking profit": "Is my target somewhere price actually gets to?",
+    "Stop placement": "Is my stop past the sweep, not inside it?",
+    "Sweeps and liquidity": "Has the sweep happened yet?",
+    "Bias": "Does this agree with my higher-timeframe bias?",
+    "Where you get in": "Is this a clean entry: not late, not mid-range, nothing opposing?",
+    "Patience and rules": "Is this A+, or am I forcing it?",
+    "News": "Any red news in the next two hours?",
+}
 MIN_LESSONS = 3   # fewer and there's nothing to group
 MAX_CARDS = 4     # the rest get one line, not a wall of cards
 
