@@ -2354,8 +2354,6 @@ def _confluences_tab(f: pd.DataFrame, show_table):
                 f"Prioritise setups where this confluence is present.")
         render_entry_model_table(conf_df.rename(columns={"Confluence": "Entry_Model"}),
                                  title=None, first_col_label="Confluence")
-    else:
-        _empty_note("Appears once trades carry confluence tags.")
 
 
 def _confluence_tags(v) -> list:
@@ -2377,10 +2375,9 @@ def _per_tag_confluences(g: pd.DataFrame) -> None:
     counted = g[g["Outcome"].isin(["Win", "BE", "Loss"])].copy()
     counted["__tags"] = counted[col].map(_confluence_tags)
     tagged = counted[counted["__tags"].map(len) > 0]
-    st.markdown("### Confluences")
-    if tagged.empty:
-        _empty_note("Appears once trades carry confluence tags.")
+    if tagged.empty:          # a field never filled gets no section (round 10)
         return
+    st.markdown("### Confluences")
     st.caption("Every confluence you tag, on its own. A trade with two tags counts in both rows; "
                f"{len(counted) - len(tagged)} closed trades carry no tag.")
     rows = []
@@ -3052,10 +3049,16 @@ def _entry_criteria(f: pd.DataFrame) -> None:
         else:
             m = g[dc_col].astype(str).str.contains("Double Confirmation", case=False, na=False)
         masks.append(("Double confirmation", m))
+    _e1 = next((c for c in ("Entry Model 1", "Entry Model") if c in g.columns), None)
+    _tagged = (g[_e1].astype(str).str.strip().str.strip("[]'\"").str.len() > 0) if _e1 else None
     rows, trows = [], []
     for lab, m in masks:
         sub = g.loc[m, "__rr"]
         if len(sub) < 3:
+            continue
+        # present on every tagged trade (his journal IS double confirmations):
+        # "with vs without" would only compare tagged with untagged trades
+        if _tagged is not None and _tagged.any() and bool((m | ~_tagged).all()):
             continue
         n_ = len(sub)
         rows.append({"Category": lab, "Avg R": round(float(sub.mean()), 2),

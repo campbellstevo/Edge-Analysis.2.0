@@ -580,6 +580,9 @@ def _mistake_section(df: pd.DataFrame, styler) -> None:
 
 
 def _conviction_section(df: pd.DataFrame, styler) -> None:
+    if "Conviction (1-5)" not in df.columns or pd.to_numeric(
+            df["Conviction (1-5)"].astype(str).str.strip("[]'\" "), errors="coerce").notna().sum() == 0:
+        return                # never filled: no section (round 10)
     rows = _cat_stats(df, "Conviction (1-5)", min_n=3)
     order = ["1", "2", "3", "4", "5"]
     if rows is not None:

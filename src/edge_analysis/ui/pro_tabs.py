@@ -270,13 +270,19 @@ def _a_game(df, styler) -> None:
     g["__oc"] = _oc(g).values
     mask = pd.Series(True, index=g.index)
     used = []
-    if "A+ Setup?" in g.columns:
+
+    def _filled(col):
+        # a column that exists but was never filled can't define the A-game:
+        # 'Conviction >= 4' on an empty column emptied it (27 Sep)
+        v = g[col].astype(str).str.strip().str.strip("[]'\"").str.lower()
+        return v.replace({"nan": "", "none": "", "na": ""}).str.len().gt(0).any()
+    if "A+ Setup?" in g.columns and _filled("A+ Setup?"):
         mask &= g["A+ Setup?"].astype(str).str.strip().str.lower().eq("yes"); used.append("A+")
-    if "Rules Followed?" in g.columns:
+    if "Rules Followed?" in g.columns and _filled("Rules Followed?"):
         mask &= g["Rules Followed?"].astype(str).str.strip().str.lower().isin(["true", "yes", "__yes__", "1"]); used.append("Rules followed")
-    if "Conviction (1-5)" in g.columns:
+    if "Conviction (1-5)" in g.columns and pd.to_numeric(g["Conviction (1-5)"], errors="coerce").notna().any():
         mask &= pd.to_numeric(g["Conviction (1-5)"], errors="coerce") >= 4; used.append("Conviction ≥4")
-    if "Mental State" in g.columns:
+    if "Mental State" in g.columns and _filled("Mental State"):
         mask &= g["Mental State"].astype(str).str.contains("Clear", case=False, na=False); used.append("Clear & Calm")
     if not used:
         t._unavailable("A-Game vs Everything"); return
@@ -307,8 +313,13 @@ def _a_game(df, styler) -> None:
             _kpi("Off-plan cost", "—", "no off-plan trades")
     st.caption("A-Game = " + " + ".join(used) + ".")
     if off and off["net"] < 0:
+        # a verdict: only called when the A-game vs off-plan gap beats chance
+        from edge_analysis.digest import _perm_p
+        _p = _perm_p(g["__rr"], mask.to_numpy(), lower=False) if a["n"] >= 5 and off["n"] >= 5 else 1.0
+        _tail = (" That gap beats chance: trading only your A-setups is the cleanest edge you have."
+                 if _p < 0.05 else " Early read: with this many trades the gap could still be luck.")
         t._insight_box(f"Your A-game trades return <b>{a['exp']:+.2f}R</b> at <b>{a['wr']:.0f}%</b>. The off-plan trades "
-                       f"({off['n']}) drained <b>{off['net']:+.0f}R</b>. Trading only your A-setups is the cleanest edge you have.", "warn")
+                       f"({off['n']}) drained <b>{off['net']:+.0f}R</b>.{_tail}", "warn" if _p < 0.05 else "info")
     else:
         t._insight_box(f"A-game expectancy <b>{a['exp']:+.2f}R</b> at <b>{a['wr']:.0f}%</b> win rate over {a['n']} trades.", "good")
 
