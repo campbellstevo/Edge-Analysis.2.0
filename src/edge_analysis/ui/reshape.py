@@ -408,6 +408,132 @@ def pair_grid(counted: pd.DataFrame, m1: pd.Series, m2: pd.Series,
     return True
 
 
+PAIR_FEW = 5          # under this many trades a pair is shown faded: too few to read
+
+
+def pair_rows(counted: pd.DataFrame, m1: pd.Series, m2: pd.Series) -> list[dict]:
+    """Every structure → trigger pair with its trades, best R a trade first."""
+    g = _counted(counted.assign(__m1=m1.values, __m2=m2.values))
+    g = g[(g["__m1"] != "") & (g["__m2"] != "")]
+    out = []
+    for (a, b), grp in g.groupby(["__m1", "__m2"]):
+        out.append(dict(m1=str(a), m2=str(b), n=int(len(grp)), exp=float(grp["__r"].mean()),
+                        net=float(grp["__r"].sum()),
+                        won=int(grp["Outcome"].eq("Win").sum()) if "Outcome" in grp.columns else None,
+                        idx=grp.index))
+    out.sort(key=lambda d: (-d["exp"], -d["n"]))
+    return out
+
+
+def pair_list(counted: pd.DataFrame, m1: pd.Series, m2: pd.Series, verdicts: bool = True,
+              col_head: str = "Structure, then trigger") -> bool:
+    """His note on the Model 1 × Model 2 grid (27 Sep): "this is hard to
+    understand". One sentence saying what the pairs show, then every pair as
+    one plain row — structure, then trigger, R a trade as a bar, trades and
+    wins in words — best first. False when no trade carries both models."""
+    rows = pair_rows(counted, m1, m2)
+    if not rows:
+        return False
+    from edge_analysis.digest import _perm_p, _holm_pass
+    g = _counted(counted.assign(__m1=m1.values, __m2=m2.values))
+    g = g[(g["__m1"] != "") & (g["__m2"] != "")]
+    x = g["__r"]
+    total = int(len(g))
+    keys, ps = [], []
+    for r in rows:
+        if PAIR_FEW <= r["n"] < total - 1:
+            mask = x.index.isin(r["idx"])
+            for d in ("good", "bad"):
+                keys.append((r["m1"], r["m2"], d))
+                ps.append(_perm_p(x, pd.Series(mask, index=x.index), lower=d == "bad"))
+    passed = {keys[i] for i in _holm_pass(ps)} if ps else set()
+
+    def lab(r, d):
+        return "beats chance" if (r["m1"], r["m2"], d) in passed else "early read"
+
+    def said(r, d):
+        return verdicts or (r["m1"], r["m2"], d) in passed
+
+    def pair_html(r):
+        return f"<b>{_h.escape(r['m1'])}</b> then <b>{_h.escape(r['m2'])}</b>"
+
+    bits = []
+    top2 = g["__m2"].value_counts()
+    top1 = g["__m1"].value_counts()
+    if len(top2) and top2.iloc[0] / total >= 0.75 and total >= 4:
+        k = int(top2.iloc[0])
+        bits.append((f"Every paired trade triggered on <b>{_h.escape(top2.index[0])}</b>" if k == total else
+                     f"You trigger on <b>{_h.escape(top2.index[0])}</b> in {k} of {total} paired trades")
+                    + (", so the structure is what changes" if len(top1) > 1 else ""))
+    elif len(top1) and top1.iloc[0] / total >= 0.75 and total >= 4 and len(top2) > 1:
+        k = int(top1.iloc[0])
+        bits.append(f"Your structure is <b>{_h.escape(top1.index[0])}</b> in {k} of {total} paired trades, "
+                    f"so the trigger is what changes")
+    readable = [r for r in rows if r["n"] >= 3]
+    if readable:
+        best, worst = readable[0], readable[-1]
+        if best["exp"] > 0 and said(best, "good"):
+            bits.append(f"Best so far: {pair_html(best)}, {_h.escape(fmt_r(best['exp']))} a trade over "
+                        f"{best['n']} <span class='ea-pl-l'>{lab(best, 'good')}</span>")
+        if worst is not best and worst["exp"] < 0 and said(worst, "bad"):
+            bits.append(f"Weakest: {pair_html(worst)}, {_h.escape(fmt_r(worst['exp']))} a trade over "
+                        f"{worst['n']} <span class='ea-pl-l'>{lab(worst, 'bad')}</span>")
+    else:
+        bits.append("Every pair has under 3 trades so far, so none is a read yet")
+    head = ". ".join(bits) + "."
+
+    t = _tokens()
+    span = max(0.25, max(abs(r["exp"]) for r in rows))
+    body = ""
+    for r in rows:
+        w = min(50.0, abs(r["exp"]) / span * 50.0)
+        col = GREEN if r["exp"] > 0.005 else (RED if r["exp"] < -0.005 else t["grey"])
+        left = 50.0 if r["exp"] >= 0 else 50.0 - w
+        won = "" if r["won"] is None else f" · {r['won']} won"
+        few = " few" if r["n"] < PAIR_FEW else ""
+        body += (f'<div class="ea-pl-row{few}">'
+                 f'<div class="ea-pl-n"><span>{_h.escape(r["m1"])}</span><em>then</em>'
+                 f'<span>{_h.escape(r["m2"])}</span></div>'
+                 f'<div class="ea-pl-bar" aria-hidden="true"><s></s>'
+                 f'<i style="left:{left:.1f}%;width:{max(w, 0.8):.1f}%;background:{col}"></i></div>'
+                 f'<div class="ea-pl-v"><b style="color:{col if col != t["grey"] else t["ink"]}">'
+                 f'{_h.escape(fmt_r(r["exp"]))}</b> a trade'
+                 f'<div>{r["n"]} trade{"s" if r["n"] != 1 else ""}{won} · {_h.escape(fmt_r(r["net"], 1))} total</div></div>'
+                 f'</div>')
+    extra = f"""
+.ea-pl-head{{font-size:15px;line-height:1.5;margin:0 0 12px;color:{t['ink']};}}
+.ea-pl-l{{font-size:11px;font-weight:700;color:{t['few']};white-space:nowrap;}}
+.ea-pl-cols,.ea-pl-row{{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr) 170px;gap:14px;align-items:center;}}
+.ea-pl-cols{{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:{t['muted']};
+  padding:0 12px 6px;}}
+.ea-pl-row{{background:{t['soft']};border:1px solid {t['line']};border-radius:10px;padding:10px 12px;margin:0 0 6px;}}
+.ea-pl-row.few{{background:transparent;border-style:dashed;}}
+.ea-pl-row.few .ea-pl-n span,.ea-pl-row.few .ea-pl-v b{{opacity:.78;}}
+.ea-pl-row.few .ea-pl-bar i{{opacity:.5;}}
+.ea-pl-n{{font-size:14.5px;font-weight:700;color:{t['ink']};min-width:0;}}
+.ea-pl-n em{{font-style:normal;font-weight:600;font-size:12.5px;color:{t['muted']};margin:0 7px;}}
+.ea-pl-bar{{position:relative;height:12px;border-radius:6px;background:{t['h1']};}}
+.ea-pl-bar s{{position:absolute;left:50%;top:-3px;bottom:-3px;width:2px;margin-left:-1px;background:{t['zero']};}}
+.ea-pl-bar i{{position:absolute;top:0;bottom:0;border-radius:6px;}}
+.ea-pl-v{{font-size:13px;color:{t['muted']};text-align:right;white-space:nowrap;}}
+.ea-pl-v b{{font-size:16px;font-weight:800;}}
+.ea-pl-v div{{font-size:12.5px;margin-top:1px;}}
+@media (max-width:640px){{
+ .ea-pl-cols{{display:none;}}
+ .ea-pl-row{{grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;}}
+ .ea-pl-n{{grid-column:1 / -1;}}
+ .ea-pl-v{{text-align:right;}}
+}}
+"""
+    st.markdown(css(extra) + f'<div class="ea-rx"><div class="ea-pl-head">{head}</div>'
+                f'<div class="ea-pl-cols"><span>{_h.escape(col_head)}</span><span>R per trade</span>'
+                f'<span style="text-align:right">Result</span></div>{body}'
+                f'<div class="ea-rx-cap">Best first. Dashed rows have under {PAIR_FEW} trades — too few to read yet. '
+                f'The centre line is break-even.</div></div>',
+                unsafe_allow_html=True)
+    return True
+
+
 # ── discipline hero (mockup V4) ──────────────────────────────────────────────
 def _ring(score: int, size: int = 132, what: str = "clean trades", name: str = "Discipline score") -> str:
     import math

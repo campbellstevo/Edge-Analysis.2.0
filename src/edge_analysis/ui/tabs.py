@@ -2163,12 +2163,14 @@ def _two_model_sections(counted: pd.DataFrame) -> bool:
     if not ((m1 != "").any() and (m2 != "").any()):
         return False
     from edge_analysis.ui import reshape as rx
-    st.markdown("### Entry models — double confirmation")
-    st.caption("Model 1 sets the structure, Model 2 confirms the trigger — and the pair "
-               "is the setup. Each cell is one pair; hatched cells have under 5 trades.")
+    # his note on the Model 1 × Model 2 grid (27 Sep): "this is hard to
+    # understand" — the grid, its two "Any model" margins and the metric
+    # switch became one ranked list read in words
+    st.markdown("### Your setups — structure, then trigger")
+    st.caption("Each row is one pair: the Model 1 that set the structure, then the Model 2 that "
+               "triggered the entry.")
     both = (m1 != "") & (m2 != "")
-    metric = rx.metric_picker("ea_setup_metric")
-    if not rx.pair_grid(counted, m1, m2, metric):
+    if not rx.pair_list(counted, m1, m2, _verdicts_on()):
         _empty_note("Appears once trades carry both models.")
     with st.expander("Every number, as tables"):
         pair_labels = m1.where(both, "") + " \u2192 " + m2.where(both, "")
@@ -2321,7 +2323,8 @@ def _confluences_tab(f: pd.DataFrame, show_table):
     g["Confluence"] = g.apply(_classify_row, axis=1)
     g = g[g["Confluence"].notna()]
     if g.empty:
-        _empty_note("Appears once trades carry DIV / Sweep tags.")
+        # DIV? / Sweep? columns that are never ticked: say nothing, like every
+        # other field never filled (his live page showed this line under Setups)
         return
     counted = g[g["Outcome"].isin(["Win", "BE", "Loss"])]
     if counted.empty:
@@ -3763,11 +3766,16 @@ def _timeframes_tab(f: pd.DataFrame, show_table):
         _t2 = counted["Timeframe 2"].astype(str).str.strip()
         _bothtf = (~_t1.isin(["", "nan", "None"])) & (~_t2.isin(["", "nan", "None"]))
         if _bothtf.any():
-            _tfp = _label_stats(counted[_bothtf],
-                                (_t1 + " \u2192 " + _t2)[_bothtf])
-            render_timeframe_table(_tfp, title="Timeframe pairing \u2014 "
-                                               "structure \u2192 trigger",
-                                   first_col_label="Pairing")
+            # the same plain rows as the setups above it (27 Sep), the table
+            # one tap away
+            from edge_analysis.ui import reshape as rx
+            st.markdown("### Timeframes — structure, then trigger")
+            rx.pair_list(counted[_bothtf], _t1[_bothtf], _t2[_bothtf], _verdicts_on(),
+                         col_head="Structure timeframe, then trigger")
+            with st.expander("Every number, as a table"):
+                _tfp = _label_stats(counted[_bothtf],
+                                    (_t1 + " \u2192 " + _t2)[_bothtf])
+                render_timeframe_table(_tfp, title=None, first_col_label="Pairing")
             return
     st.markdown("### Timeframes")
     if (not tf_df.empty and "Win %" in tf_df.columns
