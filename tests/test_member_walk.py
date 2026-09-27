@@ -106,10 +106,16 @@ def test_a_date_only_journal_keeps_its_own_calendar_day(member):
     assert member.session_state["ea_tz_offset"] == 0
 
 
-def test_refinements_are_owner_only(member):
+def test_members_see_only_refinements_that_beat_chance(member):
+    # D4 (27 Sep): the card shows a member only claims that passed the
+    # permutation test across every slice; early reads stay owner-only.
     text = _view(member, "Plan")
-    assert "Data-backed tweaks worth testing next" not in text
-    assert "Keep stacking this condition" not in text
+    a = text.find("Data-backed tweaks worth testing next")
+    if a >= 0:
+        b = text.find("Your connected journal and what it unlocks", a)
+        card = text[a:b if b > a else None]
+        assert "beats chance" in card
+        assert "early read" not in card
 
 
 def test_discipline_score_counts_every_rule(member):

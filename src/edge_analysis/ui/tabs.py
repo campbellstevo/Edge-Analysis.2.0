@@ -2885,9 +2885,11 @@ def _short_label(val, n: int = 30) -> str:
     return v[:n].rsplit(" ", 1)[0].rstrip(" (,·-") + "\u2026"
 
 
-def _flag_verdicts(f: pd.DataFrame, scope: str = "entry"):
+def _flag_verdicts(f: pd.DataFrame, scope: str = "entry", _masks: dict | None = None):
     """Collect per-flag average-R verdicts. scope='entry' = entry criteria;
-    scope='external' = market externals (volatility, news, gap)."""
+    scope='external' = market externals (volatility, news, gap). With _masks,
+    each row's trades are also recorded as {Category: (R, mask)} so a claim
+    built on it can be tested against chance."""
     if f is None or f.empty:
         return []
     g = f.copy()
@@ -2923,6 +2925,8 @@ def _flag_verdicts(f: pd.DataFrame, scope: str = "entry"):
             if n >= 3:
                 rows.append({"Category": lab, "Avg R": round(float(g.loc[mask, "__rr"].mean()), 2),
                              "Trades": n})
+                if _masks is not None:
+                    _masks[lab] = (g["__rr"], mask)
     if scope == "entry":
         cats = ["Entry Timeframe", "Tiers in pricing HTF", "Tiers in pricing MTF",
                 "Stop Loss + Covering", "Breakeven Criteria"]
@@ -2943,6 +2947,8 @@ def _flag_verdicts(f: pd.DataFrame, scope: str = "entry"):
                     lab = f"{short} · {_short_label(val, 24)}"
                 rows.append({"Category": lab,
                              "Avg R": round(float(sub["__rr"].mean()), 2), "Trades": len(sub)})
+                if _masks is not None:
+                    _masks[lab] = (g["__rr"], g.index.isin(sub.index))
     return rows
 
 
@@ -3949,14 +3955,28 @@ def render_connect_notion_templates_ui():
 # ── Projections Tab ───────────────────────────────────────────────────────────
 @st.cache_data(show_spinner=False, max_entries=8)
 def _mc_paths(n_paths: int, total_trades: int, wr: float, be: float,
-              avg_win: float, loss_rr: float, risk_pct: float, start_bal: float):
+              avg_win: float, loss_rr: float, risk_pct: float, start_bal: float,
+              n_sample: int = 0):
     """Monte-Carlo equity paths. Cached so reruns (nav, filters, theme) don't
-    recompute or re-serialise a chart payload the browser already has."""
+    recompute or re-serialise a chart payload the browser already has.
+
+    n_sample > 0 (PROJ-01): the rates came from that many trades, so each path
+    draws its own win / break-even / loss rates (Dirichlet) and its own average
+    win (Gamma, mean 1) around them. 19 trades can't pin a win rate down, and
+    the paths now say so instead of treating it as known."""
     _rng = np.random.default_rng(42)
+    if n_sample > 0:
+        alpha = np.maximum([wr, be, max(0.0, 1.0 - wr - be)], 0.0) * n_sample + 1.0
+        probs = _rng.dirichlet(alpha, size=n_paths)
+        wr_p, be_p = probs[:, :1], probs[:, 1:2]
+        n_w = max(1.0, wr * n_sample)
+        win_p = avg_win * _rng.gamma(n_w, 1.0 / n_w, size=(n_paths, 1))
+    else:
+        wr_p, be_p, win_p = wr, be, avg_win
     draws = _rng.random((n_paths, total_trades))
-    is_win = draws < wr
-    is_be = (~is_win) & (draws < wr + be)
-    rr_matrix = np.where(is_win, avg_win, np.where(is_be, 0.0, -loss_rr))
+    is_win = draws < wr_p
+    is_be = (~is_win) & (draws < wr_p + be_p)
+    rr_matrix = np.where(is_win, win_p, np.where(is_be, 0.0, -loss_rr))
     equity = start_bal * np.cumprod(1 + rr_matrix * (risk_pct / 100.0), axis=1)
     return rr_matrix, equity
 
@@ -4179,7 +4199,8 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
     rng = np.random.default_rng(42)
     rr_matrix, equity_paths = _mc_paths(N_PATHS, total_trades, wr_frac, be_frac,
                                         float(avg_win_rr), float(loss_rr),
-                                        float(risk_pct), float(starting_balance))
+                                        float(risk_pct), float(starting_balance),
+                                        int(total_incl_be))
 
     final_balances = equity_paths[:, -1]
     median_idx = int(np.argsort(final_balances)[N_PATHS // 2])
@@ -4329,11 +4350,10 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
     # a simulation can't make anything certain: never print 100.0% or 0.0%
     _pp_txt = ("over 99%" if prob_profit >= 0.995 else
                "under 1%" if prob_profit <= 0.005 else f"{prob_profit:.0%}")
-    # "Prob. of Profit" read 100.0% because the simulation never samples the
-    # uncertainty in its own win rate (PROJ-01): owner-only until it does.
+    # PROJ-01 fixed: every path samples its own rates from the trades they came
+    # from, so this carries the sample's uncertainty and is shown to everyone.
     _prob_cell = (f'<div class="proj-stat-cell"><div class="proj-stat-label">Prob. of Profit</div>'
-                  f'<div class="proj-stat-value">{_pp_txt}</div></div>'
-                  if _verdicts_on() else "")
+                  f'<div class="proj-stat-value">{_pp_txt}</div></div>')
 
     st.markdown(f"""
     <div class="proj-stat-grid">
@@ -4658,46 +4678,57 @@ def _compute_refinements(stats: dict) -> dict:
     if net is not None and n:
         if net > 0:
             working.append({"title": f"System is net positive (+{net:.1f}R)",
-                            "detail": f"Across {n} completed trades at a {wr:.0f}% win rate. The edge is real \u2014 protect it with consistent risk."})
+                            "detail": f"Across {n} completed trades at a {wr:.0f}% win rate. Protect it with consistent risk.",
+                            "test": ("overall", "good")})
         else:
             holding.append({"title": f"Net result is negative ({net:.1f}R)",
-                            "detail": f"Over {n} trades at {wr:.0f}% win rate \u2014 the mix of win rate and average R isn't profitable yet."})
+                            "detail": f"Over {n} trades at {wr:.0f}% win rate \u2014 the mix of win rate and average R isn't profitable yet.",
+                            "test": ("overall", "bad")})
 
     def _bw(rows):
         elig = [r for r in (rows or []) if r.get("trades", 0) >= MIN]
-        if not elig:
+        if len(elig) < 2:       # "GOLD is carrying the edge" when GOLD is all you trade
             return None, None
         return max(elig, key=lambda r: r["net_rr"]), min(elig, key=lambda r: r["net_rr"])
 
     b, w = _bw(stats.get("by_session"))
     if b and b["net_rr"] > 0:
         working.append({"title": f"{b['session']} is your strongest session",
-                        "detail": f"{b['net_rr']:+.1f}R over {b['trades']} trades ({b['win_rate']:.0f}% win rate)."})
+                        "detail": f"{b['net_rr']:+.1f}R over {b['trades']} trades ({b['win_rate']:.0f}% win rate).",
+                        "test": (f"session:{b['session']}", "good")})
     if w and w is not b and w["net_rr"] < 0:
         holding.append({"title": f"{w['session']} session is bleeding R",
-                        "detail": f"{w['net_rr']:+.1f}R over {w['trades']} trades ({w['win_rate']:.0f}% win rate)."})
+                        "detail": f"{w['net_rr']:+.1f}R over {w['trades']} trades ({w['win_rate']:.0f}% win rate).",
+                        "test": (f"session:{w['session']}", "bad")})
         refine.append({"title": f"Tighten or cut {w['session']} trades",
-                       "action": f"{w['session']} is net {w['net_rr']:+.1f}R. Either stop trading it or raise the bar there and re-measure."})
+                       "action": f"{w['session']} is net {w['net_rr']:+.1f}R. Either stop trading it or raise the bar there and re-measure.",
+                       "test": (f"session:{w['session']}", "bad")})
 
     b, w = _bw(stats.get("by_instrument"))
     if b and b["net_rr"] > 0:
         working.append({"title": f"{b['instrument']} is carrying the edge",
-                        "detail": f"{b['net_rr']:+.1f}R over {b['trades']} trades ({b['win_rate']:.0f}% win rate)."})
+                        "detail": f"{b['net_rr']:+.1f}R over {b['trades']} trades ({b['win_rate']:.0f}% win rate).",
+                        "test": (f"instrument:{b['instrument']}", "good")})
     if w and w is not b and w["net_rr"] < 0:
         holding.append({"title": f"{w['instrument']} is a net drag",
-                        "detail": f"{w['net_rr']:+.1f}R over {w['trades']} trades ({w['win_rate']:.0f}% win rate)."})
+                        "detail": f"{w['net_rr']:+.1f}R over {w['trades']} trades ({w['win_rate']:.0f}% win rate).",
+                        "test": (f"instrument:{w['instrument']}", "bad")})
         refine.append({"title": f"Reconsider trading {w['instrument']}",
-                       "action": f"{w['instrument']} costs you {w['net_rr']:+.1f}R. Drop it or trade only A+ setups there."})
+                       "action": f"{w['instrument']} costs you {w['net_rr']:+.1f}R. Drop it or trade only A+ setups there.",
+                       "test": (f"instrument:{w['instrument']}", "bad")})
 
     b, w = _bw(stats.get("by_entry_model"))
     if b and b["net_rr"] > 0:
         working.append({"title": f"'{b['model']}' is your best model",
-                        "detail": f"{b['net_rr']:+.1f}R over {b['trades']} trades ({b['win_rate']:.0f}% win rate)."})
+                        "detail": f"{b['net_rr']:+.1f}R over {b['trades']} trades ({b['win_rate']:.0f}% win rate).",
+                        "test": (f"model:{b['model']}", "good")})
     if w and w is not b and w["net_rr"] < 0:
         holding.append({"title": f"'{w['model']}' underperforms",
-                        "detail": f"{w['net_rr']:+.1f}R over {w['trades']} trades ({w['win_rate']:.0f}% win rate)."})
+                        "detail": f"{w['net_rr']:+.1f}R over {w['trades']} trades ({w['win_rate']:.0f}% win rate).",
+                        "test": (f"model:{w['model']}", "bad")})
         refine.append({"title": "Lean into your best model",
-                       "action": f"Shift size from '{w['model']}' ({w['net_rr']:+.1f}R) toward your higher-expectancy models."})
+                       "action": f"Shift size from '{w['model']}' ({w['net_rr']:+.1f}R) toward your higher-expectancy models.",
+                       "test": (f"model:{w['model']}", "bad")})
 
     ms = stats.get("mental_state", {})
     if "Good" in ms:
@@ -4707,9 +4738,11 @@ def _compute_refinements(stats: dict) -> dict:
             if d and d["trades"] >= MIN and d["win_rate"] + 8 < good_wr:
                 gap = good_wr - d["win_rate"]
                 holding.append({"title": f"'{st_name}' mental state hurts you",
-                                "detail": f"{d['win_rate']:.0f}% win rate vs {good_wr:.0f}% when Good \u2014 a {gap:.0f}-point drop."})
+                                "detail": f"{d['win_rate']:.0f}% win rate vs {good_wr:.0f}% when Good \u2014 a {gap:.0f}-point drop.",
+                                "test": (f"mental:{st_name}", "bad")})
                 refine.append({"title": f"Treat '{st_name}' as a no-trade signal",
-                               "action": f"Win rate falls {gap:.0f} points in a '{st_name}' state. Step away when you're not sharp."})
+                               "action": f"Win rate falls {gap:.0f} points in a '{st_name}' state. Step away when you're not sharp.",
+                               "test": (f"mental:{st_name}", "bad")})
 
     bbc = stats.get("bad_beat_count", 0); bbp = stats.get("bad_beat_pct")
     if bbc and bbp is not None and bbp >= 3:
@@ -4777,35 +4810,132 @@ def _compute_refinements(stats: dict) -> dict:
             evid = (f"{ya:+.2f}R over {y['Trades']} trades with it"
                     + (f" vs {na:+.2f}R over {n_['Trades']} without" if n_ else ""))
             flag_sugs.append((abs(gap) if gap == gap else abs(ya), "dont",
-                              f"Don't trade with {nice}", evid))
+                              f"Don't trade with {nice}", evid, f"cat:{label} \u00b7 yes"))
         elif yes_better and (y_ok or n_ok):
             evid = (f"{ya:+.2f}R over {y['Trades']} trades when present"
                     + (f" vs {na:+.2f}R without" if n_ else ""))
             flag_sugs.append((abs(gap) if gap == gap else abs(ya), "do",
-                              f"Trade {nice}", evid))
+                              f"Trade {nice}", evid, f"cat:{label} \u00b7 yes"))
     flag_sugs.sort(key=lambda x: -x[0])
-    for _, kind, title, evid in flag_sugs[:3]:
+    for _, kind, title, evid, key in flag_sugs[:3]:
         if kind == "dont":
-            holding.append({"title": title, "detail": evid})
+            holding.append({"title": title, "detail": evid, "test": (key, "bad")})
             refine.append({"title": title,
-                           "action": f"{evid}. Skip these for a month and re-measure."})
+                           "action": f"{evid}. Skip these for a month and re-measure.", "test": (key, "bad")})
         else:
-            working.append({"title": title, "detail": f"{evid}. Keep requiring it."})
+            working.append({"title": title, "detail": f"{evid}. Keep requiring it.", "test": (key, "good")})
 
     cats8 = [r for r in cats if r.get("Trades", 0) >= 8]
     for r in sorted([r for r in cats8 if r["Avg R"] >= 0.5], key=lambda r: -r["Avg R"])[:2]:
         working.append({"title": f"{r['Category']} is worth {r['Avg R']:+.2f}R per trade",
-                        "detail": f"Across {r['Trades']} trades. Keep stacking this condition."})
+                        "detail": f"Across {r['Trades']} trades. Keep stacking this condition.",
+                        "test": (f"cat:{r['Category']}", "good")})
     for r in sorted([r for r in cats8 if r["Avg R"] <= -0.35], key=lambda r: r["Avg R"])[:2]:
         holding.append({"title": f"{r['Category']} costs {r['Avg R']:+.2f}R per trade",
-                        "detail": f"Across {r['Trades']} trades."})
+                        "detail": f"Across {r['Trades']} trades.", "test": (f"cat:{r['Category']}", "bad")})
         refine.append({"title": f"Filter out '{r['Category']}' trades",
                        "action": f"This condition runs {r['Avg R']:+.2f}R over {r['Trades']} trades. "
-                                 "Skip these for a month and re-measure."})
+                                 "Skip these for a month and re-measure.", "test": (f"cat:{r['Category']}", "bad")})
     return {"working": working[:5], "holding_back": holding[:5], "refinements": refine[:5]}
 
 
-def _refinements_tab(f_perf: pd.DataFrame, df_all_safe: pd.DataFrame, styler):
+def _refinement_masks(f_perf: pd.DataFrame) -> dict:
+    """{claim key: (R per trade, mask)} for every slice a Refinements claim can
+    be built on, so each claim can be tested against chance (D4)."""
+    out: dict = {}
+    if f_perf is None or f_perf.empty or "Outcome" not in f_perf.columns:
+        return out
+    g = f_perf[f_perf["Outcome"].isin(["Win", "BE", "Loss"])].copy()
+    rr_col = next((c for c in ["Closed RR", "RR", "Closed R"] if c in g.columns), None)
+    if rr_col is None or g.empty:
+        return out
+    g["__rr"] = pd.to_numeric(g[rr_col], errors="coerce")
+    g = g[g["__rr"].notna()]
+    x = g["__rr"]
+    out["overall"] = (x, None)
+    sess_col = next((c for c in ["Session Norm", "Session"] if c in g.columns), None)
+    if sess_col:
+        ss = g[sess_col].apply(_clean_session_value)
+        for v in ss.dropna().unique():
+            out[f"session:{v}"] = (x, (ss == v).to_numpy())
+    gi = _ensure_instrument_column(g.copy())
+    if "Instrument" in gi.columns:
+        lab = gi["Instrument"].astype(str).str.strip().map(lambda v: _asset_label(v) if v else "")
+        for v in lab[lab.str.len() > 0].unique():
+            out[f"instrument:{v}"] = (x, (lab == v).to_numpy())
+    ge = _ensure_entry_models_list(g.copy())
+    if "Entry Models List" in ge.columns:
+        lists = ge["Entry Models List"].apply(lambda L: [str(m).strip() for m in L] if isinstance(L, (list, tuple)) else [])
+        for m in {m for L in lists for m in L if m}:
+            out[f"model:{m}"] = (x, lists.apply(lambda L, m=m: m in L).to_numpy())
+    ms_col = next((c for c in ["Mental State", "Mental state", "mental_state"] if c in g.columns), None)
+    if ms_col:
+        ms = g[ms_col].astype(str).str.strip()
+        for v in ms.unique():
+            out[f"mental:{v}"] = (x, (ms == v).to_numpy())
+    fm: dict = {}
+    _flag_verdicts(f_perf, "entry", fm)
+    _flag_verdicts(f_perf, "external", fm)
+    for k, (fx, fmask) in fm.items():
+        out[f"cat:{k}"] = (fx, np.asarray(fmask, dtype=bool))
+    return out
+
+
+def _signflip_p(x, lower: bool) -> float:
+    """One-sided p that the average R is above (or below) zero: how often
+    randomly flipping each trade's sign does as well. Seeded like the digest."""
+    v = np.asarray(pd.to_numeric(pd.Series(x), errors="coerce"), dtype=float)
+    v = v[~np.isnan(v)]
+    if len(v) < 2:
+        return 1.0
+    obs = v.mean()
+    rng = np.random.default_rng(7)
+    null = (v * rng.choice([-1.0, 1.0], size=(1000, len(v)))).mean(axis=1)
+    hits = (null <= obs) if lower else (null >= obs)
+    return float((1 + hits.sum()) / 1001)
+
+
+def _test_refinements(result: dict, f_perf: pd.DataFrame) -> dict:
+    """Mark each claim proven (beats chance, Holm across every slice), early (a
+    test ran and it didn't pass) or untested (a count, not a claim)."""
+    from edge_analysis.digest import _perm_p, _holm_pass
+    masks = _refinement_masks(f_perf)
+    # The family is every slice a claim could have been picked from, in both
+    # directions — not just the best and worst ones shown. Testing only the
+    # winners of a look at three sessions fired on 15% of pure-noise journals.
+    keys, ps = [], []
+    for k, (xx, m) in masks.items():
+        if m is not None:
+            n_in = int(np.asarray(m, dtype=bool).sum())
+            if n_in < 5 or n_in >= len(m) - 1:
+                continue
+        for d in ("good", "bad"):
+            keys.append((k, d))
+            ps.append(_signflip_p(xx, lower=d == "bad") if m is None
+                      else _perm_p(xx, m, lower=d == "bad"))
+    passed = {keys[i] for i in _holm_pass(ps)}
+    n_proven = n_early = 0
+    for col in ("working", "holding_back", "refinements"):
+        for it in result.get(col, []):
+            t = it.get("test")
+            if t in keys:
+                it["proven"] = t in passed
+                n_proven += it["proven"]
+                n_early += not it["proven"]
+            else:
+                it["proven"] = None
+    result["n_proven"], result["n_early"] = n_proven, n_early
+    return result
+
+
+def refinements_result(f_perf: pd.DataFrame, df_all_safe: pd.DataFrame) -> dict | None:
+    if f_perf is None or f_perf.empty:
+        return None
+    return _test_refinements(_compute_refinements(_build_refinements_stats(f_perf, df_all_safe)), f_perf)
+
+
+def _refinements_tab(f_perf: pd.DataFrame, df_all_safe: pd.DataFrame, styler,
+                     result: dict | None = None, members: bool = False):
 
     st.markdown("""
     <style>
@@ -4855,47 +4985,44 @@ def _refinements_tab(f_perf: pd.DataFrame, df_all_safe: pd.DataFrame, styler):
         _empty_note("Nothing matches these filters — widen them to see trades here.")
         return
 
-    stats = _build_refinements_stats(f_perf, df_all_safe)
-    result = _compute_refinements(stats)
+    result = result or refinements_result(f_perf, df_all_safe)
 
-    c_working, c_holding, c_refine = st.columns(3)
-
-    with c_working:
-        st.markdown('<div class="ref-col-header" style="color:#16a34a;border-color:#16a34a;">✓ What\'s Working</div>', unsafe_allow_html=True)
-        for item in result.get("working", []):
-            st.markdown(
-                f'<div class="ref-card ref-working">'
-                f'<div class="ref-card-title">{item.get("title","")}</div>'
-                f'<div class="ref-card-body">{item.get("detail","")}</div>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-
-    with c_holding:
-        st.markdown('<div class="ref-col-header" style="color:#ef4444;border-color:#ef4444;">⚠ Holding the System Back</div>', unsafe_allow_html=True)
-        for item in result.get("holding_back", []):
-            st.markdown(
-                f'<div class="ref-card ref-holding">'
-                f'<div class="ref-card-title">{item.get("title","")}</div>'
-                f'<div class="ref-card-body">{item.get("detail","")}</div>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-
-    with c_refine:
-        st.markdown('<div class="ref-col-header" style="color:#4800ff;border-color:#4800ff;">→ Potential Refinements</div>', unsafe_allow_html=True)
-        for item in result.get("refinements", []):
-            st.markdown(
-                f'<div class="ref-card ref-refine">'
-                f'<div class="ref-card-title">{item.get("title","")}</div>'
-                f'<div class="ref-card-body">{item.get("action","")}</div>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-
-    st.markdown("<br>", unsafe_allow_html=True)
-    if st.button("Re-run analysis", key="refinements_rerun"):
-        st.rerun()
+    def _tag(it):
+        if it.get("proven") is True:
+            return '<div class="ref-tag" style="color:#16a34a;">beats chance</div>'
+        if it.get("proven") is False:
+            return '<div class="ref-tag">early read \u2014 could still be luck</div>'
+        return ""
+    cols = [("working", "detail", "#16a34a", "\u2713 What's Working", "ref-working"),
+            ("holding_back", "detail", "#ef4444", "\u26a0 Holding the System Back", "ref-holding"),
+            ("refinements", "action", "#4800ff", "\u2192 Potential Refinements", "ref-refine")]
+    shown = []
+    for key, body, col, head, cls in cols:
+        items = [it for it in result.get(key, []) if not members or it.get("proven") is True]
+        if items:
+            shown.append((items, body, col, head, cls))
+    st.markdown("<style>.ref-tag{font-size:11.5px;font-weight:700;color:#687184;margin-top:6px;}</style>",
+                unsafe_allow_html=True)
+    for (items, body, col, head, cls), c in zip(shown, st.columns(max(1, len(shown)))):
+        with c:
+            st.markdown(f'<div class="ref-col-header" style="color:{col};border-color:{col};">{head}</div>',
+                        unsafe_allow_html=True)
+            for it in items:
+                st.markdown(
+                    f'<div class="ref-card {cls}">'
+                    f'<div class="ref-card-title">{_html.escape(str(it.get("title", "")))}</div>'
+                    f'<div class="ref-card-body">{_html.escape(str(it.get(body, "")))}</div>'
+                    f'{_tag(it)}</div>',
+                    unsafe_allow_html=True,
+                )
+    n_e = result.get("n_early", 0)
+    if members and n_e:
+        st.caption(f"{n_e} more suggestion{'s' if n_e != 1 else ''} from your journal aren't shown yet: "
+                   "each one appears once its difference is bigger than luck would make.")
+    elif not members:
+        st.caption("Each claim is tested against chance (a permutation test across every slice of "
+                   "your journal, so picking the best one doesn't count as proof). "
+                   "Members see only the ones marked \u201cbeats chance\u201d.")
 
 
 
@@ -5619,15 +5746,18 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                 _breaker_strip(_track_only(df_all_safe)[0])
                 render_plan_tab(df_all_safe, styler)
 
-        # Refinements are verdicts ("the edge is real", "keep stacking this
-        # condition") picked from the same splits Entry already tabulates —
-        # the owner-only family until they pass a null test (1.12).
-        if _verdicts_on():
+        # Refinements are verdicts picked from the same splits Entry tabulates.
+        # Each is tested against chance (D4): the owner sees all of them
+        # labelled; members see only the ones that beat chance, and no card
+        # at all while none do.
+        _members = not _verdicts_on()
+        _ref = refinements_result(f_perf, df_all_safe)
+        if _ref and (not _members or _ref.get("n_proven")):
             with st.container(border=True):
                 st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
                 _card_header("Refinements", "Data-backed tweaks worth testing next.")
                 with _budget(1):
-                    _refinements_tab(f_perf, df_all_safe, styler)
+                    _refinements_tab(f_perf, df_all_safe, styler, result=_ref, members=_members)
 
         with st.container(border=True):
             st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)

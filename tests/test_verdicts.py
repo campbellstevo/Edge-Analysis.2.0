@@ -17,7 +17,9 @@ for p in (ROOT, ROOT / "src", ROOT / "tests"):
 
 from streamlit.testing.v1 import AppTest  # noqa: E402
 
-GATED = ["What needs work", "Prob. of Profit", "Recommended from your data"]
+# Prob. of Profit left this list on 27 Sep (D4): its paths now sample the
+# uncertainty of the trades they come from, so it is shown to everyone.
+GATED = ["What needs work", "Recommended from your data"]
 
 
 def _all_text(secrets=None) -> str:
@@ -46,3 +48,11 @@ def test_ea_verdicts_all_shows_them_to_everyone():
     text = _all_text({"EA_VERDICTS": "all"})
     for phrase in ("What needs work", "Prob. of Profit"):
         assert phrase in text, phrase
+
+
+def test_prob_of_profit_is_shown_and_never_certain():
+    import re
+    text = _all_text()
+    m = re.search(r'Prob\. of Profit</div><div class="proj-stat-value">([^<]+)<', text)
+    assert m, "Prob. of Profit missing for visitors"
+    assert m.group(1) not in ("over 99%", "100%")
