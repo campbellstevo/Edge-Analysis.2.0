@@ -654,15 +654,14 @@ def _discipline_section(df: pd.DataFrame, styler) -> None:
 
 
 def _direction_section(df: pd.DataFrame, styler) -> None:
+    # round 23: the same plain rows as the rest of Setups (two big tiles
+    # before), tested, and one honest line when one side is under 3 trades
     t = _t()
-    st.markdown("### Long vs short")
-    st.caption("Expectancy, win rate and net R by trade direction.")
-    rows = _cat_stats(df, "Direction")
-    if rows is None or len(rows) == 0:
-        t._unavailable("Long vs Short"); return
-    order = ["Long", "Short"]
-    rows = rows.assign(__o=rows["Category"].map(lambda v: order.index(v) if v in order else 9)).sort_values("__o").drop(columns="__o")
-    _tiles(rows)
+    if df is None or "Direction" not in df.columns:
+        return
+    from edge_analysis.ui import reshape as rx
+    rx.state_board(df, "Direction", t._verdicts_on(), title="Long vs short", noun="direction",
+                   thin="keep logging both and this becomes a comparison")
 
 
 def _holdtime_section(df: pd.DataFrame, styler) -> None:

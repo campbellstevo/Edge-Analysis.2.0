@@ -74,3 +74,14 @@ def test_a_plus_reads_as_words_not_yes_no(monkeypatch):
     assert "### A+ setups" in html and "<b>11 of 13</b> tagged trades were <b>A+ setup</b>" in html
     assert "<b>Not A+</b>, 2 trades at" in html and "No other answer has 3" in html
     assert "6 trades have no answer logged" in html and ">Yes<" not in html
+
+
+def test_long_vs_short_uses_the_rows(monkeypatch):
+    from edge_analysis.ui import mt5_tabs as M
+    df = _journal(["Long"] * 16 + ["Short"] * 3, [0.1] * 16 + [0.72] * 3).rename(columns={"Mental State": "Direction"})
+    out = []
+    monkeypatch.setattr(rx.st, "markdown", lambda body, **kw: out.append(body))
+    M._direction_section(df, lambda c: c)
+    html = " ".join(out)
+    assert "### Long vs short" in html and html.count('class="ea-pl-row') == 2
+    assert ">Direction<" in html and "kpi" not in html
