@@ -2115,7 +2115,11 @@ def _two_model_sections(counted: pd.DataFrame) -> bool:
     st.caption("Each row is one pair: the Model 1 that set the structure, then the Model 2 that "
                "triggered the entry.")
     both = (m1 != "") & (m2 != "")
-    if not rx.pair_list(counted, m1, m2, _verdicts_on()):
+    _tp = None
+    if "Timeframe 1" in counted.columns and "Timeframe 2" in counted.columns:
+        _t1, _t2 = counted["Timeframe 1"].map(rx._txt), counted["Timeframe 2"].map(rx._txt)
+        _tp = (_t1 + " \u2192 " + _t2).where((_t1 != "") & (_t2 != ""), "")
+    if not rx.pair_list(counted, m1, m2, _verdicts_on(), tfpair=_tp):
         _empty_note("Appears once trades carry both models.")
     with st.expander("Every number, as tables"):
         pair_labels = m1.where(both, "") + " \u2192 " + m2.where(both, "")

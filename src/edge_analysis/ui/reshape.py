@@ -638,7 +638,7 @@ def state_board(df: pd.DataFrame, col: str = "Mental State", verdicts: bool = Tr
 
 
 def pair_list(counted: pd.DataFrame, m1: pd.Series, m2: pd.Series, verdicts: bool = True,
-              col_head: str = "Structure, then trigger") -> bool:
+              col_head: str = "Structure, then trigger", tfpair: pd.Series | None = None) -> bool:
     """His note on the Model 1 × Model 2 grid (27 Sep): "this is hard to
     understand". One sentence saying what the pairs show, then every pair as
     one plain row — structure, then trigger, R a trade as a bar, trades and
@@ -692,6 +692,20 @@ def pair_list(counted: pd.DataFrame, m1: pd.Series, m2: pd.Series, verdicts: boo
                         f"{worst['n']} <span class='ea-pl-l'>{lab(worst, 'bad')}</span>")
     else:
         bits.append("Every pair has under 3 trades so far, so none is a read yet")
+    # the model pair and the timeframe pair are one setup: name the full one
+    # he takes most (a sentence, not a third list of one-trade rows)
+    if tfpair is not None:
+        tp = tfpair.reindex(g.index).fillna("").astype(str)
+        full = g.assign(__tp=tp)
+        full = full[full["__tp"] != ""]
+        if len(full):
+            top = full.groupby(["__m1", "__m2", "__tp"])["__r"].agg(["size", "mean"]).sort_values(
+                ["size", "mean"], ascending=False)
+            (a, b, tf_), row = next(iter(top.iterrows()))
+            if int(row["size"]) >= 3:
+                bits.append(f"Most taken in full: <b>{_h.escape(a)}</b> then <b>{_h.escape(b)}</b> on "
+                            f"<b>{_h.escape(tf_)}</b>, {int(row['size'])} trades at "
+                            f"{_h.escape(fmt_r(float(row['mean'])))} a trade")
     head = ". ".join(bits) + "."
 
     names = [f'<span>{_h.escape(r["m1"])}</span><em>then</em><span>{_h.escape(r["m2"])}</span>'
