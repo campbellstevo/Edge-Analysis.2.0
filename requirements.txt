@@ -16,3 +16,4 @@ sentry-sdk==2.35.0
 streamlit-js-eval==0.1.9
 qrcode==7.4.2
 fpdf2==2.7.9
+cryptography==44.0.2   # SEC-01: seals the device sign-in (Fernet)

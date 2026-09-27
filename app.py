@@ -1575,10 +1575,30 @@ def _prefs_blob() -> dict:
     return {}
 
 
+def _seal_box():
+    """SEC-01 sealer from server-only secrets (never the session overrides a
+    page can reach). None when there's no secret or no crypto library, and
+    then no token is written to the device at all."""
+    try:
+        from edge_analysis.core.seal import sealer
+    except Exception:
+        return None
+
+    def _server(k):
+        try:
+            v = st.secrets[k]
+        except Exception:
+            v = os.environ.get(k)
+        return str(v) if v else None
+    return sealer([_server("EA_SEAL_KEY"), _server("NOTION_OAUTH_CLIENT_SECRET"),
+                   _server("NOTION_CLIENT_SECRET")])
+
+
 def _sync_device_auth() -> None:
     """Persist the current login to this device's browser storage, so the next
     visit to the plain URL logs in automatically (critical on phones, where the
-    Notion app can hijack the OAuth consent page)."""
+    Notion app can hijack the OAuth consent page). Only a sealed blob is
+    stored (SEC-01); writing it also replaces any old plain token."""
     token = (
         st.session_state.get(SessionKeys.USER_TOKEN)
         or st.session_state.get(SessionKeys.OAUTH_TOKEN)
@@ -1590,14 +1610,30 @@ def _sync_device_auth() -> None:
     if st.session_state.get("ea_auth_sig") == _sig:
         return
     st.session_state["ea_auth_sig"] = _sig
+    from edge_analysis.core.seal import seal
+    blob = seal(token, _seal_box())
+    # no sealer: remember only the journal, never the token
+    rec = ("{s:" + json.dumps(blob) + ",d:" + json.dumps(dbid) + "||o.d||''}") if blob else \
+          ("{d:" + json.dumps(dbid) + "||o.d||''}")
     js = (
         "(function(){var o={};try{o=JSON.parse(localStorage.getItem("
         + json.dumps(_DEVICE_AUTH_KEY)
-        + ")||'{}')}catch(e){};var v={t:" + json.dumps(token)
-        + ",d:" + json.dumps(dbid) + "||o.d||''};localStorage.setItem("
+        + ")||'{}')}catch(e){};var v=" + rec + ";localStorage.setItem("
         + json.dumps(_DEVICE_AUTH_KEY) + ",JSON.stringify(v));return true;})()"
     )
     _js_eval(js, key="ea_auth_save")
+
+
+def _device_token(rec: dict) -> str | None:
+    """The token a device record carries: a sealed blob (current), or a plain
+    token from before SEC-01, honoured once so nobody is signed out; the next
+    save overwrites it with a sealed blob."""
+    from edge_analysis.core.seal import unseal
+    if rec.get("s"):
+        return unseal(str(rec["s"]), _seal_box())
+    if rec.get("t"):
+        return str(rec["t"])
+    return None
 
 
 def _restore_device_auth() -> bool:
@@ -1612,9 +1648,12 @@ def _restore_device_auth() -> bool:
         rec = json.loads(saved)
     except Exception:
         return False
-    if not (isinstance(rec, dict) and rec.get("t")):
+    if not isinstance(rec, dict):
         return False
-    _complete_login_with_token(rec["t"])
+    token = _device_token(rec)
+    if not token:
+        return False     # foreign, edited or expired: a normal sign-in, no loop
+    _complete_login_with_token(token)
     # The device remembers the journal you used LAST TIME ON THIS DEVICE —
     # the server store remembers what you actually chose last. Server wins;
     # the device value only fills a gap (e.g. store wiped by a redeploy).
