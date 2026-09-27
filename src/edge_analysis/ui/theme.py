@@ -2081,6 +2081,9 @@ def inject_dark_overlay():
     }
     [data-testid="stTextInputRootElement"] input::placeholder { color: #6b7488 !important; }
     [data-testid="stTextArea"] textarea { color: #e8ebf1 !important; background: #161b27 !important; }
+    /* the text cursor: Streamlit paints it the light theme's near-black, so a
+       tapped box showed no cursor at all and looked like it wouldn't type */
+    input, textarea, [contenteditable="true"] { caret-color: #e8ebf1 !important; }
     [data-testid="stTextArea"] textarea::placeholder { color: #6b7488 !important; }
     /* every switch: the off track was the page colour, so only the knob showed */
     [data-testid="stCheckbox"] label:not(:has(input:checked)) > div:first-child { background: #3a4356 !important; }
