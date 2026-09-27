@@ -56,6 +56,33 @@ _LOSS_NOTES = [
     "Counter-trend against the ETF trend, low quality setup",
 ]
 
+_LESSONS_LOSS = [
+    "Moved my stop to BE too early and got wicked out before it ran",
+    "Should have set BE after TP1, gave the whole move back",
+    "BE too tight again, it came back and tagged me",
+    "Stop was too tight under the swing low, price swept it first",
+    "SL inside the wick, give it room past the sweep",
+    "Price swept the highs before the real move, wait for the sweep",
+    "Liquidity above the Asian high wasn't taken yet, too early",
+    "Entered in the middle of the range, wait for the extremes",
+    "Late entry chasing the candle, let it come back to me",
+    "Chased after missing the first entry",
+    "Fought my HTF bias, stick with the higher timeframe",
+    "Flipped my bias after one candle",
+    "Traded into CPI, stay flat 30 minutes either side of red news",
+    "Revenge trade after the first loss, walk away after one",
+    "Overtraded a slow session, no A+ setups today",
+]
+_LESSONS_WIN = [
+    "Took profit at TP1 and it ran to TP3, trail the runner instead",
+    "Closed early out of fear, trust the target",
+    "Held to TP2 like the plan said, more of this",
+    "Cut it at 1R, the target was right there",
+    "Waited for the sweep before entering, patience paid",
+    "Stuck to my HTF bias and let it play out",
+    "Waited for my session and only took the A+",
+]
+
 _WIN_RRS = [1.5, 1.8, 2.0, 2.3, 2.8, 4.0]
 _WIN_P = [.18, .24, .24, .18, .11, .05]
 
@@ -202,4 +229,9 @@ def demo_df(today: pd.Timestamp | None = None, seed: int = 9) -> pd.DataFrame:
         ms = (ms + pd.offsets.MonthBegin(1)).normalize()
     df = pd.DataFrame(all_rows)
     df["DayName"] = pd.to_datetime(df["Date"]).dt.day_name()
+    # Lessons draw from their own generator so every other demo number stays put
+    lr = np.random.default_rng(seed + 101)
+    df["Teachings/Learning Curve"] = [
+        str(lr.choice(_LESSONS_LOSS if rr < -0.15 else _LESSONS_WIN)) if lr.random() < 0.35 else ""
+        for rr in df["Closed RR"]]
     return df

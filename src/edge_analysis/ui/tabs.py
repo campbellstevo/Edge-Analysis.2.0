@@ -5579,6 +5579,14 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                 _gap(18)
                 _psych_session_alert(df_all_safe, styler)
 
+        from edge_analysis.ui import lessons as _lessons
+        if len(_lessons.lessons_frame(f_perf)) >= _lessons.MIN_LESSONS:
+            with st.container(border=True):
+                st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
+                _card_header("Your lessons", "What you keep writing on your trades, grouped so a repeat stands out.")
+                with _budget(1):
+                    _lessons.render_lessons(f_perf)
+
         if _whoop_on:
             with st.container(border=True):
                 st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)

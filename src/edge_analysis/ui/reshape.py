@@ -948,7 +948,16 @@ def before_after(g: pd.DataFrame) -> None:
 
 
 # ── trade explorer + trade card (mockup V5) ──────────────────────────────────
-_NOTE_COLS = ("Comment", "Teachings/Learning Curve", "Reason of loss", "Notes")
+_NOTE_COLS = ("Teachings/Learning Curve", "Reason of loss", "Notes", "Comment")
+# What a broker sync writes into Comment: "[sl 4387.90]" / "[tp 4601.19]" from
+# MT5, "CON.F.US.GCE.Z26 (GCZ6) · 1 fill(s) in / 1 out · gross …, fees …" from
+# Topstep. Not the trader's words, and the Topstep one carries dollar figures.
+_SYNC_NOTE = re.compile(r"^\[?\s*(sl|tp)\s+[\d.]+\s*\]?$|fill\(s\)|\bgross\s+-?[\d,.]+|\bfees\s+[\d,.]+", re.I)
+
+
+def _note_text(v) -> str:
+    s = _txt(v)
+    return "" if _SYNC_NOTE.search(s) else s
 
 
 def _txt(v) -> str:
@@ -1006,7 +1015,7 @@ def explorer_frame(g: pd.DataFrame) -> pd.DataFrame:
     out["mistake"] = out["mistake"].where(~out["mistake"].str.lower().isin(["no mistake", "none"]), "")
     out["aplus"] = g["A+ Setup?"].map(_yes) if "A+ Setup?" in g.columns else None
     out["flag"] = out["rules"].eq(False) | out["mistake"].ne("")
-    out["notes"] = [" · ".join(x for x in (_txt(g.at[i, c]) for c in _NOTE_COLS if c in g.columns) if x)
+    out["notes"] = [" · ".join(x for x in (_note_text(g.at[i, c]) for c in _NOTE_COLS if c in g.columns) if x)
                     for i in g.index]
     tags = {}
     for c, lab in (("Conviction (1-5)", "Conviction"), ("Mental State", "Mental state"),
