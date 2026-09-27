@@ -2592,6 +2592,17 @@ div[data-testid="stColumn"]:has(.ea-bn) [role="radiogroup"] > label:has(input:ch
 div[data-testid="stColumn"]:has(.ea-bn) [role="radiogroup"] > label:has(input:focus-visible) {
     outline: 2px solid var(--eb-brand); outline-offset: -10px; border-radius: 10px !important; }
 
+/* tablet widths (iPad landscape and below on the desktop bar): the six tabs
+   ran past their column and under the next control; the row now scrolls
+   sideways like the phone's, faded at its edge, and nothing overlaps */
+@media (max-width: 1099px) {
+    div[data-testid="stColumn"]:has(.ea-bn) { min-width: 0 !important; overflow: hidden;
+        -webkit-mask-image: linear-gradient(90deg, #000 88%, transparent);
+                mask-image: linear-gradient(90deg, #000 88%, transparent); }
+    div[data-testid="stColumn"]:has(.ea-bn) [role="radiogroup"] {
+        overflow-x: auto; scrollbar-width: none; padding-right: 28px; }
+    div[data-testid="stColumn"]:has(.ea-bn) [role="radiogroup"]::-webkit-scrollbar { display: none; } }
+
 /* Plan rules and suggestions: one row each, text left, buttons right — also
    on a phone, where Streamlit stacked every column into its own row */
 div[data-testid="stHorizontalBlock"]:has(.ea-row-nowrap):not(:has(div[data-testid="stHorizontalBlock"])) {
@@ -2630,6 +2641,34 @@ div[data-testid="stColumn"]:has(.ea-fbfoot) button:hover [data-testid="stIconMat
            white-space: nowrap; padding: 0 6px; cursor: default; }
 .ea-sync-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; }
 
+/* M7 book chip: where the sync line sat; the sync dot rides on it */
+div[data-testid="stColumn"]:has(.ea-bk) button {
+    height: 40px !important; min-height: 40px !important; border-radius: 999px !important;
+    border: 1px solid var(--eb-line) !important; background: var(--eb-soft) !important;
+    box-shadow: none !important; padding: 0 14px 0 12px !important; gap: 6px !important; }
+div[data-testid="stColumn"]:has(.ea-bk) button:hover { border-color: var(--eb-brand) !important; }
+div[data-testid="stColumn"]:has(.ea-bk) button p {
+    font-size: 14px !important; font-weight: 700 !important; color: var(--eb-brand) !important;
+    white-space: nowrap !important; margin: 0 !important; }
+div[data-testid="stColumn"]:has(.ea-bk) button [data-testid="stIconMaterial"] {
+    color: var(--eb-brand) !important; font-size: 18px !important; }
+div[data-testid="stColumn"]:has(.ea-bk) button svg { color: var(--eb-brand) !important; }
+div[data-testid="stColumn"]:has(.ea-bk) button::before {
+    content: ''; width: 8px; height: 8px; border-radius: 50%; flex: none; background: #ef4444;
+    box-shadow: 0 0 0 3px rgba(239,68,68,0.18); margin-right: 2px; }
+div[data-testid="stColumn"]:has(.ea-bk-ok) button::before { background: #16a34a; box-shadow: 0 0 0 3px rgba(22,163,74,0.18); }
+/* no caret: the chip reads as the book, and it must leave the six tabs their room */
+div[data-testid="stColumn"]:has(.ea-bs.ea-bk) button svg { display: none !important; }
+div[data-testid="stColumn"]:has(.ea-bs.ea-bk) button { padding: 0 12px 0 10px !important; }
+@media (max-width: 1180px) {
+    div[data-testid="stColumn"]:has(.ea-bs.ea-bk) button { padding: 0 8px 0 7px !important; gap: 4px !important; }
+    div[data-testid="stColumn"]:has(.ea-bs.ea-bk) button p { font-size: 13px !important; }
+    /* the chip takes more room than the old sync dot: the tabs give a little */
+    div[data-testid="stHorizontalBlock"]:has(.ea-bk) div[data-testid="stColumn"]:has(.ea-bn) [role="radiogroup"] > label { padding: 0 6px !important; }
+    div[data-testid="stHorizontalBlock"]:has(.ea-bk) div[data-testid="stColumn"]:has(.ea-bn) [role="radiogroup"] > label p { font-size: 14px !important; } }
+@media (max-width: 420px) {
+    div[data-testid="stColumn"]:has(.ea-bk) button { padding: 0 10px 0 9px !important; height: 36px !important; min-height: 36px !important; }
+    div[data-testid="stColumn"]:has(.ea-bk) button p { font-size: 13px !important; } }
 /* square 40px controls: Filters, theme, menu */
 div[data-testid="stColumn"]:is(:has(.ea-bf), :has(.ea-bt), :has(.ea-bm)) button {
     height: 40px !important; min-height: 40px !important; border-radius: 10px !important;

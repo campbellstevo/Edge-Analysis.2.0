@@ -212,6 +212,57 @@ def render_filters(
 
     from edge_analysis.ui.theme import inject_bar_css
     inject_bar_css()
+    # M7 (his yes, 27 Sep): the book in view is always on screen. A journal
+    # holding live AND challenge trades gets a chip where the sync line sat —
+    # the sync dot stays on it, the sync time moves to its tooltip — and a
+    # tap switches books without opening Filters (rule 8 made visible).
+    import re as _re
+    _book_opts = []
+    if tot_opts and len(tot_opts) > 1:
+        _lm = "Live money" in tot_opts
+        _book_opts = [o for o in tot_opts if o != "All"
+                      and not (_lm and o != "Live money" and _re.search("live|funded", o, _re.I))]
+        _book_opts = _book_opts + (["All"] if "All" in tot_opts else [])
+    _BOOK_WORDS = {"All": "Everything", "Executed": "All executed", "Real money only": "Real money"}
+    _cur_book = st.session_state.get("filters_tot_select", _tot_default_for(tot_opts or []))
+    _show_book = len(_book_opts) >= 2 and ("Live money" in _book_opts or "Executed" in _book_opts)
+    _sync_ok = "ea-sync-dot" in (_sync_html or "") and "#16a34a" in (_sync_html or "")
+    _sync_title = ""
+    if _sync_html:
+        _m = _re.search(r"title='([^']*)'", _sync_html)
+        _sync_title = _m.group(1) if _m else ""
+
+    def _pick_book():
+        v = st.session_state.get("ea_book_pick")
+        if v:
+            st.session_state["filters_tot_select"] = v
+            _filters_dirty()
+
+    def _book_chip(marker: str):
+        import html as _hh
+        st.markdown(f'<div class="ea-mk {marker} ea-bk{" ea-bk-ok" if _sync_ok else ""}"></div>',
+                    unsafe_allow_html=True)
+        _lab = _BOOK_WORDS.get(_cur_book, _cur_book)
+        pop = _popover(_lab, None, _hh.unescape(_sync_title) or None)
+        with pop:
+            st.markdown("<div style='font-size:11px;font-weight:700;letter-spacing:0.06em;"
+                        "color:#64748b;margin-bottom:2px;'>WHICH TRADES YOU'RE LOOKING AT</div>",
+                        unsafe_allow_html=True)
+            # the radio follows the Filters box: its value is set here, never
+            # passed as a default too (that pairing prints a Streamlit warning)
+            _kw = {}
+            if _cur_book in _book_opts:
+                st.session_state["ea_book_pick"] = _cur_book
+            else:
+                st.session_state.pop("ea_book_pick", None)
+                _kw["index"] = None
+            st.radio("Book", _book_opts, key="ea_book_pick", on_change=_pick_book,
+                     format_func=lambda o: _BOOK_WORDS.get(o, o), label_visibility="collapsed", **_kw)
+            st.caption("A challenge's trades never mix into your live record. "
+                       "Everything else is under Filters.")
+            if _sync_title:
+                st.caption(_hh.unescape(_sync_title))
+
     if not mobile:
         # One bar: logo · tabs · status · Filters · Focus · theme · menu
         with st.container():
@@ -226,9 +277,12 @@ def render_filters(
                 st.markdown('<div class="ea-mk ea-bn"></div>', unsafe_allow_html=True)
                 _nav()
             with _c_sync:
-                st.markdown('<div class="ea-mk ea-bs"></div>', unsafe_allow_html=True)
-                if _sync_html:
-                    st.markdown(_sync_html, unsafe_allow_html=True)
+                if _show_book:
+                    _book_chip("ea-bs")
+                else:
+                    st.markdown('<div class="ea-mk ea-bs"></div>', unsafe_allow_html=True)
+                    if _sync_html:
+                        st.markdown(_sync_html, unsafe_allow_html=True)
             with _c_flt:
                 st.markdown(f'<div class="ea-mk {_fmark}"></div>', unsafe_allow_html=True)
                 flt = _popover(_flabel, ":material/tune:")
@@ -252,9 +306,12 @@ def render_filters(
                 st.markdown('<div class="ea-mk ea-pl"></div>', unsafe_allow_html=True)
                 st.markdown(f"<div class='ea-pbar-logo'>{_logo_html}</div>", unsafe_allow_html=True)
             with _p1[1]:
-                st.markdown('<div class="ea-mk ea-ps"></div>', unsafe_allow_html=True)
-                if _sync_html:
-                    st.markdown(_sync_html, unsafe_allow_html=True)
+                if _show_book:
+                    _book_chip("ea-ps")
+                else:
+                    st.markdown('<div class="ea-mk ea-ps"></div>', unsafe_allow_html=True)
+                    if _sync_html:
+                        st.markdown(_sync_html, unsafe_allow_html=True)
             with _p1[2]:
                 st.markdown('<div class="ea-mk ea-pbt"></div>', unsafe_allow_html=True)
                 st.button("Theme", key="ea_theme_btn", on_click=_flip_theme,
