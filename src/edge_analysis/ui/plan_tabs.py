@@ -430,6 +430,17 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
         # "every box yes: all 120 trades" when no box has a NO side is a
         # tautology, not a reading
         st.caption("Appears once a box has trades on both sides — a YES and a NO to compare.")
+    elif min(n_book, n_off) < 8:
+        # round 22: a card reading "0 trades — too few to read" beside a real
+        # number isn't a comparison; say where each side stands in one line
+        _b = (f"{n_book} trade{'s' if n_book != 1 else ''} ticked every box" if n_book else
+              "No trade has ticked every box yet")
+        _o = (f"{n_off} had at least one NO ({_fmt_r(exp_off)} a trade)" if n_off >= 8 else
+              f"{n_off} had at least one NO")
+        _k = ("" if n_book < 8 else f" ({_fmt_r(exp_book)} a trade)")
+        st.markdown(f"<div style='font-size:15px;line-height:1.5;margin:2px 0 8px;'>{_b}{_k}; {_o}. "
+                    f"The gap between them is what this list is worth, and it reads once each side has 8 trades."
+                    f"</div>", unsafe_allow_html=True)
     else:
         cards = [("EVERY BOX YES — PER TRADE", *_side(exp_book, n_book)),
                  ("ANY BOX NO — PER TRADE", *_side(exp_off, n_off))]

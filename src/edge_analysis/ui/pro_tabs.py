@@ -82,17 +82,20 @@ def _exit_optimizer(df, styler) -> None:
 # ── 2. Stop-Loss Optimizer (MAE) ──────────────────────────────────────────────
 def _mae_stop_optimizer(df, styler) -> None:
     t = _t()
-    st.markdown("### Stop-loss optimiser (MAE)")
-    st.caption("How far your winners actually dipped before working. A tighter stop that still survives most winners "
-               "improves your R:R.")
     mae = _num(df, "MAE (R)"); rr = _num(df, "Closed RR")
     if mae is None or rr is None:
-        t._unavailable("Stop-Loss Optimizer"); return
+        return                    # no MAE in this journal: no section (round 22)
     g = df.copy(); g["__mae"] = mae.values; g["__rr"] = rr.values
     g = g[pd.notna(g["__mae"]) & pd.notna(g["__rr"])]
     wins = g[g["__rr"] > 0]
     if len(wins) < 8:
-        t._empty_note(f"The stop optimiser needs 8 winning trades with MAE logged \u2014 you have {len(wins)} so far."); return
+        # a heading, a caption and an empty box said "not yet" three ways;
+        # one quiet line says what unlocks it
+        st.caption(f"Stop-loss optimiser: appears at 8 winners with MAE logged (you have {len(wins)}).")
+        return
+    st.markdown("### Stop-loss optimiser (MAE)")
+    st.caption("How far your winners actually dipped before working. A tighter stop that still survives most winners "
+               "improves your R:R.")
     mag = (-wins["__mae"]).clip(lower=0)
     stops = np.round(np.arange(0.3, 2.05, 0.1), 2)
     rows = [{"Stop (R)": float(S), "Winners surviving %": round(float((mag <= S).mean() * 100), 1)} for S in stops]
