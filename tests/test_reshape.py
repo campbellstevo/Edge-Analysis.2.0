@@ -177,7 +177,7 @@ def test_journal_health_names_each_problem():
     assert "2 trades contradict themselves" in titles         # rules ticked + rule-break mistake
     assert not any("Double Confirmation" in t for t in titles)   # a given in his journal, not a gap
     assert "MAE runs past the exit on 2 losses" in titles     # -3.5 and -2.2 on ~-1.1R stops
-    assert "3 fields never filled" in titles
+    assert not any("never filled" in x for x in titles)       # said once, in My template
 
 
 def test_unused_tag_fields_do_not_make_trades_untagged():

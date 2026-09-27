@@ -2009,14 +2009,8 @@ def journal_health(df: pd.DataFrame) -> dict:
                                     f"Worst dips as deep as {fmt_r(float(mae[past].min()))} on trades that closed near "
                                     f"{fmt_r(float(r[past].median()), 1)}. The MAE is measured after the close, so heat "
                                     "stats read deeper than they were.", "Check the sync"))
-    # fields in the template that nobody fills
-    skip = {"Date", "Closed RR", "Outcome", "Result"}
-    never = [c for c in g.columns if not str(c).startswith("__") and c not in skip
-             and g[c].map(lambda v: _blank(v)).all()]
-    if len(never) >= 3:
-        out["problems"].append(("mu", len(never), f"{len(never)} fields never filled",
-                                ", ".join(str(c) for c in never[:8]) + ("…" if len(never) > 8 else "")
-                                + ". Use them or hide them from the template.", "Use or hide"))
+    # fields nobody fills are listed once, in Plan → My template ("Never
+    # used: ..."); this card said it too, with a different count (4 vs 3)
     # fill rate: automatic vs hand-tagged
     auto = [c for c in ("Closed RR", "Session", "Direction", "MFE (R)", "MAE (R)") if c in g.columns]
     for lab, cols in (("Result, session, direction, MFE/MAE", auto), ("Hand tags: " + ", ".join(c.replace("?", "") for c in tags), tags)):

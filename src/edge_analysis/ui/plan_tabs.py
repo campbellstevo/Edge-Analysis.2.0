@@ -262,7 +262,9 @@ def plan_model(df_raw: pd.DataFrame):
         (f"Minimum {_min_rr:g}R of room to target"
          + (" (from your data)" if _min_rr_derived else ""),
          ok_room, f"\u2265{_min_rr:g}R", f"<{_min_rr:g}R", bool(planned.notna().any())),
-        ("Stick to your proven instruments", on_proven, "proven", "other", True),
+        # one instrument traded: nothing to choose between, so no row
+        ("Stick to your proven instruments", on_proven, "proven", "other",
+         _sym.str.strip().replace({"nan": "", "None": ""}).loc[lambda x: x != ""].nunique() > 1),
     ]
     gates = [gt[:4] for gt in gates if gt[4]]
 
