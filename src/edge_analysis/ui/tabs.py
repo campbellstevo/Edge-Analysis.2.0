@@ -1717,16 +1717,13 @@ def _psych_session_alert(df: pd.DataFrame, styler) -> None:
     session is the weakest — not a hard-coded Asia rule, so any template's
     session vocabulary works."""
     import html as _hh
-    st.markdown("### Session balance")
     sess_col = next((c for c in ["Session Norm", "Session"] if c in df.columns), None)
     if sess_col is None:
-        _unavailable("Sessions")
         return
     g = df.copy()
     g["__sess"] = g[sess_col].apply(_clean_session_value)
     g = g[g["__sess"].notna()]
     if g.empty:
-        _unavailable("Sessions")
         return
     total = len(g)
     counts = g["__sess"].value_counts()
@@ -1746,15 +1743,17 @@ def _psych_session_alert(df: pd.DataFrame, styler) -> None:
     overweight = weakest if (weakest and stats[weakest][1] > WEAKEST_SESSION_SHARE_ALERT) else None
 
     if overweight:
+        _gap(18)
+        st.markdown("### Session balance")
         _n, _pct, _wr = stats[overweight]
         _swr_best = stats[strongest][2]
         extra = round(_n * ((_swr_best - _wr) / 100), 1)
         _insight_box(f"<b>{overweight} is overweight</b> — {_pct}% of your trades sit in your "
                      f"weakest session ({_wr}% win vs {_swr_best}% in {strongest}). Moving those "
                      f"entries to {strongest} would have meant roughly <b>+{extra} wins</b> this period.", "bad")
-    elif weakest:
-        _insight_box(f"Session balance healthy — your weakest session ({weakest}) holds "
-                     f"{stats[weakest][1]}% of trades, under the {WEAKEST_SESSION_SHARE_ALERT:.0f}% line.", "good")
+    # round 20: Entry → Timing already lists every session's trades and R;
+    # this section only speaks when the weakest one is overweight
+    return
 
     cols = st.columns(max(1, len(sessions)))
     for col_, name in zip(cols, sessions):
@@ -1827,8 +1826,6 @@ def _psych_3sl_compliance(df: pd.DataFrame, styler) -> None:
     scored: window rules are retired (COMP-01) and members set their own."""
     _gap(14)
     st.markdown("### One trade per session")
-    st.caption("The 3 Session Lock: at most one entry per session per day — "
-               "counted from your journal's session and date.")
 
     sess_col = next((c for c in ["Session Norm","Session"] if c in df.columns), None)
     dcol     = next((c for c in ["Date & Time","Day/Time/Date of Trade","Date","Datetime"] if c in df.columns), None)
@@ -1867,32 +1864,27 @@ def _psych_3sl_compliance(df: pd.DataFrame, styler) -> None:
     except Exception:
         pass
 
-    msb_color = "#ef4444" if multi_session_breaks > 0 else "#4800ff"
-    st.markdown(f"<div class='kpi'><div class='label'>Extra entries in a session</div>"
-                f"<div class='value' style='color:{msb_color}'>{multi_session_breaks}</div>"
-                f"<div class='muted'>on {multi_session_days} day{'s' if multi_session_days != 1 else ''}"
-                f" with a second entry in the same session</div></div>",
-                unsafe_allow_html=True)
-
-    if multi_session_breaks > 0:
-        _insight_box(
-            f"<b>{multi_session_breaks} extra entr{'ies' if multi_session_breaks != 1 else 'y'}</b> "
-            f"went into a session that already had one, on {multi_session_days} "
-            f"day{'s' if multi_session_days != 1 else ''}.", "warn")
-    elif not gs.empty:
-        _insight_box("One entry per session throughout — no session with a second entry.")
-
+    # round 20: the score above already counts these; a big "2" and a
+    # warning box said it twice more. One line, with where it happens.
+    where = ""
     if multi_session_breaks > 0 and not session_counts.empty:
         try:
-            # Which SESSIONS repeat — the pattern is actionable; the dates aren't.
             brk = session_counts[session_counts["n"] > 1].copy()
             per_sess = (brk.groupby("__sess_clean")["n"].agg(
                 lambda v: int((v - 1).sum())).sort_values(ascending=False))
             bits = [f"{name} \u00d7{int(x)}" for name, x in per_sess.items() if int(x) > 0]
-            if bits:
-                st.caption("Where it happens: " + " \u00b7 ".join(bits[:4]))
+            where = (" (" + ", ".join(bits[:4]) + ")") if bits else ""
         except Exception:
-            pass
+            where = ""
+    if multi_session_breaks > 0:
+        st.markdown(
+            f"<div class='ea-lock1' style='font-size:15px;line-height:1.5;'><b>{multi_session_breaks} second "
+            f"entr{'ies' if multi_session_breaks != 1 else 'y'}</b> went into a session you'd already traded, "
+            f"on {multi_session_days} day{'s' if multi_session_days != 1 else ''}{_html.escape(where)}. "
+            f"They're counted in the score above.</div>", unsafe_allow_html=True)
+    elif not gs.empty:
+        st.markdown("<div class='ea-lock1' style='font-size:15px;'>One entry per session, every day so far.</div>",
+                    unsafe_allow_html=True)
 
 
 def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
@@ -5803,7 +5795,6 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                     _tilt(_data, styler)
                     _gap(18)
                     _mistake_section(_data, styler)
-                _gap(18)
                 _psych_session_alert(df_all_safe, styler)
 
         from edge_analysis.ui import lessons as _lessons

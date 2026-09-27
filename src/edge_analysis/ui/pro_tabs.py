@@ -197,8 +197,7 @@ def _monte_carlo(df, styler) -> None:
 # ── 4. Tilt / Post-Loss behaviour ─────────────────────────────────────────────
 def _tilt(df, styler) -> None:
     t = _t()
-    st.markdown("### Tilt check — the trade after a loss")
-    st.caption("Next-trade average by prior outcome, and how fast you get back in after a red one.")
+    st.markdown("### The trade after a loss")
     g = df.copy()
     g["__dt"] = pd.to_datetime(g.get("Date"), errors="coerce")
     if g["__dt"].isna().all():
@@ -221,43 +220,35 @@ def _tilt(df, styler) -> None:
         t._unavailable("Tilt / Post-Loss Behaviour"); return
     after_loss = next((r for r in rows if r["Category"] == "After a Loss"), None)
     after_win = next((r for r in rows if r["Category"] == "After a Win"), None)
-    rev = 0
-    _lts = g.loc[pd.Series(g["__oc"]).eq("Loss"), "__dt"].tolist()
-    for _, _r0 in g.iterrows():
-        for _lt in _lts:
-            if _lt < _r0["__dt"] and (_r0["__dt"] - _lt) <= pd.Timedelta(minutes=120):
-                rev += 1
-                break
-
-    def _tchip(lab, val, sub, col):
-        return (f"<div style='flex:1;min-width:170px;background: rgb(248, 249, 252);border-radius:10px;"
-                f"padding:12px 16px;'><div style='font-size:11px;font-weight:700;"
-                f"letter-spacing:0.06em;color:#64748b;'>{lab}</div>"
-                f"<div style='font-size:21px;font-weight:800;color:{col};'>{val}</div>"
-                f"<div style='font-size:11.5px;color:#64748b;'>{sub}</div></div>")
-
-    _chips = []
-    if after_loss:
-        _c = "#ef4444" if after_loss["Avg R"] < 0 else "#16a34a"
-        _chips.append(_tchip("AFTER A LOSS", f"{after_loss['Avg R']:+.2f}R",
-                             f"next trade \u00b7 {after_loss['Trades']} samples \u00b7 {after_loss['Win %']:.0f}% win", _c))
-    if after_win:
-        _c = "#16a34a" if after_win["Avg R"] >= 0 else "#ef4444"
-        _chips.append(_tchip("AFTER A WIN", f"{after_win['Avg R']:+.2f}R",
-                             f"next trade \u00b7 {after_win['Trades']} samples \u00b7 {after_win['Win %']:.0f}% win", _c))
-    _chips.append(_tchip("QUICK RE-ENTRIES", str(rev), "within 2h of a loss",
-                         "#b45309" if rev else "#16a34a"))
-    st.markdown("<div style='display:flex;gap:12px;flex-wrap:wrap;margin:6px 0 8px;'>"
-                + "".join(_chips) + "</div>", unsafe_allow_html=True)
-    if after_loss and after_win:
-        d = after_win["Win %"] - after_loss["Win %"]
-        if d > 8:
-            t._insight_box(f"Clear tilt signal — win rate drops to <b>{after_loss['Win %']:.0f}%</b> after a loss "
-                           f"vs <b>{after_win['Win %']:.0f}%</b> after a win (a {d:.0f}-point swing). "
-                           f"A mandatory pause after every loss would likely recover R.", "bad")
-        else:
-            t._insight_box(f"No strong tilt — your post-loss win rate ({after_loss['Win %']:.0f}%) holds up vs post-win "
-                           f"({after_win['Win %']:.0f}%). Good emotional control.", "good")
+    # round 20: three tiles became one sentence. Quick re-entries are
+    # counted in the Discipline score ("came within 2h of a loss"), and
+    # "Good emotional control" was a verdict drawn from a handful of trades.
+    import html as _h
+    if not (after_loss and after_win):
+        one = after_loss or after_win
+        st.markdown(f"<div style='font-size:15px;line-height:1.5;'>{_h.escape(one['Category'])}, your next trade "
+                    f"averaged <b>{one['Avg R']:+.2f}R</b> over {one['Trades']}.</div>", unsafe_allow_html=True)
+        return
+    from edge_analysis.digest import _perm_p
+    nxt = g[g["__prev"].isin(["Loss", "Win"])]
+    m = nxt["__prev"].eq("Loss").to_numpy()
+    small = min(after_loss["Trades"], after_win["Trades"]) < 10
+    p_bad = 1.0 if small else _perm_p(nxt["__rr"], m, lower=True)
+    worse = after_loss["Avg R"] < after_win["Avg R"] - 0.1
+    if small:
+        verdict = "Too few trades on either side to call it yet."
+    elif worse and p_bad < 0.05:
+        verdict = "Trades after a loss do worse, beyond chance: a pause after a loss would likely save R."
+    elif worse:
+        verdict = "After a loss looks weaker, but not beyond chance yet."
+    else:
+        verdict = "Nothing in the numbers points to chasing losses."
+    st.markdown(
+        f"<div style='font-size:15px;line-height:1.55;'>After a loss, your next trade averaged "
+        f"<b style='color:{'#16a34a' if after_loss['Avg R'] >= 0 else '#ef4444'}'>{after_loss['Avg R']:+.2f}R</b> "
+        f"over {after_loss['Trades']} ({after_loss['Win %']:.0f}% won); after a win, "
+        f"<b style='color:{'#16a34a' if after_win['Avg R'] >= 0 else '#ef4444'}'>{after_win['Avg R']:+.2f}R</b> "
+        f"over {after_win['Trades']} ({after_win['Win %']:.0f}% won). {verdict}</div>", unsafe_allow_html=True)
 
 
 # ── 5. A-Game vs Everything ───────────────────────────────────────────────────
