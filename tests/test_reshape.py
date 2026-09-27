@@ -218,3 +218,33 @@ def test_hour_window_hugs_the_hours_traded_even_past_midnight():
 
 def test_a_day_trader_from_eight_to_eleven_skips_the_night():
     assert rx.trade_window({8, 10, 11, 12, 15, 16, 18, 21, 22, 23}) == list(range(7, 24)) + [0]
+
+
+def test_record_profit_factor_matches_the_all_time_card():
+    # the two cards read 1.36 and 1.37: one counted scratches, one didn't
+    r = pd.Series([2.8, -1.0, 0.1, -0.1, 1.5, -1.06, 0.05, -1.0])
+    s = rx.record_stats(r, pd.Series(pd.date_range("2026-09-01", periods=len(r))))
+    assert abs(s["pf"] - r[r > 0].sum() / -r[r < 0].sum()) < 1e-9
+
+
+def test_record_card_does_not_repeat_the_all_time_numbers(monkeypatch):
+    out = []
+    monkeypatch.setattr(rx.st, "markdown", lambda body, **k: out.append(body))
+    monkeypatch.setattr(rx.st, "altair_chart", lambda *a, **k: None)
+    monkeypatch.setattr(rx.st, "selectbox", lambda *a, **k: (k.get("options") or a[1])[0] if (a[1:] or k.get("options")) else None)
+    monkeypatch.setattr(rx.st, "columns", lambda n, **k: [_Col() for _ in range(n if isinstance(n, int) else len(n))])
+    monkeypatch.setattr(rx.st, "caption", lambda *a, **k: None)
+    g = pd.DataFrame({"__Date": pd.date_range("2026-09-01", periods=8), "Closed RR": [2.8, -1.0, 0.1, -0.1, 1.5, -1.06, 0.05, -1.0]})
+    try:
+        rx.record_card(g, lambda c: c)
+    except Exception:
+        pass                                   # only the tiles row matters here
+    tiles = out[0]
+    for gone in (">Net<", ">Expectancy<", ">Win rate<", ">Profit factor<"):
+        assert gone not in tiles
+    assert ">Max drawdown<" in tiles and ">Win vs loss size<" in tiles
+
+
+class _Col:
+    def __enter__(self): return self
+    def __exit__(self, *a): return False

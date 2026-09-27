@@ -1338,7 +1338,9 @@ def record_stats(r: pd.Series, dates: pd.Series) -> dict:
     dd = cum - cum.cummax()
     out = dict(n=n, net=float(r.sum()), exp=float(r.mean()) if n else 0.0,
                win=100.0 * len(wins) / n if n else 0.0, be=100.0 * (n - len(wins) - len(losses)) / n if n else 0.0,
-               pf=(float(wins.sum() / -losses.sum()) if len(losses) and losses.sum() else None),
+               # every gain over every loss, scratches included: the All time
+               # card's definition (they read 1.36 and 1.37 side by side)
+               pf=(float(r[r > 0].sum() / -r[r < 0].sum()) if (r < 0).any() else None),
                avg_w=float(wins.mean()) if len(wins) else None, avg_l=float(losses.mean()) if len(losses) else None,
                maxdd=float(dd.min()) if n else 0.0, dd_from=None, dd_to=None, dd_back=None)
     if n and out["maxdd"] < 0:
@@ -1416,16 +1418,17 @@ def record_card(g: pd.DataFrame, styler) -> None:
                                                              else "not yet recovered"))
     cur = s["cur"]
     streak_v = ("none" if cur == 0 else f"{abs(cur)} {'win' if cur > 0 else 'loss'}{'' if abs(cur) == 1 else ('s' if cur > 0 else 'es')}")
+    # Net, expectancy, win rate and profit factor sit in the All time card
+    # right above; this card carries only what that one doesn't (one stat once)
+    size = ("—" if not (s["avg_w"] and s["avg_l"]) else f"{s['avg_w'] / -s['avg_l']:.1f}×")
     tiles([
-        ("Net", fmt_r(s["net"], 1), f"{s['n']} trades", GREEN if s["net"] >= 0 else RED),
-        ("Expectancy", fmt_r(s["exp"]), "per trade", GREEN if s["exp"] >= 0 else RED),
-        ("Win rate", f"{s['win']:.0f}%", f"of all trades · {s['be']:.0f}% break-even", "#4800ff"),
-        ("Profit factor", "—" if s["pf"] is None else f"{s['pf']:.2f}",
-         (f"avg win {fmt_r(s['avg_w'], 1)} · loss {fmt_r(s['avg_l'], 1)}" if s["avg_w"] is not None and s["avg_l"] is not None else ""),
-         "#4800ff"),
         ("Max drawdown", fmt_r(s["maxdd"], 1), dd_sub, RED if s["maxdd"] < 0 else GREEN),
         ("Streak", streak_v, f"longest: {s['best_w']} wins · {s['best_l']} losses",
          GREEN if cur > 0 else (RED if cur < 0 else "#64748b")),
+        ("Win vs loss size", size,
+         (f"avg win {fmt_r(s['avg_w'], 1)} · avg loss {fmt_r(s['avg_l'], 1)} · {s['be']:.0f}% break-even"
+          if s["avg_w"] is not None and s["avg_l"] is not None else f"{s['be']:.0f}% break-even"),
+         "#4800ff"),
     ])
     # equity curve + drawdown, one trade per point, shared time axis
     cum = g["__r"].cumsum()
