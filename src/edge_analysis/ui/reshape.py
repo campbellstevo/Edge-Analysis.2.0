@@ -425,7 +425,8 @@ def pair_rows(counted: pd.DataFrame, m1: pd.Series, m2: pd.Series) -> list[dict]
     return out
 
 
-def ranked_rows(rows: list[dict], names: list[str], head: str, col_head: str) -> None:
+def ranked_rows(rows: list[dict], names: list[str], head: str, col_head: str,
+                cap: bool = True) -> None:
     """The plain ranked rows (27 Sep): a sentence, then one row per group —
     its name (already escaped HTML), R a trade as a bar from break-even,
     trades, wins and total in words. Rows under PAIR_FEW trades are dashed."""
@@ -471,12 +472,94 @@ def ranked_rows(rows: list[dict], names: list[str], head: str, col_head: str) ->
  .ea-pl-v{{text-align:right;}}
 }}
 """
-    st.markdown(css(extra) + f'<div class="ea-rx"><div class="ea-pl-head">{head}</div>'
+    top = f'<div class="ea-pl-head">{head}</div>' if head else ""
+    foot = (f'<div class="ea-rx-cap">Best first. Dashed rows have under {PAIR_FEW} trades — too few to read yet. '
+            f'The centre line is break-even.</div>') if cap else '<div style="height:10px"></div>'
+    st.markdown(css(extra) + f'<div class="ea-rx">{top}'
                 f'<div class="ea-pl-cols"><span>{_h.escape(col_head)}</span><span>R per trade</span>'
-                f'<span style="text-align:right">Result</span></div>{body}'
-                f'<div class="ea-rx-cap">Best first. Dashed rows have under {PAIR_FEW} trades — too few to read yet. '
-                f'The centre line is break-even.</div></div>',
+                f'<span style="text-align:right">Result</span></div>{body}{foot}</div>',
                 unsafe_allow_html=True)
+
+
+def group_rows(g: pd.DataFrame, labels: pd.Series) -> list[dict]:
+    """One row per label of a _counted frame, best R a trade first."""
+    out = []
+    for v, grp in g.groupby(labels):
+        out.append(dict(m=str(v), n=int(len(grp)), exp=float(grp["__r"].mean()), net=float(grp["__r"].sum()),
+                        won=int(grp["Outcome"].eq("Win").sum()) if "Outcome" in grp.columns else None,
+                        idx=grp.index))
+    out.sort(key=lambda r: (-r["exp"], -r["n"]))
+    return out
+
+
+TIMING_RICH = 60      # below this many trades the hour and day × time charts are mostly empty cells
+
+
+def when_board(df: pd.DataFrame, sessions: bool = True, verdicts: bool = True,
+               days: bool = True) -> bool:
+    """Round 14 ("When you trade", 5/10): one sentence, then sessions and
+    weekdays as the plain ranked rows. On a young journal the hour bars were
+    all grey and the day × time grid mostly hatched; those charts now wait
+    in an expander (tabs._timing_reshaped). Claims are Holm-tested across
+    every session and day, both directions. False when there's nothing to
+    group by."""
+    if df is None or df.empty:
+        return False
+    g = _counted(df)
+    total = int(len(g))
+    blocks = []
+    if sessions:
+        sc = next((c for c in ("Session Norm", "Session") if c in g.columns), None)
+        if sc:
+            lab = g[sc].map(_txt)
+            if (lab != "").sum() >= 3 and lab[lab != ""].nunique() >= 2:
+                blocks.append(("Session", "sessions", group_rows(g[lab != ""], lab[lab != ""])))
+    day_col = "DayName" if "DayName" in g.columns else ("Day" if "Day" in g.columns else None)
+    if day_col and days:
+        full = {d[:3].lower(): d for d in DAYS}
+        dl = g[day_col].map(_txt).str[:3].str.lower().map(full)
+        if dl.notna().sum() >= 3 and dl.dropna().nunique() >= 2:
+            blocks.append(("Day", "days", group_rows(g[dl.notna()], dl[dl.notna()])))
+    if not blocks:
+        return False
+    from edge_analysis.digest import _perm_p, _holm_pass
+    x = g["__r"]
+    keys, ps = [], []
+    for kind, _w, rows in blocks:
+        for r in rows:
+            if PAIR_FEW <= r["n"] < total - 1:
+                m = pd.Series(x.index.isin(r["idx"]), index=x.index)
+                for d in ("good", "bad"):
+                    keys.append((kind, r["m"], d))
+                    ps.append(_perm_p(x, m, lower=d == "bad"))
+    passed = {keys[i] for i in _holm_pass(ps)} if ps else set()
+
+    def lab_(kind, r, d):
+        return "beats chance" if (kind, r["m"], d) in passed else "early read"
+
+    def said(kind, r, d):
+        return verdicts or (kind, r["m"], d) in passed
+
+    bits = []
+    for kind, word, rows in blocks:
+        ok = [r for r in rows if r["n"] >= 3]
+        if not ok:
+            continue
+        best, worst = ok[0], ok[-1]
+        part = []
+        if best["exp"] > 0 and said(kind, best, "good"):
+            part.append(f"<b>{_h.escape(best['m'])}</b> leads at {_h.escape(fmt_r(best['exp']))} a trade over "
+                        f"{best['n']} <span class='ea-pl-l'>{lab_(kind, best, 'good')}</span>")
+        if worst is not best and worst["exp"] < 0 and said(kind, worst, "bad"):
+            part.append(f"<b>{_h.escape(worst['m'])}</b> costs {_h.escape(fmt_r(worst['exp']))} a trade over "
+                        f"{worst['n']} <span class='ea-pl-l'>{lab_(kind, worst, 'bad')}</span>")
+        if part:
+            bits.append(("By session: " if kind == "Session" else "By day: ") + "; ".join(part))
+    head = (". ".join(bits) + ".") if bits else "Each row is what trades in that slot paid, best first."
+    for i, (kind, _w, rows) in enumerate(blocks):
+        ranked_rows(rows, [f"<span>{_h.escape(r['m'])}</span>" for r in rows], head if i == 0 else "", kind,
+                    cap=i == len(blocks) - 1)
+    return True
 
 
 STATE_MIN = 3         # a second state needs this many trades before states are compared

@@ -2353,18 +2353,36 @@ def _timing_reshaped(f: pd.DataFrame, df_raw: pd.DataFrame, show_table) -> None:
     if data is None or data.empty:
         _empty_note("Timing appears once trades are logged.")
         return
-    metric = rx.metric_picker("ea_time_metric")
-    st.markdown("### By hour of entry")
-    st.caption("On your journal's own clock. Grey bars have too few trades to read yet.")
-    if not rx.hour_bars(data, metric):
-        _empty_note("Hours appear once your trades carry an entry time.")
-    _gap(14)
-    st.markdown("### Day \u00d7 time of day")
-    st.caption("Four-hour blocks. Hatched cells have under 5 trades. "
-               "The All day column is each weekday on its own.")
-    if not rx.day_time_grid(data, metric):
-        # no entry times: keep the plain day-of-week view
-        _time_days_tab(f, show_table)
+    # round 14: sessions and weekdays first, as the plain ranked rows (the
+    # setups grid already carries sessions for single-model journals); on a
+    # young journal the hour bars were all grey and the day x time grid mostly
+    # hatched, so those wait in an expander until there are enough trades
+    _n = int(data["Outcome"].isin(["Win", "BE", "Loss"]).sum()) if "Outcome" in data.columns else len(data)
+    _rich = _n >= rx.TIMING_RICH
+    # a rich journal keeps its weekdays in the grid's All day column (one
+    # stat once); a young one reads them as rows
+    _rows = rx.when_board(data, sessions=not st.session_state.get("_ea_sess_in_grid"),
+                          verdicts=_verdicts_on(), days=not _rich)
+    if _rows:
+        st.session_state["_ea_sess_rows"] = True
+    import contextlib
+    _rich = _rich or not _rows
+    if not _rich:
+        _gap(6)
+    with (contextlib.nullcontext() if _rich else
+          st.expander(f"By hour and by day \u00d7 time of day \u2014 thin at {_n} trades")):
+        metric = rx.metric_picker("ea_time_metric")
+        st.markdown("### By hour of entry")
+        st.caption("On your journal's own clock. Grey bars have too few trades to read yet.")
+        if not rx.hour_bars(data, metric):
+            _empty_note("Hours appear once your trades carry an entry time.")
+        _gap(14)
+        st.markdown("### Day \u00d7 time of day")
+        st.caption("Four-hour blocks. Hatched cells have under 5 trades. "
+                   "The All day column is each weekday on its own.")
+        if not rx.day_time_grid(data, metric):
+            # no entry times: keep the plain day-of-week view
+            _time_days_tab(f, show_table)
 
 
 def _sessions_tab(f: pd.DataFrame, show_table):
@@ -5607,8 +5625,9 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
             st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
             _card_header("Timing", "When your edge shows up \u2014 hours, sessions and days.")
             with _budget(1):
+                st.session_state["_ea_sess_rows"] = False
                 _timing_reshaped(f_perf, df_all_safe, show_table)
-                if not st.session_state.get("_ea_sess_in_grid"):
+                if not st.session_state.get("_ea_sess_in_grid") and not st.session_state.get("_ea_sess_rows"):
                     _gap(18)
                     _sessions_tab(f_perf, show_table)
                 # hold time moved to Managing the trade as a dot strip (round 6)
