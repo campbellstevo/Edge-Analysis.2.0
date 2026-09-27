@@ -69,7 +69,8 @@ def test_no_empty_wrapper_blocks_left():
 def test_not_enough_data_is_a_quiet_note_not_a_warning():
     src = (ROOT / "src" / "edge_analysis" / "ui" / "pro_tabs.py").read_text()
     assert not re.search(r'_insight_box\("Need ~', src)
-    assert "you have {len(wins)} so far" in src
+    # round 22: one quiet caption line saying what unlocks it
+    assert 'st.caption(f"Stop-loss optimiser: appears at 8 winners with MAE logged (you have {len(wins)}).")' in src
 
 
 def test_suggested_rules_are_choices_with_real_evidence():
