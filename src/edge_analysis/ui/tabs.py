@@ -2344,6 +2344,11 @@ def _per_tag_confluences(g: pd.DataFrame) -> None:
     render_entry_model_table(conf_df, title=None, first_col_label="Confluence")
 
 
+from edge_analysis.ui import reshape as rx_ap  # noqa: E402
+_AP_WORDS = {"yes": "A+ setup", "true": "A+ setup", "1": "A+ setup", "checked": "A+ setup",
+             "no": "Not A+", "false": "Not A+", "0": "Not A+"}
+
+
 def _timing_reshaped(f: pd.DataFrame, df_raw: pd.DataFrame, show_table) -> None:
     """Mockup V3: hour bars replace the 24-hour wheel, and a weekday × time
     grid replaces the day-of-week table (its All day column). One metric
@@ -5613,6 +5618,15 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                 _confluences_tab(f_perf, show_table)
                 _gap(18)
                 _timeframes_tab(f_perf, show_table)
+                # round 15: A+ or not, as its own plain read (it was only a
+                # checklist row on Plan)
+                if "A+ Setup?" in f_perf.columns and \
+                        int(f_perf["A+ Setup?"].map(rx_ap._txt).ne("").sum()) >= 3:
+                    _gap(18)
+                    rx_ap.state_board(
+                        f_perf, "A+ Setup?", _verdicts_on(), title="A+ setups",
+                        relabel=_AP_WORDS, noun="answer",
+                        thin="keep tagging honestly and this becomes a comparison")
                 if _mt5:
                     _gap(18)
                     _direction_section(_data, styler)

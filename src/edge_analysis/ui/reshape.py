@@ -565,7 +565,10 @@ def when_board(df: pd.DataFrame, sessions: bool = True, verdicts: bool = True,
 STATE_MIN = 3         # a second state needs this many trades before states are compared
 
 
-def state_board(df: pd.DataFrame, col: str = "Mental State", verdicts: bool = True) -> bool:
+def state_board(df: pd.DataFrame, col: str = "Mental State", verdicts: bool = True,
+                title: str = "Mental state", relabel=None,
+                thin: str = "keep logging the off days honestly and this becomes a comparison",
+                noun: str = "state") -> bool:
     """Round 13: how you felt against what the trade paid, for whatever words
     the journal uses. The old gate only knew Good / Okay / Bad; his journal
     and the demo say "Clear & Calm", so it drew nothing for anyone. With one
@@ -575,20 +578,19 @@ def state_board(df: pd.DataFrame, col: str = "Mental State", verdicts: bool = Tr
         return False
     g = _counted(df)
     lab = g[col].map(_txt)
+    if relabel:
+        # a Yes/No tag reads as words ("A+" / "Not A+"), whatever the journal stores
+        lab = lab.map(lambda v: relabel.get(v.lower(), v) if v else v)
     untagged = int((lab == "").sum())
     g, lab = g[lab != ""], lab[lab != ""]
     total = int(len(g))
     if total < 3:
         return False
-    rows = []
-    for v, grp in g.groupby(lab):
-        rows.append(dict(m=str(v), n=int(len(grp)), exp=float(grp["__r"].mean()), net=float(grp["__r"].sum()),
-                         won=int(grp["Outcome"].eq("Win").sum()) if "Outcome" in grp.columns else None,
-                         idx=grp.index))
+    rows = group_rows(g, lab)
     by_n = sorted(rows, key=lambda r: -r["n"])
     t = _tokens()
-    st.markdown("### Mental state")
-    tail = f" {untagged} trade{'s have' if untagged != 1 else ' has'} no state logged." if untagged else ""
+    st.markdown(f"### {title}")
+    tail = f" {untagged} trade{'s have' if untagged != 1 else ' has'} no {noun} logged." if untagged else ""
     if len(by_n) == 1 or by_n[1]["n"] < STATE_MIN:
         top, rest = by_n[0], by_n[1:]
         s = (f"<b>{top['n']} of {total}</b> tagged trades were <b>{_h.escape(top['m'])}</b>, "
@@ -597,8 +599,8 @@ def state_board(df: pd.DataFrame, col: str = "Mental State", verdicts: bool = Tr
             s += " The rest: " + "; ".join(
                 f"<b>{_h.escape(r['m'])}</b>, {r['n']} trade{'s' if r['n'] != 1 else ''} at "
                 f"{_h.escape(fmt_r(r['exp']))}" for r in rest) + "."
-        s += (f" No other state has {STATE_MIN} trades yet, so there's nothing to compare — "
-              f"keep logging the off days honestly and this becomes a comparison." + tail)
+        s += (f" No other {noun} has {STATE_MIN} trades yet, so there's nothing to compare — "
+              f"{thin}." + tail)
         st.markdown(css(f".ea-ms1{{font-size:15px;line-height:1.55;color:{t['ink']};background:{t['soft']};"
                         f"border:1px solid {t['line']};border-radius:10px;padding:12px 14px;margin:2px 0 6px;}}")
                     + f'<div class="ea-rx"><div class="ea-ms1">{s}</div></div>', unsafe_allow_html=True)
@@ -624,9 +626,14 @@ def state_board(df: pd.DataFrame, col: str = "Mental State", verdicts: bool = Tr
     if worst is not best and worst["exp"] < best["exp"] and (verdicts or (worst["m"], "bad") in passed):
         bits.append(f"<b>{_h.escape(worst['m'])}</b> {_h.escape(fmt_r(worst['exp']))} over {worst['n']} "
                     f"<span class='ea-pl-l'>{lab_(worst, 'bad')}</span>")
-    head = ("; ".join(bits) + "." if bits else
-            f"{total} trades carry a state. The rows show what each paid.") + tail
-    ranked_rows(rows, [f"<span>{_h.escape(r['m'])}</span>" for r in rows], head, "State")
+    if bits:
+        head = "; ".join(bits) + "."
+    else:
+        _gap_r = ok[0]["exp"] - ok[-1]["exp"]
+        head = (f"{total} tagged trades. " + ("So far they pay about the same." if abs(_gap_r) < 0.1 else
+                                             "The gap between them isn't past chance yet."))
+    head += tail
+    ranked_rows(rows, [f"<span>{_h.escape(r['m'])}</span>" for r in rows], head, noun.capitalize())
     return True
 
 
