@@ -5489,10 +5489,15 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                 _card_header("Managing the trade",
                              "What happens after entry \u2014 efficiency, exits, stops and what got away.")
                 with _budget(1):
+                    _tl = False
                     if _mt5:
+                        from edge_analysis.ui import reshape as rx
+                        # Round-2 mockup M3: planned target vs how far price went vs banked
+                        _tl = rx.targets_ladder(_data)
+                        if _tl:
+                            _gap(18)
                         # Mockup V6: four numbers, every trade as a dot and the exit
                         # simulator as bars; the detail sits one click deeper
-                        from edge_analysis.ui import reshape as rx
                         if rx.management_overview(_data, styler):
                             # shown, not folded away: he didn't want to open a box for them
                             _gap(18)
@@ -5500,7 +5505,7 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                                 _data if (_data is not None and "Targeted RR" in _data.columns)
                                 else df_all_safe, styler)
                             _gap(18)
-                            _execution_section(_data, styler)
+                            _execution_section(_data, styler, planned_kpis=not _tl)
                             _gap(18)
                             _mae_stop_optimizer(_data, styler)
                             _gap(18)
@@ -5512,7 +5517,7 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                                 _data if (_data is not None and "Targeted RR" in _data.columns)
                                 else df_all_safe, styler)
                             _gap(18)
-                            _execution_section(_data, styler)
+                            _execution_section(_data, styler, planned_kpis=not _tl)
                             _gap(18)
                             _exit_optimizer(_data, styler)
                             _gap(18)
@@ -5541,12 +5546,22 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                 if _mt5:
                     _gap(18)
                     _symbol_session_matrix(_data, styler)
+                    from edge_analysis.ui.pro_tabs import cost_in_r as _cir, cost_line as _cl, COST_WARN_R as _cw
+                    _c0 = _cir(_data)
+                    if _c0 is not None and _c0["total"] < _cw:
+                        _gap(12)
+                        st.caption(_cl(_c0).replace("<b>", "").replace("</b>", ""))
         if _mt5:
-            with st.container(border=True):
-                st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
-                _card_header("Costs", "What fees and slippage quietly take from the edge.")
-                with _budget(1):
-                    _cost_drag(_data, styler)
+            # Round-2 mockup M3: costs are one line in R unless they matter
+            from edge_analysis.ui.pro_tabs import cost_in_r, cost_line, COST_WARN_R
+            _c = cost_in_r(_data)
+            if _c is not None and _c["total"] >= COST_WARN_R:
+                with st.container(border=True):
+                    st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
+                    _card_header("Costs", "What fees and slippage quietly take from the edge.")
+                    with _budget(1):
+                        st.markdown(cost_line(_c), unsafe_allow_html=True)
+                        _cost_drag(_data, styler)
 
     # ── Psychology: discipline card, losses card, WHOOP card ──────────────
     if _active == "Psychology":

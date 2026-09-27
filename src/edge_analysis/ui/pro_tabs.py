@@ -377,6 +377,53 @@ def _symbol_session_matrix(df, styler) -> None:
 
 
 # ── 8. Cost drag ──────────────────────────────────────────────────────────────
+def cost_in_r(df) -> dict | None:
+    """What costs take per trade, in R: spread as a share of the stop
+    (Spread at Entry / Risk (pips)) and commission + swap turned into R with
+    the journal's own dollars-per-R. None when neither can be worked out."""
+    if df is None or df.empty:
+        return None
+    out = {"n": len(df), "spread": None, "fees": None}
+    spr, risk = _num(df, "Spread at Entry"), _num(df, "Risk (pips)")
+    if spr is not None and risk is not None:
+        ok = spr.notna() & risk.gt(0)
+        if ok.sum() >= 5:
+            share = float((spr[ok] / risk[ok]).mean())
+            if share < 0.25:            # bigger means the two columns use different units
+                out["spread"] = share
+                out["spread_lo"], out["spread_hi"] = float(spr[ok].min()), float(spr[ok].max())
+    pnl, rr = _num(df, "PnL"), _num(df, "Closed RR")
+    comm, swap = _num(df, "Commission"), _num(df, "Swap")
+    if pnl is not None and rr is not None and (comm is not None or swap is not None):
+        ok = pnl.notna() & rr.abs().ge(0.5)
+        if ok.sum() >= 5:
+            per_r = float((pnl[ok].abs() / rr[ok].abs()).median())
+            fees = 0.0
+            for c in (comm, swap):
+                if c is not None:
+                    fees += float(c.fillna(0).sum())
+            if per_r > 0:
+                out["fees"] = abs(fees) / len(df) / per_r
+    if out["spread"] is None and out["fees"] is None:
+        return None
+    out["total"] = (out["fees"] or 0.0) + (out["spread"] or 0.0)
+    return out
+
+
+COST_WARN_R = 0.10   # a tenth of 1R a trade is worth a look; under it, one line
+
+
+def cost_line(c: dict) -> str:
+    bits = []
+    if c["spread"] is not None:
+        bits.append(f"spread about {c['spread'] * 100:.0f}% of your stop")
+    if c["fees"] is not None:
+        bits.append(f"commission and swap {c['fees']:.2f}R")
+    tail = (" Nothing to fix." if c["total"] < COST_WARN_R
+            else " Worth checking your spread and commission tier.")
+    return f"<b>Costs:</b> about <b>{c['total']:.2f}R</b> a trade ({', '.join(bits)}).{tail}"
+
+
 def _cost_drag(df, styler) -> None:
     t = _t()
     # the Costs card header already names the section; no second title

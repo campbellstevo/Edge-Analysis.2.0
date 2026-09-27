@@ -10,6 +10,7 @@ House rules kept here:
 from __future__ import annotations
 
 import html as _h
+import math
 import re
 
 import pandas as pd
@@ -492,6 +493,101 @@ def _mgmt_frame(df: pd.DataFrame) -> pd.DataFrame | None:
         g["when"] = pd.to_datetime(df["Date"], errors="coerce").dt.strftime("%a %d %b %Y")
     g = g[g["mfe"].notna() & g["r"].notna()]
     return g if len(g) >= 10 else None
+
+
+def targets_frame(df: pd.DataFrame) -> pd.DataFrame | None:
+    """Trades with a planned target and an MFE: plan, how far price went,
+    what was banked. Newest first. None under 5 such trades."""
+    if df is None or df.empty or not {"Planned R:R", "MFE (R)", "Closed RR"} <= set(df.columns):
+        return None
+    dcol = next((c for c in ("__Date", "Date") if c in df.columns), None)
+    g = pd.DataFrame({"plan": pd.to_numeric(df["Planned R:R"], errors="coerce"),
+                      "mfe": pd.to_numeric(df["MFE (R)"], errors="coerce"),
+                      "r": pd.to_numeric(df["Closed RR"], errors="coerce"),
+                      "when": pd.to_datetime(df[dcol], errors="coerce") if dcol else pd.NaT}, index=df.index)
+    g = g[g["plan"].gt(0) & g["mfe"].notna() & g["r"].notna()]
+    if len(g) < 5:
+        return None
+    return g.sort_values("when", ascending=False, na_position="last")
+
+
+def targets_summary(g: pd.DataFrame) -> dict:
+    reached = g["mfe"] >= g["plan"]
+    half = g["mfe"] >= g["plan"] / 2
+    return {"n": len(g), "plan": float(g["plan"].mean()), "mfe": float(g["mfe"].mean()),
+            "mfe_med": float(g["mfe"].median()), "bank": float(g["r"].mean()),
+            "reached": int(reached.sum()), "half": int(half.sum())}
+
+
+TARGET_ROWS = 12
+MINUS = "\u2212"
+
+
+def targets_ladder(df: pd.DataFrame) -> bool:
+    """Round-2 mockup M3: one row per trade with the target you planned (ring),
+    how far price went (bar) and what you banked (dot). False when the journal
+    has fewer than 5 trades with both a planned R:R and an MFE."""
+    g = targets_frame(df)
+    if g is None:
+        return False
+    t = _tokens()
+    sm = targets_summary(g)
+    amber = "#f5b544" if _dark() else "#b45309"
+    bar = "rgba(139,123,255,.55)" if _dark() else "rgba(72,0,255,.28)"
+    rows = g.head(TARGET_ROWS)
+    lo = float(max(-3.0, min(-1.2, rows["r"].min() - 0.2)))
+    hi = float(min(10.0, max(2.0, rows["plan"].max(), rows["mfe"].max()) + 0.3))
+
+    def X(v: float) -> float:
+        return (min(max(v, lo), hi) - lo) / (hi - lo) * 100
+
+    steps = range(math.ceil(lo), math.floor(hi) + 1)
+    ticks = "".join(f'<span class="ea-tl-tk" style="left:{X(v):.2f}%">{("0R" if v == 0 else f"{v:+d}R".replace("-", MINUS))}</span>'
+                    for v in steps)
+    grid = "".join(f'<i class="ea-tl-g{" z" if v == 0 else ""}" style="left:{X(v):.2f}%"></i>' for v in steps)
+    body = ""
+    for _, q in rows.iterrows():
+        d = q["when"].strftime("%-d %b") if pd.notna(q["when"]) else ""
+        x0, xm = X(0), X(q["mfe"])
+        dot = GREEN if q["r"] > 0.15 else (RED if q["r"] < -0.15 else "#94a3b8")
+        tip = (f'{d}: planned {q["plan"]:.1f}R, price went {q["mfe"]:.1f}R, banked {fmt_r(q["r"])}')
+        body += (f'<div class="ea-tl-r" title="{_h.escape(tip)}"><div class="ea-tl-d">{_h.escape(d)}</div>'
+                 f'<div class="ea-tl-t">{grid}'
+                 f'<i class="ea-tl-b" style="left:{min(x0, xm):.2f}%;width:{abs(xm - x0):.2f}%"></i>'
+                 f'<i class="ea-tl-p" style="left:{X(q["plan"]):.2f}%"></i>'
+                 f'<i class="ea-tl-k" style="left:{X(q["r"]):.2f}%;background:{dot}"></i></div></div>')
+    head = (f'You plan <b>{sm["plan"]:.1f}R</b>. Price gave you <b>{sm["mfe"]:.1f}R</b> on average '
+            f'(median {sm["mfe_med"]:.1f}R) and reached your target on <b>{sm["reached"]} of {sm["n"]}</b> trades. '
+            f'You banked <b>{_h.escape(fmt_r(sm["bank"]))}</b> a trade.')
+    if sm["reached"] * 2 < sm["n"] and sm["half"] > sm["reached"]:
+        head += f' Half your target was there on {sm["half"]} of {sm["n"]}.'
+    extra = f"""
+.ea-tl-head{{font-size:15px;line-height:1.45;margin:0 0 10px;color:{t['ink']};}}
+.ea-tl-ax,.ea-tl-r{{display:flex;align-items:center;gap:10px;}}
+.ea-tl-ax{{height:18px;}}
+.ea-tl-d{{flex:0 0 52px;font-size:12.5px;color:{t['muted']};font-variant-numeric:tabular-nums;white-space:nowrap;}}
+.ea-tl-t,.ea-tl-at{{flex:1;position:relative;height:24px;min-width:0;}}
+.ea-tl-at{{height:18px;}}
+.ea-tl-tk{{position:absolute;transform:translateX(-50%);font-size:11px;color:{t['muted']};white-space:nowrap;}}
+.ea-tl-g{{position:absolute;top:0;bottom:0;width:1px;background:{t['line']};}}
+.ea-tl-g.z{{background:{t['zero']};}}
+.ea-tl-b{{position:absolute;top:7px;height:10px;border-radius:4px;background:{bar};}}
+.ea-tl-p{{position:absolute;top:5px;width:14px;height:14px;margin-left:-7px;border-radius:50%;
+  border:2.5px solid {amber};box-sizing:border-box;}}
+.ea-tl-k{{position:absolute;top:6px;width:12px;height:12px;margin-left:-6px;border-radius:50%;}}
+.ea-tl-lg{{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;color:{t['muted']};margin-top:8px;align-items:center;}}
+.ea-tl-lg i{{display:inline-block;vertical-align:-2px;margin-right:5px;}}
+@media (max-width:640px){{.ea-tl-d{{flex-basis:42px;font-size:11.5px;}} .ea-tl-tk{{font-size:10px;}}}}
+"""
+    legend = (f'<div class="ea-tl-lg"><span><i style="width:12px;height:12px;border-radius:50%;border:2.5px solid {amber};box-sizing:border-box"></i>your target</span>'
+              f'<span><i style="width:20px;height:10px;border-radius:4px;background:{bar}"></i>how far price went (MFE)</span>'
+              f'<span><i style="width:11px;height:11px;border-radius:50%;background:{GREEN}"></i>what you banked</span></div>')
+    more = (f'<div class="ea-rx-cap">Your last {TARGET_ROWS} trades with a target; the sentence above counts all {sm["n"]}.</div>'
+            if sm["n"] > TARGET_ROWS else "")
+    st.markdown(css(extra) + f'<div class="ea-rx"><div class="ea-tl-head">{head}</div>'
+                f'<div class="ea-tl-ax"><div class="ea-tl-d"></div><div class="ea-tl-at">{ticks}</div></div>'
+                f'{body}{legend}{more}</div>', unsafe_allow_html=True)
+    return True
 
 
 def exit_whatif(g: pd.DataFrame) -> tuple[pd.DataFrame, float]:

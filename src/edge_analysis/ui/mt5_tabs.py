@@ -373,17 +373,27 @@ def _timing_section(df: pd.DataFrame, styler) -> None:
 
 
 # ── 4. Execution quality ──────────────────────────────────────────────────────
-def _execution_section(df: pd.DataFrame, styler) -> None:
+def _execution_section(df: pd.DataFrame, styler, planned_kpis: bool = True) -> None:
+    """planned_kpis=False when the targets ladder above already shows planned
+    vs reached; the section then draws only what's left, or nothing."""
     t = _t()
-    st.markdown("### Execution quality")
-    st.caption("How cleanly you execute the plan: entry deviation, planned vs realised R, and price-delivery grade.")
     dev = _num(df, "Deviation Score")
-    planned = _num(df, "Planned R:R")
+    planned = _num(df, "Planned R:R") if planned_kpis else None
     rr = _num(df, "Closed RR")
     _pdcol = next((c for c in ["Price action delivery", "Price Delivery"] if c in df.columns), None)
-    has_pd = _pdcol is not None
+    has_pd = _pdcol is not None and df[_pdcol].astype(str).str.strip().replace(
+        {"nan": "", "None": "", "[]": ""}).ne("").any()
+    _has_dev_entry = all(_num(df, c) is not None for c in ("Planned Entry", "Entry Price", "SL"))
     if dev is None and planned is None and not has_pd:
-        t._unavailable("Execution Quality"); return
+        if planned_kpis:
+            st.markdown("### Execution quality")
+            t._unavailable("Execution Quality")
+            return
+        if not _has_dev_entry:
+            return
+    st.markdown("### Execution quality")
+    st.caption("How cleanly you execute the plan: entry deviation, planned vs realised R, and price-delivery grade."
+               if planned_kpis else "How cleanly you execute the plan: entry against your planned level.")
 
     cards = []
     if dev is not None:
