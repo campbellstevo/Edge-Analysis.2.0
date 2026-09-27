@@ -140,12 +140,11 @@ def render_filters(
     if tot_opts is None:
         tot_opts = ["All"]
 
-    # Focus = the track record plus what needs work. "What needs work" is the
-    # verdict layer, owner-only until it passes its null test (1.12), so for
-    # members and the demo Focus would be one card — not offered there, and a
-    # stored Focus pref falls back to Everything.
-    from edge_analysis.ui.tabs import _verdicts_on
-    _focus_ok = _verdicts_on()
+    # Focus = the one-screen rundown (27 Sep: "if someone gets overwhelmed by
+    # everything ... they can just go on there and get the most important
+    # info"). Every line in it is a count or a tested claim, so it is offered
+    # to everyone; members just don't see early reads in it.
+    _focus_ok = True
     if not _focus_ok and st.session_state.get("ea_density_pref") == "Focus":
         st.session_state["ea_density_pref"] = "All"
         st.session_state.pop("ea_focus_tgl", None)

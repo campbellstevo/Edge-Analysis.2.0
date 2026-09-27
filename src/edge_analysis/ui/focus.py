@@ -272,6 +272,150 @@ def _after_text(a: dict) -> str:
     return txt
 
 
+# ----------------------------- the rundown -------------------------------------
+
+def _slice_family(g: pd.DataFrame, cols: dict) -> dict:
+    """p-values for every value of each column, both directions, Holm across
+    all of them — so 'best session' is only 'beats chance' when picking the
+    best out of several still clears the bar."""
+    from edge_analysis.digest import _perm_p, _holm_pass
+    keys, ps = [], []
+    for name, ser in cols.items():
+        for v in ser.dropna().unique():
+            m = (ser == v).to_numpy()
+            if m.sum() < 5 or m.sum() >= len(m) - 1:
+                continue
+            for d in ("good", "bad"):
+                keys.append((name, v, d))
+                ps.append(_perm_p(g["__rr"], m, lower=d == "bad"))
+    passed = {keys[i] for i in _holm_pass(ps)}
+    return {"keys": set(keys), "passed": passed}
+
+
+def _res_series(g: pd.DataFrame) -> pd.Series:
+    ocol = next((c for c in ("Outcome", "Outcome Canonical", "Result") if c in g.columns), None)
+    band = g["__rr"].map(lambda r: "win" if r > 0.15 else ("loss" if r < -0.15 else "be"))
+    if ocol is None:
+        return band
+    tag = g[ocol].astype(str).str.strip().str.lower().replace({"breakeven": "be"})
+    return tag.where(tag.isin(["win", "be", "loss"]), band)
+
+
+def rundown(g: pd.DataFrame, verdicts: bool) -> list[dict]:
+    """The most important thing each part of the site says, one line each:
+    {area, html, tab, tone}. Counts are stated as counts; a best/worst pick is
+    labelled 'beats chance' or 'early read', and early reads are left out for
+    members (verdicts=False)."""
+    from edge_analysis.ui import lessons as _ls
+    items = []
+    if g is None or g.empty:
+        return items
+    rr = g["__rr"]
+    res = _res_series(g)
+    n = len(g)
+    w, b, l_ = int((res == "win").sum()), int((res == "be").sum()), int((res == "loss").sum())
+    items.append({"area": "Your record", "tab": "Performance", "tone": "pos" if rr.sum() > 0 else "neg",
+                  "html": f"<b>{fmt_r(rr.sum(), 1)}</b> over {n} trades \u00b7 <b>{fmt_r(rr.mean())}</b> a trade "
+                          f"\u00b7 {w} win{'s' if w != 1 else ''}, {b} break-even{'s' if b != 1 else ''}, "
+                          f"{l_} loss{'es' if l_ != 1 else ''}"})
+
+    def _lab(ok):
+        return ' <span class="ea-fo-ok">beats chance</span>' if ok else ' <span class="ea-fo-er">early read</span>'
+    sc = next((c for c in ("Session Norm", "Session") if c in g.columns), None)
+    e1 = next((c for c in ("Entry Model 1", "Entry Model") if c in g.columns), None)
+    e2 = "Entry Model 2" if "Entry Model 2" in g.columns else None
+    cols = {}
+    if sc:
+        from edge_analysis.ui.tabs import _clean_session_value
+        cols["session"] = g[sc].map(rx._txt).map(lambda v: _clean_session_value(v) if v else None)
+    if e1:
+        a = g[e1].map(rx._txt).str.split(",").str[0].str.strip()
+        bb = g[e2].map(rx._txt).str.split(",").str[0].str.strip() if e2 else pd.Series("", index=g.index)
+        cols["setup"] = pd.Series([f"{x} \u2192 {y}" if (x and y) else (x or None) for x, y in zip(a, bb)],
+                                  index=g.index).replace("", None)
+    fam = _slice_family(g, cols) if cols else {"keys": set(), "passed": set()}
+
+    if "session" in cols:
+        stats = rr.groupby(cols["session"]).agg(["count", "sum"])
+        stats = stats[stats["count"] >= 3]
+        if len(stats) >= 2:
+            bst, wst = stats["sum"].idxmax(), stats["sum"].idxmin()
+            ok_b = ("session", bst, "good") in fam["passed"]
+            ok_w = ("session", wst, "bad") in fam["passed"]
+            parts = []
+            if stats.loc[bst, "sum"] > 0 and (verdicts or ok_b):
+                parts.append(f"<b>{_h.escape(str(bst))}</b> is where your R comes from "
+                             f"({fmt_r(stats.loc[bst, 'sum'], 1)} over {int(stats.loc[bst, 'count'])}){_lab(ok_b)}")
+            if stats.loc[wst, "sum"] < 0 and wst != bst and (verdicts or ok_w):
+                parts.append(f"<b>{_h.escape(str(wst))}</b> has cost {fmt_r(stats.loc[wst, 'sum'], 1)} over "
+                             f"{int(stats.loc[wst, 'count'])}{_lab(ok_w)}")
+            if parts:
+                items.append({"area": "When you trade", "tab": "Entry", "tone": "",
+                              "html": "; ".join(parts) + "."})
+    if "setup" in cols:
+        stats = rr.groupby(cols["setup"]).agg(["count", "sum"])
+        stats = stats[stats["count"] >= 3]
+        if len(stats):
+            bst = stats["sum"].idxmax()
+            ok = ("setup", bst, "good") in fam["passed"]
+            if stats.loc[bst, "sum"] > 0 and (verdicts or ok):
+                items.append({"area": "Best setup", "tab": "Entry", "tone": "",
+                              "html": f"<b>{_h.escape(str(bst))}</b>: {fmt_r(stats.loc[bst, 'sum'], 1)} over "
+                                      f"{int(stats.loc[bst, 'count'])} trades{_lab(ok)}."})
+    tg = rx.targets_frame(g.assign(**{"Closed RR": rr}) if "Closed RR" not in g.columns else g)
+    if tg is not None:
+        ts = rx.targets_summary(tg)
+        items.append({"area": "Targets", "tab": "Entry", "tone": "neg" if ts["reached"] * 2 < ts["n"] else "pos",
+                      "html": f"Price reached your target on <b>{ts['reached']} of {ts['n']}</b> trades: you plan "
+                              f"{ts['plan']:.1f}R and it gives {ts['mfe']:.1f}R on average."})
+    if "Breakeven Criteria" in g.columns:
+        be = g["Breakeven Criteria"].map(rx._txt).str.split(",").str[0].str.strip()
+        badm = be.str.contains(r"loss before|failed", case=False, regex=True, na=False)
+        if int(badm.sum()) >= 2:
+            items.append({"area": "Breakeven", "tab": "Entry", "tone": "neg",
+                          "html": f"<b>{int(badm.sum())} trades lost before breakeven was set</b> "
+                                  f"({fmt_r(rr[badm].sum(), 1)})."})
+    if "Rules Followed?" in g.columns:
+        # the adapter already turns an untagged trade's unticked box into
+        # "unknown" (None), so tagged = answered either way
+        rf = g["Rules Followed?"].map(rx._yes)
+        followed, broke, untagged = int((rf == True).sum()), int((rf == False).sum()), int(rf.isna().sum())  # noqa: E712
+        if followed + broke > 0:
+            items.append({"area": "Discipline", "tab": "Psychology",
+                          "html": f"<b>{followed} of {followed + broke}</b> tagged trades followed your rules"
+                                  + (f"; {untagged} trade{'s' if untagged != 1 else ''} aren't tagged yet."
+                                     if untagged else ".")})
+    grp = _ls.summary(g)["groups"]
+    if grp:
+        items.append({"area": "Your lessons", "tab": "Psychology", "tone": "",
+                      "html": f"The one you write most: <b>{_h.escape(grp[0]['theme'].lower())}</b> "
+                              f"({grp[0]['n']}\u00d7)."})
+    return items
+
+
+_RUN_CSS = """
+.ea-fo-run{{display:flex;flex-direction:column;}}
+.ea-fo-rr{{display:flex;gap:14px;align-items:baseline;padding:10px 2px;border-bottom:1px solid {line};}}
+.ea-fo-rr:last-child{{border-bottom:0;}}
+.ea-fo-rr .a{{flex:0 0 118px;font-size:11.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:{muted};}}
+.ea-fo-rr .x{{flex:1;min-width:0;font-size:14.5px;line-height:1.45;color:{ink};}}
+.ea-fo-rr .x b{{font-weight:800;}}
+.ea-fo-rr .x b.pos{{color:#16a34a;}} .ea-fo-rr .x b.neg{{color:#ef4444;}}
+.ea-fo-rr .t{{flex:none;font-size:12px;color:{muted};white-space:nowrap;}}
+.ea-fo-ok{{font-size:11px;font-weight:800;color:#16a34a;white-space:nowrap;}}
+.ea-fo-er{{font-size:11px;font-weight:700;color:{few};white-space:nowrap;}}
+@media (max-width:640px){{.ea-fo-rr{{flex-wrap:wrap;gap:2px 10px;}} .ea-fo-rr .a{{flex-basis:100%;}}
+  .ea-fo-rr .t{{display:none;}}}}
+"""
+
+
+def _rundown_html(items: list[dict], t: dict) -> str:
+    rows = "".join(f'<div class="ea-fo-rr"><div class="a">{_h.escape(it["area"])}</div>'
+                   f'<div class="x">{it["html"]}</div><div class="t">{_h.escape(it["tab"])} \u203a</div></div>'
+                   for it in items)
+    return rx.css(_RUN_CSS.format(**t)) + f'<div class="ea-rx ea-fo-run">{rows}</div>'
+
+
 def render_focus(f_perf: pd.DataFrame, df_all: pd.DataFrame, styler) -> None:
     from edge_analysis.ui import tabs as T
     from edge_analysis.ui import lessons as _ls
@@ -298,24 +442,29 @@ def render_focus(f_perf: pd.DataFrame, df_all: pd.DataFrame, styler) -> None:
         st.markdown(_right_now_html(right_now(g, tgt, stop), label, t, _after_text(a) if a else ""),
                     unsafe_allow_html=True)
 
-    # 2. Before you take a trade: numbers, your notes, your rules in one list
+    # 2. The rundown: the most important line from every part of the site
+    from edge_analysis.ui.tabs import _verdicts_on
+    items = rundown(g, _verdicts_on())
+    if items:
+        with st.container(border=True):
+            st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
+            T._card_header("The rundown", "The most important thing each part of the site is telling you.")
+            st.markdown(_rundown_html(items, t), unsafe_allow_html=True)
+
+    # 3. The top of the checklist; the whole list lives on Plan
     m = plan_model(df_all)
     state = _rules_state()
     texts = state.get("texts") or {}
     mine = list(state.get("custom") or []) + [texts.get(rid, rid.split(":", 1)[-1])
                                               for rid in (state.get("accepted") or [])]
-    recs = rule_recommendations(m["good"], m["bad"]) if m else []
+    recs = rule_recommendations(m["good"], m["bad"]) if (m and _verdicts_on()) else []
     groups = _ls.summary(track)["groups"]
-    items = checklist_items((m or {}).get("proven") or [], recs, groups, mine,
-                            (m or {}).get("beats"), (m or {}).get("gate_beats"))
-    with st.container(border=True):
-        st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
-        T._card_header("Before you take a trade",
-                       "Every box yes, or pass. From your numbers, the lessons you keep writing, and your rules.")
-        if items:
-            st.markdown(rx.css(_CSS.format(bg="", bc="", c="", **t)) + _checklist_html(items, t),
+    chk = checklist_items((m or {}).get("proven") or [] if _verdicts_on() else [], recs, groups, mine,
+                          (m or {}).get("beats"), (m or {}).get("gate_beats"))
+    if chk:
+        with st.container(border=True):
+            st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
+            T._card_header("Before your next trade", "The top of your checklist. The whole list is on Plan.")
+            st.markdown(rx.css(_CSS.format(bg="", bc="", c="", **t)) + _checklist_html(chk[:4], t),
                         unsafe_allow_html=True)
-        else:
-            st.caption("No checklist yet: a tag earns a place here once it has 5+ trades at a positive "
-                       "average, a lesson once you've written it twice, and you can add your own rules on Plan.")
     st.caption("Everything else is one switch away: turn Focus off in the header.")

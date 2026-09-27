@@ -5755,6 +5755,20 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                 _breaker_strip(_track_only(df_all_safe)[0])
                 render_plan_tab(df_all_safe, styler)
 
+        # Round 7: the lessons you keep writing, as pre-trade questions (the
+        # numbers-backed checklist and your own rules are in Trading plan above)
+        from edge_analysis.ui import lessons as _lsn
+        from edge_analysis.ui.focus import checklist_items as _ci, _checklist_html as _chh, _CSS as _fcss
+        _qs = _ci([], [], _lsn.summary(_track_only(df_all_safe)[0])["groups"], [])
+        if _qs:
+            from edge_analysis.ui import reshape as _rxp
+            with st.container(border=True):
+                st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
+                _card_header("Before you take a trade", "The lessons you keep writing, turned into questions.")
+                _tk = _rxp._tokens()
+                st.markdown(_rxp.css(_fcss.format(bg="", bc="", c="", **_tk)) + _chh(_qs, _tk),
+                            unsafe_allow_html=True)
+
         # Refinements are verdicts picked from the same splits Entry tabulates.
         # Each is tested against chance (D4): the owner sees all of them
         # labelled; members see only the ones that beat chance, and no card

@@ -81,3 +81,42 @@ def test_a_notion_result_column_counts_too():
     g = _g([-1.0, -0.22])
     g["Result"] = ["Loss", "BE"]
     assert fo.after_last(g, min_n=1)["kind"] == "be"
+
+
+
+def _rows(n=30, seed=4):
+    import numpy as np
+    rng = np.random.default_rng(seed)
+    rr = np.round(rng.normal(0.2, 1.0, n), 2)
+    g = _g([float(x) for x in rr])
+    g["Session"] = rng.choice(["Asian", "London", "London/NY Overlap"], n)
+    g["Outcome"] = ["Win" if x > 0.15 else ("Loss" if x < -0.15 else "BE") for x in rr]
+    g["Rules Followed?"] = rng.choice([True, False], n)
+    return g
+
+
+def test_rundown_leads_with_the_record_and_hides_early_reads_from_members():
+    g = _rows()
+    owner = fo.rundown(g, verdicts=True)
+    member = fo.rundown(g, verdicts=False)
+    assert owner[0]["area"] == "Your record" and member[0]["area"] == "Your record"
+    assert "over 30 trades" in owner[0]["html"]
+    assert any(i["area"] == "When you trade" for i in owner)
+    assert all("early read" not in i["html"] for i in member)
+
+
+def test_rundown_counts_breakeven_losses_and_lessons():
+    g = _rows(12)
+    g["Breakeven Criteria"] = [["Loss before BE"]] * 3 + [["At structure"]] * 9
+    g["Teachings/Learning Curve"] = ["Hold to TP2"] * 3 + [""] * 9
+    areas = {i["area"]: i["html"] for i in fo.rundown(g, verdicts=False)}
+    assert "3 trades lost before breakeven was set" in areas["Breakeven"]
+    assert "taking profit" in areas["Your lessons"]
+
+
+
+def test_rundown_discipline_counts_untagged_once():
+    g = _rows(10)
+    g["Rules Followed?"] = [True] * 5 + [False] * 2 + [None] * 3
+    d = {i["area"]: i["html"] for i in fo.rundown(g, verdicts=False)}["Discipline"]
+    assert "<b>5 of 7</b> tagged trades" in d and "3 trades aren't tagged yet" in d
