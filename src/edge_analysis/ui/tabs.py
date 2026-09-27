@@ -5502,7 +5502,7 @@ def _flip(key: str, chart_fn, table_fn) -> None:
 def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, hero_fn=None):
     from edge_analysis.ui.mt5_tabs import (
         _section_header, _mae_mfe_section, _close_style_section, _missed_runner_section,
-        _direction_section, _conviction_section, _holdtime_section,
+        _direction_section, _conviction_section,
         _discipline_section, _mistake_section, _execution_section,
     )
     from edge_analysis.ui.pro_tabs import (
@@ -5606,9 +5606,7 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                 if not st.session_state.get("_ea_sess_in_grid"):
                     _gap(18)
                     _sessions_tab(f_perf, show_table)
-                if _mt5:
-                    _gap(18)
-                    _holdtime_section(_data, styler)
+                # hold time moved to Managing the trade as a dot strip (round 6)
 
         if _mt5 or (_salty and not _deviation_scored(f_perf).empty):
             with st.container(border=True):
@@ -5626,6 +5624,17 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                         # Mockup V6: four numbers, every trade as a dot and the exit
                         # simulator as bars; the detail sits one click deeper
                         if rx.management_overview(_data, styler):
+                            # Round-6 mockup M3: how long trades live, and where
+                            # breakeven decided them, side by side
+                            _hc, _bc = st.columns(2, gap="large")
+                            with _hc:
+                                st.markdown("#### How long trades live")
+                                if not rx.hold_strip(_data):
+                                    st.caption("Needs a hold time on 8+ trades.")
+                            with _bc:
+                                st.markdown("#### Where breakeven decided it")
+                                if not rx.breakeven_rows(_data):
+                                    st.caption("Tag a breakeven rule on 5+ trades to see which one keeps you in winners.")
                             # shown, not folded away: he didn't want to open a box for them
                             _gap(18)
                             _close_style_section(

@@ -85,3 +85,29 @@ def test_execution_section_steps_aside_for_the_ladder(monkeypatch):
     df = _trades([2] * 6, [1] * 6, [1] * 6)
     mt5_tabs._execution_section(df, lambda c: c, planned_kpis=False)
     assert drawn == []                                   # only planned R:R to show, and the ladder has it
+
+
+def test_hold_strip_compares_winners_and_losses(monkeypatch):
+    out = []
+    monkeypatch.setattr(rx.st, "markdown", lambda body, **k: out.append(body))
+    df = pd.DataFrame({"Hold Time (min)": [1, 3, 5, 8, 10, 12, 45, 76, 134, 250],
+                       "Closed RR": [-1, -1.2, -1, -1, -1.05, 1.5, 3, 4.2, 4.2, -0.26],
+                       "Outcome": ["Loss"] * 5 + ["Win"] * 4 + ["BE"]})
+    assert rx.hold_strip(df)
+    html = out[0]
+    assert "winners held a median <b>60 min</b>" in html   # 45 and 76 -> 60.5 and "median <b>5 min</b>" in html
+    assert "quick stop-outs" in html
+    assert html.count('class="ea-hs-d"') == 10
+    assert not rx.hold_strip(df.head(7))                          # too few to draw
+
+
+def test_breakeven_rows_name_the_losses_before_be(monkeypatch):
+    out = []
+    monkeypatch.setattr(rx.st, "markdown", lambda body, **k: out.append(body))
+    df = pd.DataFrame({"Breakeven Criteria": [["At Initial weak high"]] * 3 + [["Loss before BE"]] * 3 + [[]],
+                       "Closed RR": [4.2, 1.5, -0.1, -1.0, -1.2, -1.0, 2.0]})
+    assert rx.breakeven_rows(df)
+    html = out[0]
+    assert "<b>3 trades lost before breakeven was set</b> (−3.2R)" in html
+    assert "at initial weak high</b> kept +5.6R over 3" in html
+    assert not rx.breakeven_rows(df.head(4))

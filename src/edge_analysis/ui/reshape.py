@@ -590,6 +590,126 @@ def targets_ladder(df: pd.DataFrame) -> bool:
     return True
 
 
+def _res_of(df: pd.DataFrame, r: pd.Series) -> pd.Series:
+    """Win / BE / Loss from the journal's own tag when it has one, else R bands."""
+    ocol = next((c for c in ("Outcome", "Outcome Canonical", "Result") if c in df.columns), None)
+    band = pd.Series(["Win" if v > 0.15 else ("Loss" if v < -0.15 else "BE") for v in r], index=r.index)
+    if ocol is None:
+        return band
+    tag = df[ocol].astype(str).str.strip().str.title().replace({"Breakeven": "BE", "Be": "BE"})
+    return tag.where(tag.isin(["Win", "BE", "Loss"]), band)
+
+
+def hold_strip(df: pd.DataFrame) -> bool:
+    """Round-6 mockup M3: every trade as a dot on a log time axis, coloured by
+    result, with one sentence on how long winners and losses live. Replaces a
+    line drawn through three hold-time buckets. False under 8 trades."""
+    if df is None or df.empty or "Hold Time (min)" not in df.columns:
+        return False
+    rcol = next((c for c in ("Closed RR", "PnL_from_RR") if c in df.columns), None)
+    if rcol is None:
+        return False
+    g = pd.DataFrame({"h": pd.to_numeric(df["Hold Time (min)"], errors="coerce"),
+                      "r": pd.to_numeric(df[rcol], errors="coerce")}, index=df.index)
+    g = g[g["h"].gt(0) & g["r"].notna()]
+    if len(g) < 8:
+        return False
+    g["res"] = _res_of(df.loc[g.index], g["r"])
+    t = _tokens()
+    lo, hi = 0.5, float(max(60.0, g["h"].max() * 1.15))
+
+    def X(m):
+        return (math.log10(max(m, lo)) - math.log10(lo)) / (math.log10(hi) - math.log10(lo)) * 100
+    col = {"Win": GREEN, "Loss": RED, "BE": "#94a3b8"}
+    ticks = "".join(f'<span class="ea-hs-tk" style="left:{X(m):.2f}%">{lab}</span><i class="ea-hs-g" style="left:{X(m):.2f}%"></i>'
+                    for m, lab in ((1, "1m"), (5, "5m"), (15, "15m"), (60, "1h"), (240, "4h"), (1440, "1d"), (10080, "1w"))
+                    if lo < m < hi)
+    dots = ""
+    for j, (_, q) in enumerate(g.sort_values("h").iterrows()):
+        tip = f'{q["h"]:.0f} min \u00b7 {fmt_r(q["r"])}'
+        dots += (f'<i class="ea-hs-d" title="{_h.escape(tip)}" style="left:{X(q["h"]):.2f}%;'
+                 f'top:{8 + (j % 3) * 14}px;background:{col[q["res"]]}"></i>')
+
+    def _fmt(m):
+        return f"{m:.0f} min" if m < 90 else (f"{m / 60:.1f} h".replace(".0 h", " h") if m < 2880 else f"{m / 1440:.0f} days")
+    wins, losses = g[g["res"] == "Win"], g[g["res"] == "Loss"]
+    if len(wins) >= 2 and len(losses) >= 2:
+        head = (f"Your winners held a median <b>{_fmt(wins['h'].median())}</b>; your losses closed after a median "
+                f"<b>{_fmt(losses['h'].median())}</b>.")
+        if losses["h"].median() < wins["h"].median() / 2:
+            head += " Most losses are quick stop-outs, not slow bleeds."
+    else:
+        head = f"Your trades lived a median <b>{_fmt(g['h'].median())}</b>."
+    extra = f"""
+.ea-hs-head{{font-size:15px;line-height:1.45;margin:0 0 8px;color:{t['ink']};}}
+.ea-hs{{position:relative;height:72px;margin:0 6px;}}
+.ea-hs-g{{position:absolute;top:0;height:50px;width:1px;background:{t['line']};}}
+.ea-hs-tk{{position:absolute;top:54px;transform:translateX(-50%);font-size:11px;color:{t['muted']};}}
+.ea-hs-d{{position:absolute;width:12px;height:12px;margin-left:-6px;border-radius:50%;opacity:.9;}}
+.ea-hs-lg{{display:flex;gap:14px;font-size:12.5px;color:{t['muted']};margin-top:4px;}}
+"""
+    lg = "".join(f'<span><b style="color:{c}">\u25cf</b> {n}</span>' for n, c in
+                 (("won", GREEN), ("lost", RED), ("break-even", "#94a3b8")))
+    st.markdown(css(extra) + f'<div class="ea-rx"><div class="ea-hs-head">{head}</div>'
+                f'<div class="ea-hs">{ticks}{dots}</div><div class="ea-hs-lg">{lg}</div></div>',
+                unsafe_allow_html=True)
+    return True
+
+
+def breakeven_rows(df: pd.DataFrame) -> bool:
+    """Round-6 mockup M3: net R by the journal's breakeven rule, with one
+    sentence on the trades that lost before breakeven was set. False without
+    a Breakeven Criteria tag on 5+ trades."""
+    if df is None or df.empty or "Breakeven Criteria" not in df.columns:
+        return False
+    rcol = next((c for c in ("Closed RR", "PnL_from_RR") if c in df.columns), None)
+    if rcol is None:
+        return False
+    g = pd.DataFrame({"be": df["Breakeven Criteria"].map(_txt).str.split(",").str[0].str.strip(),
+                      "r": pd.to_numeric(df[rcol], errors="coerce")}, index=df.index)
+    g = g[(g["be"].str.len() > 0) & g["r"].notna()]
+    if len(g) < 5:
+        return False
+    rows = g.groupby("be")["r"].agg(["count", "sum", "mean"]).sort_values("sum", ascending=False)
+    t = _tokens()
+    vmax = float(rows["sum"].abs().max()) or 1.0
+    body = ""
+    for name, q in rows.iterrows():
+        w = abs(q["sum"]) / vmax * 50
+        left = 50 if q["sum"] >= 0 else 50 - w
+        c = GREEN if q["sum"] > 0 else RED
+        body += (f'<div class="ea-be-r"><div class="ea-be-l">{_h.escape(str(name))}</div>'
+                 f'<div class="ea-be-n">{int(q["count"])}</div>'
+                 f'<div class="ea-be-t"><i style="left:{left:.1f}%;width:{w:.1f}%;background:{c}"></i><b></b></div>'
+                 f'<div class="ea-be-v" style="color:{c}">{_h.escape(fmt_r(q["sum"], 1))}</div></div>')
+    bad = rows[rows.index.str.contains(r"loss before|failed", case=False, regex=True)]
+    good = rows[~rows.index.isin(bad.index)]
+    if len(bad):
+        n_b, r_b = int(bad["count"].sum()), float(bad["sum"].sum())
+        head = (f"<b>{n_b} trade{'s' if n_b != 1 else ''} lost before breakeven was set</b> "
+                f"({_h.escape(fmt_r(r_b, 1))}).")
+        if len(good) and good["sum"].iloc[0] > 0:
+            head += (f" Moving to breakeven <b>{_h.escape(str(good.index[0]).lower())}</b> kept "
+                     f"{_h.escape(fmt_r(good['sum'].iloc[0], 1))} over {int(good['count'].iloc[0])}.")
+    else:
+        head = (f"Your best breakeven rule: <b>{_h.escape(str(rows.index[0]))}</b> "
+                f"({_h.escape(fmt_r(rows['sum'].iloc[0], 1))} over {int(rows['count'].iloc[0])}).")
+    extra = f"""
+.ea-be-head{{font-size:15px;line-height:1.45;margin:0 0 10px;color:{t['ink']};}}
+.ea-be-r{{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid {t['line']};}}
+.ea-be-r:last-child{{border-bottom:0;}}
+.ea-be-l{{flex:0 0 42%;font-size:13.5px;color:{t['ink']};min-width:0;overflow-wrap:anywhere;}}
+.ea-be-n{{flex:0 0 22px;font-size:12.5px;color:{t['muted']};text-align:right;}}
+.ea-be-t{{flex:1;position:relative;height:10px;border-radius:5px;background:{t['soft']};}}
+.ea-be-t i{{position:absolute;top:0;bottom:0;border-radius:4px;}}
+.ea-be-t b{{position:absolute;left:50%;top:-3px;bottom:-3px;width:1px;background:{t['zero']};}}
+.ea-be-v{{flex:0 0 52px;text-align:right;font-size:13.5px;font-weight:800;font-variant-numeric:tabular-nums;}}
+"""
+    st.markdown(css(extra) + f'<div class="ea-rx"><div class="ea-be-head">{head}</div>{body}</div>',
+                unsafe_allow_html=True)
+    return True
+
+
 def exit_whatif(g: pd.DataFrame) -> tuple[pd.DataFrame, float]:
     """The exit simulator's own model (pro_tabs._exit_optimizer): a target
     fills when MFE reached it, else a −1R stop if MAE got there, else the
