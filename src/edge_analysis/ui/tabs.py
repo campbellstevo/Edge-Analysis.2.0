@@ -1770,63 +1770,6 @@ def _psych_session_alert(df: pd.DataFrame, styler) -> None:
                 unsafe_allow_html=True)
 
 
-def _psych_mental_state_gate(df: pd.DataFrame, styler) -> None:
-    ms_col   = next((c for c in ["Mental State","Mental state","mental_state"] if c in df.columns), None)
-    bias_col = next((c for c in ["Execution/Bias","Execution / Bias","Bias"] if c in df.columns), None)
-    if ms_col is None:
-        return  # column missing — the template panel carries that message
-    g = df.copy()
-    g["__ms"] = g[ms_col].astype(str).str.strip()
-    g = g[~g["__ms"].isin(["","nan","NaN","None"])]
-    if len(g) < 3:
-        return  # present but unlogged — powered-on panel shows the half-moon
-    states, rows = ["Good","Okay","Bad"], []
-    for state in states:
-        sub = g[g["__ms"]==state]
-        if len(sub) < 3: continue
-        cnt = sub[sub["Outcome"].isin(["Win","BE","Loss"])]
-        wr  = round(cnt["Outcome"].eq("Win").sum()/max(1,len(cnt))*100,1)
-        wb  = round(sub[bias_col].fillna("").str.contains("Wrong Bias").sum()/max(1,len(sub))*100,1) if bias_col else 0.0
-        rows.append({"State":state,"Trades":len(sub),"Win Rate":wr,"Wrong Bias %":wb})
-    if not rows:
-        return  # states logged but none with 3+ trades yet — stay silent
-    _gap(14)
-    st.markdown("### Mental state gate")
-    for col, row in zip(st.columns(len(rows)), rows):
-        c = "#f59e0b" if row["State"]=="Okay" else "#16a34a" if row["State"]=="Good" else "#6b7280"
-        badge = " ⚠" if row["State"]=="Okay" else ""
-        wb_html = f'<div class="muted">Wrong bias: <b>{row["Wrong Bias %"]}%</b></div>' if bias_col else ""
-        with col:
-            st.markdown(f"<div class='kpi'><div class='label'>{row['State']}{badge}</div>"
-                        f"<div class='value' style='color:{c}'>{row['Win Rate']}%</div>"
-                        f"<div class='muted'>Win rate · {row['Trades']} trades</div>"
-                        f"{wb_html}</div>", unsafe_allow_html=True)
-    if bias_col and len(rows) >= 2:
-        ok = next((r for r in rows if r["State"]=="Okay"), None)
-        gd = next((r for r in rows if r["State"]=="Good"), None)
-        if ok and gd and ok["Wrong Bias %"] > gd["Wrong Bias %"]:
-            gap = round(ok["Wrong Bias %"]-gd["Wrong Bias %"],1)
-            _insight_box(f"<b>Okay is your hidden danger state.</b> Wrong bias is <b>{gap}% higher</b> "
-                         f"when feeling Okay vs Good ({ok['Wrong Bias %']}% vs {gd['Wrong Bias %']}%). "
-                         f"Sub-optimal mental state corrupts bias more than feeling bad. "
-                         f"Treat Okay days like Bad days — step back if you're not sharp.", "warn")
-    if rows and bias_col:
-        melted = pd.DataFrame(rows).melt(id_vars=["State","Trades"],
-                                         value_vars=["Win Rate","Wrong Bias %"],
-                                         var_name="Metric", value_name="Value")
-        cv = _to_alt_values(melted)
-        cs = alt.Scale(domain=["Win Rate","Wrong Bias %"],range=["#4800ff","#f59e0b"])
-        bar = (alt.Chart(alt.Data(values=cv)).mark_bar(opacity=0.85)
-               .encode(x=alt.X("State:N",sort=states,axis=alt.Axis(title=None)),
-                       y=alt.Y("Value:Q",axis=alt.Axis(title="%")),
-                       color=alt.Color("Metric:N",scale=cs,legend=alt.Legend(title=None,orient="top")),
-                       xOffset="Metric:N",
-                       tooltip=[alt.Tooltip("State:N"),alt.Tooltip("Metric:N"),
-                                alt.Tooltip("Value:Q",format=".1f"),alt.Tooltip("Trades:Q")])
-               .properties(height=200))
-        st.altair_chart(styler(bar),use_container_width=True)
-
-
 def _psych_bad_beat_tracker(df: pd.DataFrame) -> None:
     result_col = next((c for c in ["Result","result"] if c in df.columns), None)
     if result_col is None:
@@ -2115,7 +2058,13 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
             _empty_note("The rolling view appears once a few trades are logged.")
 
     raw = df_raw if df_raw is not None and not df_raw.empty else g
-    _psych_mental_state_gate(raw, styler)
+    # round 13: the view's own trades (the book in view, rule 8) and whatever
+    # words the journal uses for its states
+    from edge_analysis.ui import reshape as _rxm
+    _ms = next((c for c in ("Mental State", "Mental state", "mental_state") if c in f.columns), None)
+    if _ms and int(f[_ms].map(_rxm._txt).ne("").sum()) >= 3:
+        _gap(14)
+        _rxm.state_board(f, _ms, _verdicts_on())
     _psych_bad_beat_tracker(raw)
     _psych_3sl_compliance(raw, styler)
 

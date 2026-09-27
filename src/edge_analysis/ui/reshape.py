@@ -425,6 +425,128 @@ def pair_rows(counted: pd.DataFrame, m1: pd.Series, m2: pd.Series) -> list[dict]
     return out
 
 
+def ranked_rows(rows: list[dict], names: list[str], head: str, col_head: str) -> None:
+    """The plain ranked rows (27 Sep): a sentence, then one row per group —
+    its name (already escaped HTML), R a trade as a bar from break-even,
+    trades, wins and total in words. Rows under PAIR_FEW trades are dashed."""
+    t = _tokens()
+    span = max(0.25, max(abs(r["exp"]) for r in rows))
+    body = ""
+    for r, name in zip(rows, names):
+        w = min(50.0, abs(r["exp"]) / span * 50.0)
+        col = GREEN if r["exp"] > 0.005 else (RED if r["exp"] < -0.005 else t["grey"])
+        left = 50.0 if r["exp"] >= 0 else 50.0 - w
+        won = "" if r.get("won") is None else f" · {r['won']} won"
+        few = " few" if r["n"] < PAIR_FEW else ""
+        body += (f'<div class="ea-pl-row{few}">'
+                 f'<div class="ea-pl-n">{name}</div>'
+                 f'<div class="ea-pl-bar" aria-hidden="true"><s></s>'
+                 f'<i style="left:{left:.1f}%;width:{max(w, 0.8):.1f}%;background:{col}"></i></div>'
+                 f'<div class="ea-pl-v"><b style="color:{col if col != t["grey"] else t["ink"]}">'
+                 f'{_h.escape(fmt_r(r["exp"]))}</b> a trade'
+                 f'<div>{r["n"]} trade{"s" if r["n"] != 1 else ""}{won} · {_h.escape(fmt_r(r["net"], 1))} total</div></div>'
+                 f'</div>')
+    extra = f"""
+.ea-pl-head{{font-size:15px;line-height:1.5;margin:0 0 12px;color:{t['ink']};}}
+.ea-pl-l{{font-size:11px;font-weight:700;color:{t['few']};white-space:nowrap;}}
+.ea-pl-cols,.ea-pl-row{{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr) 170px;gap:14px;align-items:center;}}
+.ea-pl-cols{{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:{t['muted']};
+  padding:0 12px 6px;}}
+.ea-pl-row{{background:{t['soft']};border:1px solid {t['line']};border-radius:10px;padding:10px 12px;margin:0 0 6px;}}
+.ea-pl-row.few{{background:transparent;border-style:dashed;}}
+.ea-pl-row.few .ea-pl-n span,.ea-pl-row.few .ea-pl-v b{{opacity:.78;}}
+.ea-pl-row.few .ea-pl-bar i{{opacity:.5;}}
+.ea-pl-n{{font-size:14.5px;font-weight:700;color:{t['ink']};min-width:0;}}
+.ea-pl-n em{{font-style:normal;font-weight:600;font-size:12.5px;color:{t['muted']};margin:0 7px;}}
+.ea-pl-bar{{position:relative;height:12px;border-radius:6px;background:{t['h1']};}}
+.ea-pl-bar s{{position:absolute;left:50%;top:-3px;bottom:-3px;width:2px;margin-left:-1px;background:{t['zero']};}}
+.ea-pl-bar i{{position:absolute;top:0;bottom:0;border-radius:6px;}}
+.ea-pl-v{{font-size:13px;color:{t['muted']};text-align:right;white-space:nowrap;}}
+.ea-pl-v b{{font-size:16px;font-weight:800;}}
+.ea-pl-v div{{font-size:12.5px;margin-top:1px;}}
+@media (max-width:640px){{
+ .ea-pl-cols{{display:none;}}
+ .ea-pl-row{{grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;}}
+ .ea-pl-n{{grid-column:1 / -1;}}
+ .ea-pl-v{{text-align:right;}}
+}}
+"""
+    st.markdown(css(extra) + f'<div class="ea-rx"><div class="ea-pl-head">{head}</div>'
+                f'<div class="ea-pl-cols"><span>{_h.escape(col_head)}</span><span>R per trade</span>'
+                f'<span style="text-align:right">Result</span></div>{body}'
+                f'<div class="ea-rx-cap">Best first. Dashed rows have under {PAIR_FEW} trades — too few to read yet. '
+                f'The centre line is break-even.</div></div>',
+                unsafe_allow_html=True)
+
+
+STATE_MIN = 3         # a second state needs this many trades before states are compared
+
+
+def state_board(df: pd.DataFrame, col: str = "Mental State", verdicts: bool = True) -> bool:
+    """Round 13: how you felt against what the trade paid, for whatever words
+    the journal uses. The old gate only knew Good / Okay / Bad; his journal
+    and the demo say "Clear & Calm", so it drew nothing for anyone. With one
+    state and no real alternative the honest read is one line, not a
+    comparison. False when under 3 trades carry a state."""
+    if df is None or df.empty or col not in df.columns:
+        return False
+    g = _counted(df)
+    lab = g[col].map(_txt)
+    untagged = int((lab == "").sum())
+    g, lab = g[lab != ""], lab[lab != ""]
+    total = int(len(g))
+    if total < 3:
+        return False
+    rows = []
+    for v, grp in g.groupby(lab):
+        rows.append(dict(m=str(v), n=int(len(grp)), exp=float(grp["__r"].mean()), net=float(grp["__r"].sum()),
+                         won=int(grp["Outcome"].eq("Win").sum()) if "Outcome" in grp.columns else None,
+                         idx=grp.index))
+    by_n = sorted(rows, key=lambda r: -r["n"])
+    t = _tokens()
+    st.markdown("### Mental state")
+    tail = f" {untagged} trade{'s have' if untagged != 1 else ' has'} no state logged." if untagged else ""
+    if len(by_n) == 1 or by_n[1]["n"] < STATE_MIN:
+        top, rest = by_n[0], by_n[1:]
+        s = (f"<b>{top['n']} of {total}</b> tagged trades were <b>{_h.escape(top['m'])}</b>, "
+             f"averaging {_h.escape(fmt_r(top['exp']))} a trade.")
+        if rest:
+            s += " The rest: " + "; ".join(
+                f"<b>{_h.escape(r['m'])}</b>, {r['n']} trade{'s' if r['n'] != 1 else ''} at "
+                f"{_h.escape(fmt_r(r['exp']))}" for r in rest) + "."
+        s += (f" No other state has {STATE_MIN} trades yet, so there's nothing to compare — "
+              f"keep logging the off days honestly and this becomes a comparison." + tail)
+        st.markdown(css(f".ea-ms1{{font-size:15px;line-height:1.55;color:{t['ink']};background:{t['soft']};"
+                        f"border:1px solid {t['line']};border-radius:10px;padding:12px 14px;margin:2px 0 6px;}}")
+                    + f'<div class="ea-rx"><div class="ea-ms1">{s}</div></div>', unsafe_allow_html=True)
+        return True
+    from edge_analysis.digest import _perm_p, _holm_pass
+    x = g["__r"]
+    keys, ps = [], []
+    for r in rows:
+        if PAIR_FEW <= r["n"] < total - 1:
+            m = pd.Series(x.index.isin(r["idx"]), index=x.index)
+            for d in ("good", "bad"):
+                keys.append((r["m"], d))
+                ps.append(_perm_p(x, m, lower=d == "bad"))
+    passed = {keys[i] for i in _holm_pass(ps)} if ps else set()
+    rows.sort(key=lambda r: (-r["exp"], -r["n"]))
+    ok = [r for r in rows if r["n"] >= STATE_MIN]
+    bits = []
+    best, worst = ok[0], ok[-1]
+    lab_ = lambda r, d: "beats chance" if (r["m"], d) in passed else "early read"  # noqa: E731
+    if best["exp"] > 0 and (verdicts or (best["m"], "good") in passed):
+        bits.append(f"<b>{_h.escape(best['m'])}</b> trades average {_h.escape(fmt_r(best['exp']))} over "
+                    f"{best['n']} <span class='ea-pl-l'>{lab_(best, 'good')}</span>")
+    if worst is not best and worst["exp"] < best["exp"] and (verdicts or (worst["m"], "bad") in passed):
+        bits.append(f"<b>{_h.escape(worst['m'])}</b> {_h.escape(fmt_r(worst['exp']))} over {worst['n']} "
+                    f"<span class='ea-pl-l'>{lab_(worst, 'bad')}</span>")
+    head = ("; ".join(bits) + "." if bits else
+            f"{total} trades carry a state. The rows show what each paid.") + tail
+    ranked_rows(rows, [f"<span>{_h.escape(r['m'])}</span>" for r in rows], head, "State")
+    return True
+
+
 def pair_list(counted: pd.DataFrame, m1: pd.Series, m2: pd.Series, verdicts: bool = True,
               col_head: str = "Structure, then trigger") -> bool:
     """His note on the Model 1 × Model 2 grid (27 Sep): "this is hard to
@@ -482,55 +604,9 @@ def pair_list(counted: pd.DataFrame, m1: pd.Series, m2: pd.Series, verdicts: boo
         bits.append("Every pair has under 3 trades so far, so none is a read yet")
     head = ". ".join(bits) + "."
 
-    t = _tokens()
-    span = max(0.25, max(abs(r["exp"]) for r in rows))
-    body = ""
-    for r in rows:
-        w = min(50.0, abs(r["exp"]) / span * 50.0)
-        col = GREEN if r["exp"] > 0.005 else (RED if r["exp"] < -0.005 else t["grey"])
-        left = 50.0 if r["exp"] >= 0 else 50.0 - w
-        won = "" if r["won"] is None else f" · {r['won']} won"
-        few = " few" if r["n"] < PAIR_FEW else ""
-        body += (f'<div class="ea-pl-row{few}">'
-                 f'<div class="ea-pl-n"><span>{_h.escape(r["m1"])}</span><em>then</em>'
-                 f'<span>{_h.escape(r["m2"])}</span></div>'
-                 f'<div class="ea-pl-bar" aria-hidden="true"><s></s>'
-                 f'<i style="left:{left:.1f}%;width:{max(w, 0.8):.1f}%;background:{col}"></i></div>'
-                 f'<div class="ea-pl-v"><b style="color:{col if col != t["grey"] else t["ink"]}">'
-                 f'{_h.escape(fmt_r(r["exp"]))}</b> a trade'
-                 f'<div>{r["n"]} trade{"s" if r["n"] != 1 else ""}{won} · {_h.escape(fmt_r(r["net"], 1))} total</div></div>'
-                 f'</div>')
-    extra = f"""
-.ea-pl-head{{font-size:15px;line-height:1.5;margin:0 0 12px;color:{t['ink']};}}
-.ea-pl-l{{font-size:11px;font-weight:700;color:{t['few']};white-space:nowrap;}}
-.ea-pl-cols,.ea-pl-row{{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr) 170px;gap:14px;align-items:center;}}
-.ea-pl-cols{{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:{t['muted']};
-  padding:0 12px 6px;}}
-.ea-pl-row{{background:{t['soft']};border:1px solid {t['line']};border-radius:10px;padding:10px 12px;margin:0 0 6px;}}
-.ea-pl-row.few{{background:transparent;border-style:dashed;}}
-.ea-pl-row.few .ea-pl-n span,.ea-pl-row.few .ea-pl-v b{{opacity:.78;}}
-.ea-pl-row.few .ea-pl-bar i{{opacity:.5;}}
-.ea-pl-n{{font-size:14.5px;font-weight:700;color:{t['ink']};min-width:0;}}
-.ea-pl-n em{{font-style:normal;font-weight:600;font-size:12.5px;color:{t['muted']};margin:0 7px;}}
-.ea-pl-bar{{position:relative;height:12px;border-radius:6px;background:{t['h1']};}}
-.ea-pl-bar s{{position:absolute;left:50%;top:-3px;bottom:-3px;width:2px;margin-left:-1px;background:{t['zero']};}}
-.ea-pl-bar i{{position:absolute;top:0;bottom:0;border-radius:6px;}}
-.ea-pl-v{{font-size:13px;color:{t['muted']};text-align:right;white-space:nowrap;}}
-.ea-pl-v b{{font-size:16px;font-weight:800;}}
-.ea-pl-v div{{font-size:12.5px;margin-top:1px;}}
-@media (max-width:640px){{
- .ea-pl-cols{{display:none;}}
- .ea-pl-row{{grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;}}
- .ea-pl-n{{grid-column:1 / -1;}}
- .ea-pl-v{{text-align:right;}}
-}}
-"""
-    st.markdown(css(extra) + f'<div class="ea-rx"><div class="ea-pl-head">{head}</div>'
-                f'<div class="ea-pl-cols"><span>{_h.escape(col_head)}</span><span>R per trade</span>'
-                f'<span style="text-align:right">Result</span></div>{body}'
-                f'<div class="ea-rx-cap">Best first. Dashed rows have under {PAIR_FEW} trades — too few to read yet. '
-                f'The centre line is break-even.</div></div>',
-                unsafe_allow_html=True)
+    names = [f'<span>{_h.escape(r["m1"])}</span><em>then</em><span>{_h.escape(r["m2"])}</span>'
+             for r in rows]
+    ranked_rows(rows, names, head, col_head)
     return True
 
 
