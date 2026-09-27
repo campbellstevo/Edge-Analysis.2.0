@@ -126,8 +126,10 @@ def test_explorer_frame_reads_both_journal_shapes():
     g = pd.DataFrame({
         "__Date": pd.to_datetime(["2026-09-21 16:33", "2026-09-22 09:10", "2026-09-23 20:00"]),
         "Closed RR": [-1.06, 2.1, 0.0],
-        "Entry Model 1": ["Internal NC+S", "External NC+S", None],
+        "Entry Model": [["External NC+S", "Internal NC+S"], ["External NC+S"], None],   # the combined list
+        "Entry Model 1": ["External NC+S", "External NC+S", None],
         "Entry Model 2": ["Internal NC+S", None, None],
+        "Timeframe 1": ["15M", "5M", None], "Timeframe 2": ["5M", None, None],
         "Rules Followed?": ["Yes", "No", None],
         "Mistake": ["No A+ setup", "", "NA"],
         "Comment": ["<b>chased</b>", None, ""],
@@ -135,7 +137,8 @@ def test_explorer_frame_reads_both_journal_shapes():
     x = rx.explorer_frame(g)
     assert list(x["r"]) == [0.0, 2.1, -1.06]                       # newest first
     first = x.iloc[-1]
-    assert first["setup"] == "Internal NC+S → Internal NC+S"   # the pair is the setup
+    assert first["setup"] == "External NC+S → Internal NC+S"   # the pair is the setup, not "A, B → B"
+    assert first["tf"] == "15M → 5M" and x.iloc[1]["tf"] == "5M"
     assert bool(first["flag"]) and bool(x.iloc[1]["flag"])          # mistake / rule broken
     assert not bool(x.iloc[0]["flag"])                               # "NA" is no mistake
     assert first["notes"] == "<b>chased</b>"                        # escaped at render, kept raw here

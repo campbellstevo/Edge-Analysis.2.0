@@ -1625,9 +1625,13 @@ def _notion_link(v) -> str:
 
 def explorer_frame(g: pd.DataFrame) -> pd.DataFrame:
     """One tidy row per trade for the explorer, newest first."""
-    em1 = _first_col(g, "Entry Model", "Entry Model 1")
     em2 = _first_col(g, "Entry Model 2")
-    tf = _first_col(g, "Entry Timeframe", "Timeframe 1", "Entry Model Timeframe")
+    # a double-confirmation journal also carries a combined "Entry Model" list
+    # (both models); read as the structure it printed "A, B → B"
+    em1 = (_first_col(g, "Entry Model 1", "Entry Model") if em2 else _first_col(g, "Entry Model", "Entry Model 1"))
+    tf2 = _first_col(g, "Timeframe 2")
+    tf = (_first_col(g, "Timeframe 1", "Entry Timeframe", "Entry Model Timeframe") if tf2 else
+          _first_col(g, "Entry Timeframe", "Timeframe 1", "Entry Model Timeframe"))
     ses = _first_col(g, "Session", "Session Norm")
     out = pd.DataFrame(index=g.index)
     out["when"] = pd.to_datetime(g["__Date"])
@@ -1636,8 +1640,11 @@ def explorer_frame(g: pd.DataFrame) -> pd.DataFrame:
     m1 = g[em1].map(_txt) if em1 else pd.Series("", index=g.index)
     m2 = g[em2].map(_txt) if em2 else pd.Series("", index=g.index)
     out["setup"] = [a + (f" → {b}" if b else "") for a, b in zip(m1, m2)]
-    out["model"] = m1
-    out["tf"] = g[tf].map(_txt) if tf else ""
+    # "your record with this setup" matches the whole pair
+    out["model"] = out["setup"]
+    t1 = g[tf].map(_txt) if tf else pd.Series("", index=g.index)
+    t2 = g[tf2].map(_txt) if tf2 else pd.Series("", index=g.index)
+    out["tf"] = [a + (f" → {b}" if (a and b) else "") for a, b in zip(t1, t2)]
     out["dir"] = g["Direction"].map(_txt) if "Direction" in g.columns else ""
     for c, k in (("MFE (R)", "mfe"), ("MAE (R)", "mae"), ("Planned R:R", "plan")):
         out[k] = pd.to_numeric(g[c], errors="coerce") if c in g.columns else float("nan")
