@@ -90,7 +90,7 @@ def test_focus_is_offered_to_everyone_without_early_reads():
     assert [t for t in at.toggle if t.label == "Focus"]
     text = " ".join(str(m.value) for m in at.markdown)
     assert "The rundown" in text and "Your record" in text
-    assert "early read" not in text
+    assert "ea-fo-er" not in text          # no early-read labels (the chat footnote may mention them)
 
 
 @pytest.fixture

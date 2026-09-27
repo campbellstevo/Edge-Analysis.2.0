@@ -13,7 +13,7 @@ from edge_analysis.core.clock import local_now
 import requests
 
 _ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
-_DEFAULT_MODEL = "claude-haiku-4-5-20251001"
+_DEFAULT_MODEL = "claude-sonnet-5"   # ANTHROPIC_MODEL overrides
 _DAILY_CAP = 15
 _MAX_TURNS = 8  # history turns sent to the model
 
@@ -160,7 +160,52 @@ def _stats_context(df: pd.DataFrame) -> str:
                              f"{give:.1f}R peak-vs-close gap")
     except Exception:
         pass
+    lines.extend(_extra_context(df))
     return "\n".join(lines) if lines else "No computable stats in the current view."
+
+
+def _plain(html_text: str) -> str:
+    import re as _re
+    return _re.sub(r"<[^>]+>", "", str(html_text)).replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+
+
+def _extra_context(df: pd.DataFrame) -> list:
+    """What the rest of the site says, so the analyst can answer about it:
+    the Focus rundown (with its beats-chance / early-read labels), targets,
+    breakeven, hold time, the lessons written most, and the last 15 trades."""
+    out = []
+    try:
+        from edge_analysis.ui import focus as _fo, lessons as _ls, reshape as _rx
+        g = _fo.dated(df)
+        if g is None:
+            return out
+        items = _fo.rundown(g, verdicts=True)
+        if items:
+            out.append("RUNDOWN (what each part of the site says; 'early read' = could still be luck):")
+            out += [f"- {it['area']}: {_plain(it['html'])} [tab: {it['tab']}]" for it in items]
+        if "Hold Time (min)" in g.columns:
+            h = pd.to_numeric(g["Hold Time (min)"], errors="coerce")
+            res = _fo._res_series(g)
+            hw, hl = h[res == "win"].median(), h[res == "loss"].median()
+            if hw == hw and hl == hl:
+                out.append(f"HOLD TIME: winners median {hw:.0f} min, losses median {hl:.0f} min")
+        grp = _ls.summary(g)["groups"]
+        if grp:
+            out.append("LESSONS WRITTEN MORE THAN ONCE: " + "; ".join(
+                f"{x['theme']} ({x['n']}x, e.g. \"{min((r['text'] for r in x['rows']), key=len)[:90]}\")"
+                for x in grp[:4]))
+        cols = [c for c in ("Session", "Entry Model 1", "Entry Model 2", "Mistake", "Teachings/Learning Curve")
+                if c in g.columns]
+        last = g.tail(15).iloc[::-1]
+        if len(last):
+            out.append("LAST TRADES (newest first):")
+            for _, r in last.iterrows():
+                bits = [r["__dt"].strftime("%a %d %b %H:%M"), _fmt(float(r["__rr"]))]
+                bits += [f"{c}: {_rx._txt(r[c])[:80]}" for c in cols if _rx._txt(r[c])]
+                out.append("- " + " | ".join(bits))
+    except Exception:
+        pass
+    return out
 
 
 # ─────────────────────────── built-in analyst ────────────────────────────────
@@ -236,6 +281,54 @@ def _builtin_answer(q: str, df: pd.DataFrame):
                     "conditions, news, gaps, volatility · mistakes & why you lose · "
                     "give-back & TP discipline · timing (hour/day) · dollars · "
                     "\"what's working\" and \"what should I cut\".")
+
+        # ── round-8 intents: the rundown and the new views ────────────────────
+        from edge_analysis.ui import focus as _fo
+        g_ = _fo.dated(df)
+        if g_ is not None and has("rundown", "summary", "summarise", "summarize", "overview",
+                                  "how am i doing", "how am i going", "big picture", "tl;dr", "tldr"):
+            items = _fo.rundown(g_, verdicts=bool(st.session_state.get("ea_is_owner")))
+            if items:
+                return "\n".join(f"- **{it['area']}:** {_plain(it['html'])}" for it in items)
+        if g_ is not None and not has("month", "pace", "on track") and has(
+                "targets", " tp", "take profit", "reach my target", "reached my target", "planned r",
+                "too ambitious", "too greedy"):
+            from edge_analysis.ui import reshape as _rx
+            tg = _rx.targets_frame(g_)
+            if tg is not None:
+                ts = _rx.targets_summary(tg)
+                return (f"You plan **{ts['plan']:.1f}R**. Price gave you **{ts['mfe']:.1f}R** on average "
+                        f"(median {ts['mfe_med']:.1f}R) and reached your target on **{ts['reached']} of {ts['n']}** "
+                        f"trades; you banked {_fmt(ts['bank'])} a trade. The per-trade picture is on Entry "
+                        "→ Managing the trade.")
+        if g_ is not None and has("breakeven", "break even", "break-even", "move to be", " be placement",
+                                  " be rule"):
+            items = {it["area"]: it["html"] for it in _fo.rundown(g_, verdicts=True)}
+            if "Breakeven" in items:
+                return _plain(items["Breakeven"]) + " Each breakeven rule's net R is on Entry → Managing the trade."
+        if g_ is not None and has("lesson", "my notes", "i keep writing", "teachings", "what have i learned",
+                                  "what have i learnt"):
+            from edge_analysis.ui import lessons as _ls
+            grp = _ls.summary(g_)["groups"]
+            if grp:
+                return "\n".join(f"- **{x['theme']}** ({x['n']}×): \"{min((r['text'] for r in x['rows']), key=len)}\""
+                                 for x in grp[:4]) + "\n\nAll of them are on Psychology → Your lessons."
+            return "You haven't written the same lesson twice yet; they group on Psychology → Your lessons."
+        if g_ is not None and has("hold time", "holding time", "how long", "duration", "quick stop",
+                                  "held for"):
+            items = {it["area"]: it for it in _fo.rundown(g_, verdicts=True)}
+            if "Hold Time (min)" in g_.columns:
+                h = pd.to_numeric(g_["Hold Time (min)"], errors="coerce")
+                res = _fo._res_series(g_)
+                hw, hl = h[res == "win"].median(), h[res == "loss"].median()
+                if hw == hw and hl == hl:
+                    return (f"Your winners held a median **{hw:.0f} min**; your losses closed after a median "
+                            f"**{hl:.0f} min**. Every trade is on Entry → Managing the trade.")
+        if g_ is not None and has("last trade", "recent trades", "last few trades", "last 5", "last five"):
+            last = g_.tail(5).iloc[::-1]
+            return "\n".join(f"- {r['__dt'].strftime('%a %d %b')}: **{_fmt(float(r['__rr']))}**"
+                             + (f" · {r['Session']}" if 'Session' in g_.columns and str(r['Session']) not in ('', 'nan') else "")
+                             for _, r in last.iterrows())
 
         if has("improving", "getting better", "progress", "better than before", "improved"):
             g = _ordered(df, rr)
@@ -772,14 +865,18 @@ def _builtin_answer(q: str, df: pd.DataFrame):
 
 # ─────────────────────────── model call ──────────────────────────────────────
 _SYSTEM = (
-    "You are Edge, the built-in analyst of a private trading-journal dashboard. "
-    "Answer using ONLY the STATS block below — it is this trader's own logged data. "
-    "Be direct and concise (2-6 sentences), quote numbers in R exactly as given. "
-    "If the stats don't contain the answer, say so and name the dashboard tab that would "
-    "(Performance, Entry, Externals, Psychology, Plan, Review). "
-    "Never give trade signals, predictions, position sizes, or financial advice — "
-    "you analyse the past; the trader decides the future. Sample sizes under 8 deserve a "
-    "reliability caveat.\n\nSTATS:\n{stats}"
+    "You are Edge, the analyst built into a private trading-journal dashboard. Answer ONLY from "
+    "the STATS block below: it is this trader's own logged data, already computed by the site.\n"
+    "How to answer:\n"
+    "- Lead with the direct answer in one sentence, then at most 4 short bullet points.\n"
+    "- Quote numbers in R exactly as given; never invent or recompute a number that isn't there.\n"
+    "- Anything marked 'early read' could still be luck: say so. Samples under 8 trades get a caveat.\n"
+    "- When the answer lives on a dashboard tab (Performance, Entry, Externals, Psychology, Plan, "
+    "Review), name it so they can look.\n"
+    "- If the stats don't contain the answer, say what's missing (usually a field they don't log).\n"
+    "- Plain markdown only (bold and '-' bullets). No tables, no headings.\n"
+    "Never give trade signals, predictions, position sizes or financial advice: you explain the past; "
+    "the trader decides the future.\n\nSTATS:\n{stats}"
 )
 
 
@@ -792,7 +889,7 @@ def _ask_llm(stats: str, history: list) -> str:
             _ANTHROPIC_URL,
             headers={"x-api-key": key, "anthropic-version": "2023-06-01",
                      "content-type": "application/json"},
-            json={"model": model, "max_tokens": 400,
+            json={"model": model, "max_tokens": 700,
                   "system": _SYSTEM.format(stats=stats), "messages": msgs},
             timeout=30)
         if resp.status_code != 200:
@@ -822,54 +919,112 @@ def _llm_allowed() -> bool:
 
 
 # ─────────────────────────── UI ──────────────────────────────────────────────
-def render_chat_bubble(df: pd.DataFrame, llm_for_this_user: bool = False) -> None:
-    """Floating 'Ask your data' popover, pinned bottom-right by theme CSS.
+_SUGGEST = ["Give me the rundown", "What's my biggest leak?", "Am I on pace this month?",
+            "Do I reach my targets?", "What do my lessons say?", "How did this week go?"]
 
-    The built-in analyst answers the common questions for free, for everyone.
-    Unmatched questions upgrade to the LLM only when an API key is present
-    AND the caller says this visitor may use it — the owner, at launch (D5);
-    the key is his."""
+
+def _md_lite(text: str) -> str:
+    """Escape everything, then allow **bold** and '- ' bullets back in, so a
+    model answer (or journal text inside it) can never inject markup."""
+    import re as _re
+    out, in_list = [], False
+    for raw in str(text).splitlines():
+        line = _h.escape(raw.rstrip())
+        line = _re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", line)
+        if _re.match(r"^\s*[-\u2022*] ", line):
+            if not in_list:
+                out.append("<ul>")
+                in_list = True
+            out.append("<li>" + _re.sub(r"^\s*[-\u2022*] ", "", line) + "</li>")
+            continue
+        if in_list:
+            out.append("</ul>")
+            in_list = False
+        out.append(line + "<br>" if line else "<br>")
+    if in_list:
+        out.append("</ul>")
+    html = "".join(out)
+    return _re.sub(r"(<br>)+$", "", html)
+
+
+def _answer(q: str, df: pd.DataFrame, hist: list, llm_on: bool, left: int) -> str:
+    ans = _builtin_answer(q, df)
+    if ans is None and llm_on and left > 0 and _llm_allowed():
+        ans = _ask_llm(_stats_context(df), hist)
+        st.session_state["ea_chat_used"] = int(st.session_state.get("ea_chat_used", 0)) + 1
+    elif ans is None:
+        ans = ("I can't answer that one from the built-in set. Try one of the suggestions, or ask about "
+               "a session, a setup, your targets, breakeven, lessons, discipline or this week.")
+    return ans
+
+
+def _chat_css() -> str:
+    from edge_analysis.ui import reshape as _rx
+    t = _rx._tokens()
+    dark = _rx._dark()
+    me_bg = "#2e2a5a" if dark else "#efeaff"
+    return f"""<style>
+.ea-cb-h{{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin:0 0 6px;}}
+.ea-cb-h b{{font-size:16px;color:{t['ink']};}}
+.ea-cb-h span{{font-size:12px;color:{t['muted']};}}
+.ea-cb-m{{font-size:13.8px;line-height:1.5;padding:9px 12px;margin:6px 0;border-radius:12px;overflow-wrap:anywhere;}}
+.ea-cb-m.me{{background:{me_bg};color:{t['ink']};margin-left:44px;border-bottom-right-radius:3px;}}
+.ea-cb-m.ai{{background:{t['soft']};color:{t['ink']};border:1px solid {t['line']};margin-right:24px;border-bottom-left-radius:3px;}}
+.ea-cb-m ul{{margin:4px 0 0 18px;padding:0;}} .ea-cb-m li{{margin:2px 0;}}
+.ea-cb-note{{font-size:11.5px;color:{t['muted']};margin-top:4px;}}
+</style>"""
+
+
+def render_chat_bubble(df: pd.DataFrame, llm_for_this_user: bool = False) -> None:
+    """Floating 'Ask Edge' panel, pinned bottom-right by theme CSS.
+
+    Round 8 (his 27 Sep ask: "a big upgrade on that chat box"): one-tap
+    suggested questions, answers that know everything the site shows (the
+    Focus rundown, targets, breakeven, hold time, lessons, the last 15 trades),
+    light/dark bubbles with bold and bullet answers, and a New chat button.
+    Built-in answers are free for everyone; unmatched questions go to Claude
+    only for the owner (D5), capped per day."""
     hist = st.session_state.setdefault("ea_chat", [])
     used = int(st.session_state.get("ea_chat_used", 0))
     left = max(0, _DAILY_CAP - used)
     llm_on = chat_enabled() and bool(llm_for_this_user)
+    pending = st.session_state.pop("ea_chat_pending", None)
     with st.container():
         st.markdown('<div class="ea-chatfab"></div>', unsafe_allow_html=True)
-        with st.popover("💬", help="Ask your data"):
-            st.markdown('<div class="ea-chat-body"></div>', unsafe_allow_html=True)
+        with st.popover("\U0001f4ac", help="Ask Edge about your journal"):
+            st.markdown('<div class="ea-chat-body"></div>' + _chat_css(), unsafe_allow_html=True)
+            sub = (f"{left} AI questions left today" if llm_on else "instant answers from your journal")
+            st.markdown(f'<div class="ea-cb-h"><b>Ask Edge</b><span>{_h.escape(sub)}</span></div>',
+                        unsafe_allow_html=True)
+            if pending:
+                hist.append(("user", pending))
+                with st.spinner("Reading your journal\u2026"):
+                    hist.append(("assistant", _answer(pending, df, hist, llm_on, left)))
             if not hist:
-                st.caption("Ask about your own stats — \"what's my best session?\", "
-                           "\"am I on pace this month?\", \"what do rules breaks cost me?\"")
+                st.caption("Ask anything about your own trades. Start with one of these:")
             for role, text in hist[-12:]:
-                safe = _h.escape(text).replace("\n", "<br>")
-                if role == "user":
-                    st.markdown(
-                        f"<div style='background:#f0ebff;border-radius:12px 12px 2px 12px;"
-                        f"padding:9px 13px;margin:4px 0 4px 48px;font-size:13.5px;'>{safe}</div>",
-                        unsafe_allow_html=True)
-                else:
-                    st.markdown(
-                        f"<div style='background: rgb(248, 249, 252);border-radius:12px 12px 12px 2px;"
-                        f"padding:9px 13px;margin:4px 48px 4px 0;font-size:13.5px;'>{safe}</div>",
-                        unsafe_allow_html=True)
+                cls = "me" if role == "user" else "ai"
+                body = _h.escape(text) if role == "user" else _md_lite(text)
+                st.markdown(f'<div class="ea-cb-m {cls}">{body}</div>', unsafe_allow_html=True)
+            asked = {t for r, t in hist if r == "user"}
+            chips = [q for q in _SUGGEST if q not in asked][:3 if hist else 6]
+            if chips:
+                cc = st.columns(2)
+                for i, q in enumerate(chips):
+                    if cc[i % 2].button(q, key=f"ea_chat_chip_{i}_{len(hist)}", use_container_width=True):
+                        st.session_state["ea_chat_pending"] = q
+                        st.rerun()
             with st.form("ea_chat_form", clear_on_submit=True, border=False):
-                q = st.text_input("Question", key="ea_chat_q",
-                                  placeholder="Ask about your stats…",
+                q = st.text_input("Question", key="ea_chat_q", placeholder="Ask about your trades\u2026",
                                   label_visibility="collapsed")
-                sent = st.form_submit_button("Ask", use_container_width=True)
-            if sent and q and q.strip():
-                hist.append(("user", q.strip()))
-                ans = _builtin_answer(q, df)
-                if ans is None and llm_on and left > 0 and _llm_allowed():
-                    with st.spinner("Reading your stats…"):
-                        ans = _ask_llm(_stats_context(df), hist)
-                    st.session_state["ea_chat_used"] = used + 1
-                elif ans is None:
-                    ans = ("I didn't catch that one. Try: \"what's my best session?\" · "
-                           "\"am I on pace this month?\" · \"what do rule breaks cost me?\" · "
-                           "\"long vs short?\" · \"how much have I given back?\"")
-                hist.append(("assistant", ans))
+                c1, c2 = st.columns([3, 1])
+                sent = c1.form_submit_button("Ask", use_container_width=True, type="primary")
+                clear = c2.form_submit_button("New chat", use_container_width=True)
+            if clear:
+                st.session_state["ea_chat"] = []
                 st.rerun()
-            _cap_note = (f" · {left} AI questions left today" if llm_on else "")
-            st.caption("Answers come from your own data, instantly and privately"
-                       + _cap_note + " · not financial advice")
+            if sent and q and q.strip():
+                st.session_state["ea_chat_pending"] = q.strip()[:500]
+                st.rerun()
+            st.markdown('<div class="ea-cb-note">From your own journal only \u00b7 early reads can still be '
+                        'luck \u00b7 not financial advice</div>', unsafe_allow_html=True)

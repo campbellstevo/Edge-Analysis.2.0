@@ -1487,9 +1487,10 @@ def inject_theme():
         color: #ffffff !important; font-weight: 700 !important;
     }}
     div[data-testid="stPopoverBody"]:has(.ea-chat-body) {{
-        width: 400px !important; max-width: 92vw !important;
-        max-height: 540px; overflow-y: auto;
+        width: 440px !important; max-width: 94vw !important;
+        max-height: min(640px, 78vh); overflow-y: auto;
     }}
+    div[data-testid="stPopoverBody"]:has(.ea-chat-body) button p {{ font-size: 13px !important; }}
     div[data-testid="stPopoverBody"]:has(.ea-chat-body) [data-testid="stTextInput"] input {{
         font-size: 13.5px;
     }}
