@@ -3965,6 +3965,29 @@ def _mc_paths(n_paths: int, total_trades: int, wr: float, be: float,
 
 
 def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
+    """Round 17 (Projections, 6/10: "a model, not your data, and the tallest
+    block on the main tab"): one sentence in R on top, the whole simulator —
+    sliders, paths, drawdowns, month by month — one tap away."""
+    st.session_state.pop("_ea_proj_sum", None)
+    head = st.empty()
+    with st.expander("Change the assumptions \u2014 paths, drawdowns, month by month"):
+        _projections_body(df_raw, styler)
+    s = st.session_state.get("_ea_proj_sum")
+    if not s:
+        head.empty()
+        return
+    from edge_analysis.ui.reshape import fmt_r as _fr
+    _pp = ("over 99%" if s["prob"] >= 0.995 else "under 1%" if s["prob"] <= 0.005 else f"{s['prob']:.0%}")
+    _early = " An early read: the fewer the trades, the wider this gets." if s["n"] < 50 else ""
+    head.markdown(
+        "<div class='ea-proj1' style='font-size:15px;line-height:1.55;margin:0 0 8px;'>"
+        f"If the next <b>{s['months']} months</b> trade like your last <b>{s['n']}</b> "
+        f"(about {s['tpm']} a month), the middle path ends near <b>{_html.escape(_fr(s['p50'], 0))}</b>; "
+        f"8 in 10 paths land between {_html.escape(_fr(s['p10'], 0))} and {_html.escape(_fr(s['p90'], 0))}, "
+        f"and <b>{_pp}</b> end in profit.{_early}</div>", unsafe_allow_html=True)
+
+
+def _projections_body(df_raw: pd.DataFrame, styler) -> None:
     from scipy import stats as scipy_stats
 
     st.markdown("""
@@ -4330,6 +4353,11 @@ def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
     s = active_stats
     ret_sign = "+" if s["total_return"] >= 0 else ""
     prob_profit = float(np.mean(final_balances > starting_balance))
+    _tot_r = rr_matrix.sum(axis=1)
+    st.session_state["_ea_proj_sum"] = dict(
+        prob=prob_profit, months=int(total_months), tpm=int(trades_per_month), n=int(total_incl_be),
+        p10=float(np.percentile(_tot_r, 10)), p50=float(np.percentile(_tot_r, 50)),
+        p90=float(np.percentile(_tot_r, 90)))
     # a simulation can't make anything certain: never print 100.0% or 0.0%
     _pp_txt = ("over 99%" if prob_profit >= 0.995 else
                "under 1%" if prob_profit <= 0.005 else f"{prob_profit:.0%}")

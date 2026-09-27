@@ -96,3 +96,11 @@ def test_projection_paths_carry_the_sample_uncertainty():
     p = lambda eq: float(np.mean(eq[:, -1] > 10000))
     assert p(fixed) > 0.99 and p(n19) < 0.9          # 19 trades can't make profit near-certain
     assert p(n2000) > p(n19)                          # more trades, more certainty
+
+
+def test_projections_fold_to_one_sentence_in_r(monkeypatch):
+    # round 17: the simulator sits in an expander; the card leads with R only
+    import inspect
+    src = inspect.getsource(T._projections_tab)
+    assert "st.expander(" in src and "_projections_body(df_raw, styler)" in src
+    assert "$" not in src.split('head.markdown(')[1]          # the sentence carries no dollars
