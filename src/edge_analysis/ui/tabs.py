@@ -1211,18 +1211,22 @@ def _month_card(f: pd.DataFrame, styler) -> None:
             _over = _cap_on and n_tr > cap
             pace_c = "#ef4444" if _over else "#0f172a"
             _month_closed = (_now_pct - _stop_pct) <= 0
-            chips = [("TO TARGET",
-                      "\u2014" if _month_closed
-                      else f"{max(0.0, _tgt_pct - _now_pct):.2f}%",
-                      "#64748b" if _month_closed
-                      else ("#16a34a" if _now_pct >= _tgt_pct else "#0f172a")),
+            # each number once (his OK, 27 Sep): the bar above already says
+            # "to go" (up month) or "room left" (down month), and the headline
+            # carries the trade count, so those tiles only show what it doesn't
+            _to_tgt = ("TO TARGET",
+                       "\u2014" if _month_closed
+                       else f"{max(0.0, _tgt_pct - _now_pct):.2f}%",
+                       "#64748b" if _month_closed
+                       else ("#16a34a" if _now_pct >= _tgt_pct else "#0f172a"))
+            _room = ("STOP ROOM", f"{max(0.0, _now_pct - _stop_pct):.2f}%",
+                     "#ef4444" if _now_pct - _stop_pct <= 0
+                     else ("#ef4444" if cur - STOP_R < 2 else "#0f172a"))
+            chips = ([_room] if cur >= 0 else [_to_tgt]) + [
                      ("MAX DRAWDOWN", f"-{_as_pct(maxdd, _rp):.2f}%",
-                      "#ef4444" if maxdd > 0 else "#64748b"),
-                     ("STOP ROOM", f"{max(0.0, _now_pct - _stop_pct):.2f}%",
-                      "#ef4444" if _now_pct - _stop_pct <= 0
-                      else ("#ef4444" if cur - STOP_R < 2 else "#0f172a")),
-                     (("TRADES · PACE", f"{n_tr} of {cap}" + (" ⚠" if _over else ""), pace_c)
-                      if _cap_on else ("TRADES", f"{n_tr}", "#0f172a"))]
+                      "#ef4444" if maxdd > 0 else "#64748b")]
+            if _cap_on:
+                chips.append(("TRADES · PACE", f"{n_tr} of {cap}" + (" ⚠" if _over else ""), pace_c))
             st.markdown(
                 "<div style='display:flex;gap:12px;flex-wrap:wrap;margin-top:12px;'>" + "".join(
                     f"<div style='flex:1;min-width:140px;background:#f8f9fc;border-radius:12px;"
@@ -1396,7 +1400,7 @@ def _alltime_card(f: pd.DataFrame, styler) -> None:
         chips = [("NET", f"{net:+.1f}R", "#16a34a" if net >= 0 else "#ef4444"),
                  ("TRADES", f"{n}", "#0f172a"),
                  ("WIN", f"{win_pct:.0f}%", "#0f172a"),
-                 ("AVG WIN", "—" if avg_win != avg_win else f"{avg_win:.2f}R", "#4800ff"),
+                 # avg win lives in Your record's "Win vs loss size" (27 Sep)
                  ("EXPECTANCY", "—" if expc != expc else f"{expc:+.2f}R",
                   "#16a34a" if expc == expc and expc >= 0 else "#ef4444"),
                  ("PROFIT FACTOR", "—" if pf != pf else f"{pf:.2f}",
