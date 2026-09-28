@@ -4711,7 +4711,7 @@ def _compute_refinements(stats: dict) -> dict:
         holding.append({"title": f"{w['session']} session is bleeding R",
                         "detail": f"{w['net_rr']:+.1f}R over {w['trades']} trades ({w['win_rate']:.0f}% win rate).",
                         "test": (f"session:{w['session']}", "bad")})
-        refine.append({"title": f"Tighten or cut {w['session']} trades",
+        refine.append({"of": holding[-1]["title"], "title": f"Tighten or cut {w['session']} trades",
                        "action": f"{w['session']} is net {w['net_rr']:+.1f}R. Either stop trading it or raise the bar there and re-measure.",
                        "test": (f"session:{w['session']}", "bad")})
 
@@ -4724,7 +4724,7 @@ def _compute_refinements(stats: dict) -> dict:
         holding.append({"title": f"{w['instrument']} is a net drag",
                         "detail": f"{w['net_rr']:+.1f}R over {w['trades']} trades ({w['win_rate']:.0f}% win rate).",
                         "test": (f"instrument:{w['instrument']}", "bad")})
-        refine.append({"title": f"Reconsider trading {w['instrument']}",
+        refine.append({"of": holding[-1]["title"], "title": f"Reconsider trading {w['instrument']}",
                        "action": f"{w['instrument']} costs you {w['net_rr']:+.1f}R. Drop it or trade only A+ setups there.",
                        "test": (f"instrument:{w['instrument']}", "bad")})
 
@@ -4737,7 +4737,7 @@ def _compute_refinements(stats: dict) -> dict:
         holding.append({"title": f"'{w['model']}' underperforms",
                         "detail": f"{w['net_rr']:+.1f}R over {w['trades']} trades ({w['win_rate']:.0f}% win rate).",
                         "test": (f"model:{w['model']}", "bad")})
-        refine.append({"title": "Lean into your best model",
+        refine.append({"of": holding[-1]["title"], "title": "Lean into your best model",
                        "action": f"Shift size from '{w['model']}' ({w['net_rr']:+.1f}R) toward your higher-expectancy models.",
                        "test": (f"model:{w['model']}", "bad")})
 
@@ -4751,7 +4751,7 @@ def _compute_refinements(stats: dict) -> dict:
                 holding.append({"title": f"'{st_name}' mental state hurts you",
                                 "detail": f"{d['win_rate']:.0f}% win rate vs {good_wr:.0f}% when Good \u2014 a {gap:.0f}-point drop.",
                                 "test": (f"mental:{st_name}", "bad")})
-                refine.append({"title": f"Treat '{st_name}' as a no-trade signal",
+                refine.append({"of": holding[-1]["title"], "title": f"Treat '{st_name}' as a no-trade signal",
                                "action": f"Win rate falls {gap:.0f} points in a '{st_name}' state. Step away when you're not sharp.",
                                "test": (f"mental:{st_name}", "bad")})
 
@@ -4759,7 +4759,7 @@ def _compute_refinements(stats: dict) -> dict:
     if bbc and bbp is not None and bbp >= 3:
         holding.append({"title": f"{bbc} bad beats ({bbp:.0f}% of trades)",
                         "detail": "Stopped out then price ran to TP \u2014 emotionally costly even when it's not your fault."})
-        refine.append({"title": "Run the step-away protocol",
+        refine.append({"of": holding[-1]["title"], "title": "Run the step-away protocol",
                        "action": "After a bad beat, close the platform until the next session to avoid revenge trades."})
 
     ecn = stats.get("early_close_net")
@@ -4770,7 +4770,7 @@ def _compute_refinements(stats: dict) -> dict:
         else:
             holding.append({"title": f"Early closing costs {ecn:.1f}R",
                             "detail": "You leave more on winners than you save on break-evens."})
-            refine.append({"title": "Let winners run further",
+            refine.append({"of": holding[-1]["title"], "title": "Let winners run further",
                            "action": f"Early closes net {ecn:.1f}R. Hold toward structure before managing the trade."})
 
     if not working:
@@ -4831,8 +4831,8 @@ def _compute_refinements(stats: dict) -> dict:
     for _, kind, title, evid, key in flag_sugs[:3]:
         if kind == "dont":
             holding.append({"title": title, "detail": evid, "test": (key, "bad")})
-            refine.append({"title": title,
-                           "action": f"{evid}. Skip these for a month and re-measure.", "test": (key, "bad")})
+            refine.append({"of": holding[-1]["title"], "title": title,
+                           "action": "Skip these for a month and re-measure.", "test": (key, "bad")})
         else:
             working.append({"title": title, "detail": f"{evid}. Keep requiring it.", "test": (key, "good")})
 
@@ -4844,7 +4844,7 @@ def _compute_refinements(stats: dict) -> dict:
     for r in sorted([r for r in cats8 if r["Avg R"] <= -0.35], key=lambda r: r["Avg R"])[:2]:
         holding.append({"title": f"{r['Category']} costs {r['Avg R']:+.2f}R per trade",
                         "detail": f"Across {r['Trades']} trades.", "test": (f"cat:{r['Category']}", "bad")})
-        refine.append({"title": f"Filter out '{r['Category']}' trades",
+        refine.append({"of": holding[-1]["title"], "title": f"Filter out '{r['Category']}' trades",
                        "action": f"This condition runs {r['Avg R']:+.2f}R over {r['Trades']} trades. "
                                  "Skip these for a month and re-measure.", "test": (f"cat:{r['Category']}", "bad")})
     return {"working": working[:5], "holding_back": holding[:5], "refinements": refine[:5]}
@@ -5052,23 +5052,38 @@ def _refinements_tab(f_perf: pd.DataFrame, df_all_safe: pd.DataFrame, styler,
     cols = [("working", "detail", "#16a34a", "\u2713 What's Working", "ref-working"),
             ("holding_back", "detail", "#ef4444", "\u26a0 Holding the System Back", "ref-holding"),
             ("refinements", "action", "#4800ff", "\u2192 Potential Refinements", "ref-refine")]
+    # Each fact once (28 Sep): a refinement that only restates a leak becomes
+    # that leak's "what to do" line, and a slice the Trading plan card above
+    # already shows with its number (a session, a proven timeframe) is not
+    # repeated here.
+    _said = st.session_state.get("_ea_plan_said", set())
+    _todo = {it["of"]: it.get("action", "") for it in result.get("refinements", []) if it.get("of")}
     shown = []
     for key, body, col, head, cls in cols:
-        items = [it for it in result.get(key, []) if not members or it.get("proven") is True]
+        items = [it for it in result.get(key, [])
+                 if (not members or it.get("proven") is True)
+                 and not (key == "refinements" and it.get("of"))
+                 and (it.get("test") or ("",))[0] not in _said]
         if items:
             shown.append((items, body, col, head, cls))
-    st.markdown("<style>.ref-tag{font-size:11.5px;font-weight:700;color:#687184;margin-top:6px;}</style>",
-                unsafe_allow_html=True)
+    st.markdown("<style>.ref-tag{font-size:11.5px;font-weight:700;color:#687184;margin-top:6px;}"
+                ".ref-card-do{font-size:13px;font-weight:600;color:#3b21b8;margin-top:6px;line-height:1.5;}"
+                "</style>", unsafe_allow_html=True)
+
+    def key_of(cls):
+        return {"ref-working": "working", "ref-holding": "holding_back", "ref-refine": "refinements"}[cls]
     for (items, body, col, head, cls), c in zip(shown, st.columns(max(1, len(shown)))):
         with c:
             st.markdown(f'<div class="ref-col-header" style="color:{col};border-color:{col};">{head}</div>',
                         unsafe_allow_html=True)
             for it in items:
+                _do = _todo.get(it.get("title")) if key_of(cls) == "holding_back" else None
                 st.markdown(
                     f'<div class="ref-card {cls}">'
                     f'<div class="ref-card-title">{_html.escape(str(it.get("title", "")))}</div>'
                     f'<div class="ref-card-body">{_html.escape(str(it.get(body, "")))}</div>'
-                    f'{_tag(it)}</div>',
+                    + (f'<div class="ref-card-do">\u2192 {_html.escape(_do)}</div>' if _do else "")
+                    + f'{_tag(it)}</div>',
                     unsafe_allow_html=True,
                 )
     n_e = result.get("n_early", 0)

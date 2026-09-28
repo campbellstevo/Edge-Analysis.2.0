@@ -323,9 +323,10 @@ def plan_model(df_raw: pd.DataFrame):
     beats = {_pv[i][0] for i in _keep}
     good = sorted([s for s in segs if s[1] > 0.05], key=lambda x: -x[1])[:8]
     bad = sorted([s for s in segs if s[1] < -0.02], key=lambda x: x[1])[:8]
+    covered = {_GATE_GROUP[e[0]] for e in entries if e[0] in _GATE_GROUP}
     return dict(g=g, entries=entries, proven=proven, review=review, young=_young,
                 all_pass=all_pass, good=good, bad=bad, planned=planned, beats=beats,
-                gate_beats=gate_beats,
+                gate_beats=gate_beats, covered=covered, proven_tf=list(_good_tf or []),
                 min_rr=_min_rr, min_rr_ev=_min_rr_ev, min_rr_derived=_min_rr_derived)
 
 
@@ -370,9 +371,9 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
             stat = f"<span style='font-size:12px;color:#64748b;'>{_one}</span>"
             small = ""
         else:
-            ec = GREEN if (edge == edge and edge >= 0) else RED
-            chip = (f"<span style='background:{ec}1a;color:{ec};font-weight:800;font-size:13px;"
-                    f"border-radius:999px;padding:3px 12px;'>edge {edge:+.2f}R</span>"
+            _pos = edge == edge and edge >= 0
+            # text darker than the tint it sits on (was 2.9:1), both themes
+            chip = (f"<span class='ea-pc-chip {'pos' if _pos else 'neg'}'>edge {edge:+.2f}R</span>"
                     if edge == edge else "")
             lows = (" <span style='font-size:10px;color:#64748b;border:1px solid rgba(148,163,184,0.4);"
                     "border-radius:999px;padding:1px 7px;'>low sample</span>" if low else "")
@@ -383,17 +384,18 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
             stat = chip + lows + chance
             small = (f"<div style='font-size:11px;color:#64748b;margin-top:3px;'>"
                      f"{lab_y} {_fmt_r(a)} ({na}) · {lab_n} {_fmt_r(b)} ({nb})</div>")
-        op = "opacity:0.65;" if faded else ""
-        num_bg = "#c3c9d4" if faded else PURPLE
+        # under-review rows read quieter through colour, not opacity: a faded
+        # row at 0.65 put its numbers under 3:1 (28 Sep contrast sweep)
+        op = ""
+        num_cls = "ea-pc-n rev" if faded else "ea-pc-n"
+        rule_col = "#64748b" if faded else "#334155"
         return (
             # wraps on a phone: the rule keeps a readable width and the edge
             # figures drop beneath it instead of squeezing it to ~85px
             f"<div style='display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;padding:11px 16px;{op}"
             f"border-bottom:1px solid rgba(148,163,184,0.15);'>"
-            f"<div style='min-width:26px;height:26px;border-radius:50%;background:{num_bg};"
-            f"color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center;"
-            f"justify-content:center;'>{i}</div>"
-            f"<div style='flex:1 1 220px;min-width:0;font-size:14px;color:#334155;font-weight:600;'>{rule}</div>"
+            f"<div class='{num_cls}'>{i}</div>"
+            f"<div style='flex:1 1 220px;min-width:0;font-size:14px;color:{rule_col};font-weight:600;'>{rule}</div>"
             f"<div style='text-align:right;margin-left:auto;'>{stat}{small}</div></div>"
         )
 
@@ -405,8 +407,19 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
                       "NO PROVEN EDGE YET</div>")
         rows_html += "".join(_row(i, e, faded=True)
                              for i, e in enumerate(review, len(proven) + 1))
+    _pc_css = ("<style>"
+               ".ea-pc-chip{font-weight:800;font-size:13px;border-radius:999px;padding:3px 12px;}"
+               ".ea-pc-chip.pos{color:#166534;background:rgba(22,163,74,.12);}"
+               ".ea-pc-chip.neg{color:#b91c1c;background:rgba(239,68,68,.11);}"
+               "body:has(.ea-dark-css) .ea-pc-chip.pos{color:#4ade80;background:rgba(34,197,94,.14);}"
+               "body:has(.ea-dark-css) .ea-pc-chip.neg{color:#fca5a5;background:rgba(239,68,68,.16);}"
+               ".ea-pc-n{min-width:26px;height:26px;border-radius:50%;background:#4800ff;color:#fff;font-size:13px;"
+               "font-weight:700;display:flex;align-items:center;justify-content:center;}"
+               ".ea-pc-n.rev{background:#e2e8f0;color:#475569;}"
+               "body:has(.ea-dark-css) .ea-pc-n.rev{background:#2a3142;color:#cbd5e1;}"
+               "</style>")
     st.markdown(
-        "<div style='background:#fff;border:1px solid rgba(0,0,0,0.06);border-radius:12px;"
+        _pc_css + "<div style='background:#fff;border:1px solid rgba(0,0,0,0.06);border-radius:12px;"
         "box-shadow:0 2px 10px rgba(0,0,0,0.04);overflow:hidden;margin:4px 0 10px;'>"
         + rows_html + "</div>", unsafe_allow_html=True)
     _comparable = any(e[2] for e in entries)
@@ -465,13 +478,28 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
                 f"<div style='padding:11px 16px;font-size:12px;font-weight:700;letter-spacing:0.08em;"
                 f"color:{col};'>{title}</div>{rows}</div>")
 
-    st.markdown("#### The edge, ranked")
-    st.markdown("<div style='display:flex;gap:14px;flex-wrap:wrap;margin:4px 0 10px;'>"
-                + _ranklist("EARNING R — AVERAGE PER TRADE", good, True)
-                + _ranklist("COSTING R — AVERAGE PER TRADE", bad, False)
-                + "</div>", unsafe_allow_html=True)
+    # Each fact once on this page (28 Sep, his note: "you double down on the
+    # A+ setup rule, on suggested and in my process"). A slice that is a box
+    # on the checklist, or that holds every trade, or that the suggestions
+    # below already carry with its number, is not listed again here.
+    covered = m.get("covered", set())
+    _sugg = {rid.split(":", 1)[-1] for rid, *_ in pending_recs(good, bad, covered)}
+    _drop = {name for name, _v, n in good + bad
+             if n >= n_all or _REC_RULES.get(name, ("",))[0] in covered or name in _sugg}
+    good_s = [s for s in good if s[0] not in _drop]
+    bad_s = [s for s in bad if s[0] not in _drop]
+    if good_s or bad_s:
+        st.markdown("#### The edge, ranked")
+        st.markdown("<div style='display:flex;gap:14px;flex-wrap:wrap;margin:4px 0 10px;'>"
+                    + (_ranklist("EARNING R — AVERAGE PER TRADE", good_s, True) if good_s else "")
+                    + (_ranklist("COSTING R — AVERAGE PER TRADE", bad_s, False) if bad_s else "")
+                    + "</div>", unsafe_allow_html=True)
+    # what this page already says, so the Refinements card below skips it
+    st.session_state["_ea_plan_said"] = (
+        {f"session:{_SESSION_WORD[name]}" for name, _v, _n in good + bad if name in _SESSION_WORD}
+        | {f"cat:Entry Timeframe \u00b7 {tf}" for tf in m.get("proven_tf", [])})
 
-    _rules_section(good, bad, m.get("beats"))
+    _rules_section(good, bad, m.get("beats"), covered)
 
     if planned is not None and planned.notna().sum() >= 10:
         st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
@@ -564,6 +592,27 @@ _REC_RULES = {
 REC_MIN_N = 5
 REC_MIN_R = 0.15
 
+# A checklist box already IS the rule its suggestion would add: never offer
+# "Only take A+ setups" under "It's a genuine A+ setup" (his note, 28 Sep).
+_GATE_GROUP = {"It's a genuine A+ setup": "aplus", "Headspace is Good": "head",
+               "Single entry, structure stop set": "single", "True break confirmed": "break"}
+# the session names the Refinements card uses for the same slices
+_SESSION_WORD = {"New York session": "New York", "London session": "London", "Asia session": "Asia"}
+
+
+def pending_recs(good, bad, covered=frozenset()):
+    """The suggestions still to show: not a checklist box already, not added
+    or declined, not one of his own rules word for word, owner view only."""
+    t = _t()
+    if not t._verdicts_on():
+        return []
+    state = _rules_state()
+    mine = {r.strip().lower() for r in state.get("custom", [])}
+    return [r for r in rule_recommendations(good, bad)
+            if _REC_RULES.get(r[0].split(":", 1)[-1], ("",))[0] not in covered
+            and r[0] not in state["accepted"] and r[0] not in state["declined"]
+            and r[1].strip().lower() not in mine]
+
 
 def rule_recommendations(good, bad):
     """[(rid, rule, evidence, keep)] — at most one per group, strongest first."""
@@ -584,7 +633,7 @@ def rule_recommendations(good, bad):
     return [r[:4] for r in sorted(best.values(), key=lambda r: -r[4])]
 
 
-def _rules_section(good, bad, beats=None) -> None:
+def _rules_section(good, bad, beats=None, covered=frozenset()) -> None:
     t = _t()
     st.markdown("#### My rules")
     st.caption(("Your own rules, plus any you add from the suggestions under them. "
@@ -641,9 +690,7 @@ def _rules_section(good, bad, beats=None) -> None:
     # Suggestions come from an uncorrected many-way search that proposes a
     # rule on pure noise (STAT-05): owner-only until each passes its null
     # test (roadmap 1.12, D4). Members keep their own rules.
-    pending = [r for r in recs if r[0] not in state["accepted"] and r[0] not in state["declined"]]
-    if not t._verdicts_on():
-        pending = []
+    pending = pending_recs(good, bad, covered)
     if pending:
         st.markdown("<div style='font-size:11px;font-weight:700;letter-spacing:0.07em;color:#64748b;"
                     "margin:14px 0 2px;'>SUGGESTED FROM YOUR DATA</div>", unsafe_allow_html=True)

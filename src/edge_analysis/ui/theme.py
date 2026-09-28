@@ -2162,6 +2162,7 @@ def inject_dark_overlay():
     }
     .ref-card-title { color: #e8ebf1 !important; }
     .ref-card-body { color: #9aa4b4 !important; }
+    .ref-card-do { color: #b9a8ff !important; }
     .proj-stat-cell { background: #161b27 !important; border-color: rgba(255,255,255,0.09) !important; }
     .proj-stat-label { color: #9aa4b4 !important; }
     .proj-stat-value { color: #e8ebf1; }
