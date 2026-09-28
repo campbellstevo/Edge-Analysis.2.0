@@ -46,13 +46,15 @@ def test_demo_visitor_sees_no_noisy_verdicts():
 
 def test_ea_verdicts_all_shows_them_to_everyone():
     text = _all_text({"EA_VERDICTS": "all"})
-    for phrase in ("What needs work", "Prob. of Profit"):
+    for phrase in ("What needs work", "end in profit"):
         assert phrase in text, phrase
 
 
 def test_prob_of_profit_is_shown_and_never_certain():
+    # 28 Sep: the share of paths ending in profit is said once, in the
+    # Projections sentence (the stat card that repeated it went)
     import re
     text = _all_text()
-    m = re.search(r'Prob\. of Profit</div><div class="proj-stat-value">([^<]+)<', text)
-    assert m, "Prob. of Profit missing for visitors"
+    m = re.search(r'and <b>([^<]+)</b> end in profit', text)
+    assert m, "the profit share is missing for visitors"
     assert m.group(1) not in ("over 99%", "100%")
