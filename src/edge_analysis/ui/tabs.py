@@ -2010,10 +2010,16 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
     from edge_analysis.ui import reshape as rx
     _r = pd.to_numeric(g.get("Closed RR"), errors="coerce") if "Closed RR" in g.columns else None
     _clean_r = _flag_r = None
+    _gap_p = 1.0
     if _r is not None:
         _cr, _fr = _r[~g["__flag"]].dropna(), _r[g["__flag"]].dropna()
         if len(_cr) >= 5 and len(_fr) >= 5:
             _clean_r, _flag_r = float(_cr.mean()), float(_fr.mean())
+            # the "that gap is what discipline is worth" line is a claim: test it
+            # (a permutation p, one-sided), members only see it when it passes
+            from edge_analysis.digest import _perm_p
+            _ok = _r.notna()
+            _gap_p = _perm_p(_r[_ok], (~g["__flag"])[_ok].to_numpy(), lower=False)
     # no "rules followed on N of M" pill: the cause pill already says how
     # many broke his own tag, so it was the same number twice (28 Sep)
     _facts = []
@@ -2023,7 +2029,9 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
     _days = [(d.strftime("%a %d %b %Y"), not bool(v)) for d, v in _dd.items()]
     rx.discipline_hero(discipline_score, n_clean, n_total,
                        [(n, lab) for n, lab in _causes], _checked_txt,
-                       _clean_r, _flag_r, _days, _facts)
+                       _clean_r, _flag_r, _days, _facts,
+                       tested=(None if _clean_r is None else ("beats chance" if _gap_p < 0.05 else "early read")),
+                       verdicts=_verdicts_on())
 
     if n_flagged:
         st.markdown("### Discipline score over time")
@@ -3185,8 +3193,8 @@ def _powered_on_panel(df: pd.DataFrame) -> None:
 
     feats = [
         ("Entry models", state("Entry Model", "Entry Models List"), "Entry Model"),
-        ("Entry criteria", state("Sweep?", "DIV?", "Multi Entry Model Setup", "Double Confirmation"),
-         "Sweep? / DIV? / Multi Entry Model Setup"),
+        ("Entry criteria", state("Sweep?", "DIV?", "Double Confirmation?", "Double Confirmation"),
+         "Sweep? / DIV? / Double Confirmation?"),
         ("Trend or range", state("Conditions ETF", "Conditions MTF", "Conditions HTF"),
          "Conditions ETF/MTF/HTF"),
         ("Overbought / Oversold", state("Oversold or Overbought?"), "Oversold or Overbought?"),
@@ -3196,7 +3204,6 @@ def _powered_on_panel(df: pd.DataFrame) -> None:
         ("Mental state gate", state("Mental State"), "Mental State"),
         ("Timing (sessions & hours)", state("Session", "Session Norm", "Hour (Melb)", "Date"),
          "Session or a datetime column"),
-        ("Dollar P&L", state("PnL (USD)", "PnL"), "PnL (USD)"),
         ("Trade efficiency (MAE/MFE)", state("MFE (R)", "MAE (R)"), "MAE (R) / MFE (R)"),
         ("Discipline scorecard", state("Rules Followed?"), "Rules Followed?"),
         ("Mistake leaks", state("Mistake"), "Mistake"),
@@ -3869,14 +3876,15 @@ def _data_tab(f_all: pd.DataFrame, show_table):
         + (f" \u00b7 {len(unused)} NEVER USED" if unused else "") + "</div>",
         unsafe_allow_html=True)
     if unused:
-        st.caption("Never used: " + ", ".join(unused[:12]) + (f" +{len(unused) - 12} more" if len(unused) > 12 else "")
-                   + ". Start logging them or hide them in Notion; nothing here needs them.")
+        # every name: "+5 more" hid the market fields Externals points here for
+        st.caption("Never used: " + ", ".join(unused)
+                   + ". Start logging them or hide them in Notion.")
     if not gaps:
         if not unused:
             _empty_note("Every field is filled on every trade \u2014 nothing waiting on data.")
     else:
         chips = []
-        for name, filled in gaps[:14]:
+        for name, filled in gaps:
             pct = 100.0 * filled / n
             bg, fg = ("#fdf6e8", "#7c4a03") if pct >= 50 else ("#fde8e8", "#7f1d1d")
             chips.append(
@@ -3884,10 +3892,7 @@ def _data_tab(f_all: pd.DataFrame, show_table):
                 f"background:{bg};color:{fg};border-radius:999px;padding:5px 11px;"
                 f"font-size:12.5px;font-weight:700;'>{_h3.escape(name)} "
                 f"<span style='opacity:.75;font-weight:600;'>{filled}/{n}</span></span>")
-        more = len(gaps) - 14
         st.markdown("<div style='display:flex;flex-wrap:wrap;gap:7px;'>" + "".join(chips)
-                    + (f"<span style='font-size:12.5px;color:#64748b;padding:5px 4px;'>"
-                       f"+{more} more</span>" if more > 0 else "")
                     + "</div>", unsafe_allow_html=True)
 
 
@@ -3945,7 +3950,7 @@ def render_connect_notion_templates_ui():
 @st.cache_data(show_spinner=False, max_entries=8)
 def _mc_paths(n_paths: int, total_trades: int, wr: float, be: float,
               avg_win: float, loss_rr: float, risk_pct: float, start_bal: float,
-              n_sample: int = 0):
+              n_sample: int = 0, be_r: float = 0.0):
     """Monte-Carlo equity paths. Cached so reruns (nav, filters, theme) don't
     recompute or re-serialise a chart payload the browser already has.
 
@@ -3965,7 +3970,9 @@ def _mc_paths(n_paths: int, total_trades: int, wr: float, be: float,
     draws = _rng.random((n_paths, total_trades))
     is_win = draws < wr_p
     is_be = (~is_win) & (draws < wr_p + be_p)
-    rr_matrix = np.where(is_win, win_p, np.where(is_be, 0.0, -loss_rr))
+    # a break-even is what the journal's break-evens average, not 0R: his lose a
+    # little each (about -0.2R), and 0R ran the model a third above his edge
+    rr_matrix = np.where(is_win, win_p, np.where(is_be, be_r, -loss_rr))
     equity = start_bal * np.cumprod(1 + rr_matrix * (risk_pct / 100.0), axis=1)
     return rr_matrix, equity
 
@@ -4101,6 +4108,14 @@ def _projections_body(df_raw: pd.DataFrame, styler) -> None:
     base_be          = round(n_be / max(1, total_incl_be), 4)
     base_avg_win_rr  = round(wins[rr_col].mean(), 2)  if len(wins)   > 0 else 1.5
     base_avg_loss_rr = round(abs(losses[rr_col].mean()), 2) if len(losses) > 0 else 1.0
+    _be_rr = pd.to_numeric(df.loc[df[outcome_col] == "BE", rr_col], errors="coerce").dropna()
+    base_be_r = float(min(0.5, max(-0.5, round(float(_be_rr.mean()), 2)))) if len(_be_rr) else 0.0
+    if len(wins) == 0:
+        # a book with no win has no average win to simulate (the old floor made
+        # one up: 10% wins at 1.5R) — say so instead of drawing a made-up future
+        _empty_note(f"Projections run once this book has a win \u2014 {total_incl_be} "
+                    "trades so far, none of them a win.")
+        return
 
     # Derive avg trades/month from date column
     # Prefer the canonical, already-parsed "Date" column; fall back to any
@@ -4128,9 +4143,11 @@ def _projections_body(df_raw: pd.DataFrame, styler) -> None:
     # loss, always from real data) — nothing printed twice.
     _tiny_note = (" — a tiny sample, so expect the picture to move a lot"
                   if total_incl_be < 20 else "")
+    _ber = f"{base_be_r:+.2f}R".replace("-", "\u2212")
+    _be_note = f" and break-evens at **{_ber}**" if n_be and base_be_r else ""
     st.caption(
         f"Pre-filled from your **{total_incl_be} completed trades**{_tiny_note}. "
-        f"Average loss **{base_avg_loss_rr:.1f}R** comes from your data and stays fixed; "
+        f"Average loss **{base_avg_loss_rr:.1f}R**{_be_note} come from your data and stay fixed; "
         f"change anything, then press Run."
     )
 
@@ -4212,7 +4229,7 @@ def _projections_body(df_raw: pd.DataFrame, styler) -> None:
     rr_matrix, equity_paths = _mc_paths(N_PATHS, total_trades, wr_frac, be_frac,
                                         float(avg_win_rr), float(loss_rr),
                                         float(risk_pct), float(starting_balance),
-                                        int(total_incl_be))
+                                        int(total_incl_be), be_r=float(base_be_r))
 
     final_balances = equity_paths[:, -1]
     median_idx = int(np.argsort(final_balances)[N_PATHS // 2])
@@ -5034,7 +5051,8 @@ def _refinements_tab(f_perf: pd.DataFrame, df_all_safe: pd.DataFrame, styler,
         items = [it for it in result.get(key, [])
                  if (not members or it.get("proven") is True)
                  and not (key == "refinements" and it.get("of"))
-                 and (it.get("test") or ("",))[0] not in _said]
+                 and (it.get("test") or ("",))[0] not in _said
+                 and not ("model:*" in _said and str((it.get("test") or ("",))[0]).startswith("model:"))]
         if items:
             shown.append((items, body, col, head, cls))
     st.markdown("<style>.ref-tag{font-size:11.5px;font-weight:700;color:#687184;margin-top:6px;}"
@@ -5289,6 +5307,8 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
                                      "after costs")
                     # the % headline above already states the return, on the
                     # month's opening balance — no second, differently-based copy
+                # the month still running says "so far": "live" read as the live-money
+                # book on the Challenge view (28 Sep)
                 cards.append(
                     f"<div style='flex:1;min-width:168px;max-width:300px;background:#fbfcfe;"
                     f"border:1px solid #eef0f4;border-left:5px solid {c};"
@@ -5299,7 +5319,7 @@ def _targets_tab(df_raw: pd.DataFrame, styler) -> None:
                     f"<div style='font-size:28px;font-weight:800;color:{c};margin:2px 0;'>"
                     f"{_mbm_head(r_, row, dt_.to_period('M'))}</div>"
                     f"<div style='font-size:13px;color:#64748b;'>{round(r_, 2):+.1f}R \u00b7 "
-                    f"{int(row['n'])} trades{usd_note}{' · live' if live else ''}</div></div>")
+                    f"{int(row['n'])} trades{usd_note}{' · so far' if live else ''}</div></div>")
             st.markdown("<div style='display:flex;gap:14px;flex-wrap:wrap;margin:8px 0 4px;'>"
                         + "".join(cards) + "</div>", unsafe_allow_html=True)
         else:
@@ -5846,7 +5866,8 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
         # numbers-backed checklist and your own rules are in Trading plan above)
         from edge_analysis.ui import lessons as _lsn
         from edge_analysis.ui.focus import checklist_items as _ci, _checklist_html as _chh, _CSS as _fcss
-        _qs = _ci([], [], _lsn.summary(_track_only(df_all_safe)[0])["groups"], [])
+        _qs = _ci([], [], _lsn.summary(_track_only(df_all_safe)[0])["groups"], [],
+                  covered=st.session_state.get("_ea_plan_covered") or set())
         if _qs:
             from edge_analysis.ui import reshape as _rxp
             with st.container(border=True):
@@ -5879,9 +5900,9 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
             st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
             _card_header("My template", "Your connected journal and what it unlocks.")
             with _budget(1):
-                _powered_on_panel(journal if journal is not None else df_all_safe)
+                _powered_on_panel(df_all_safe)
                 _gap(18)
-                _data_tab(journal if journal is not None else df_all_safe, show_table)
+                _data_tab(df_all_safe, show_table)
 
     # ── Review: one weekly card ────────────────────────────────────────────
     if _active == "Review":

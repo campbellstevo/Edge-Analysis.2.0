@@ -108,3 +108,13 @@ def test_projections_lead_with_one_sentence_and_fold_nothing(monkeypatch):
     assert "st.expander(" not in body                       # month by month is on a phone too
     assert "Prob. of Profit</div>" not in body               # the sentence already says it
     assert "$" not in src.split('head.markdown(')[1]          # the sentence carries no dollars
+
+
+def test_projections_count_break_evens_at_what_they_really_pay():
+    # 28 Sep check: break-evens were simulated at 0R while his average about
+    # -0.2R, so the model ran a third above his edge
+    import numpy as np
+    zero, _ = T._mc_paths(400, 300, 0.25, 0.30, 2.8, 1.1, 1.0, 10000.0, 0)
+    real, _ = T._mc_paths(400, 300, 0.25, 0.30, 2.8, 1.1, 1.0, 10000.0, 0, be_r=-0.23)
+    assert float(np.mean(real)) < float(np.mean(zero))
+    assert abs(float(np.mean(real)) - (0.25 * 2.8 - 0.30 * 0.23 - 0.45 * 1.1)) < 0.03

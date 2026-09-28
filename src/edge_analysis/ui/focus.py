@@ -211,8 +211,12 @@ def _proven_label(rule: str) -> str:
     return rule
 
 
+# a lesson theme whose question IS a checklist box (plan_tabs._GATE_GROUP)
+_THEME_GATE = {"Patience and rules": "aplus"}
+
+
 def checklist_items(proven: list, recs: list, lesson_groups: list, mine: list,
-                    beats=None, gate_beats=None) -> list[dict]:
+                    beats=None, gate_beats=None, covered=frozenset()) -> list[dict]:
     """One list of pre-trade gates: what your numbers back, the lessons you
     keep writing, then your own rules. Numbers say 'beats chance' or 'early read'."""
     import re as _re
@@ -238,7 +242,7 @@ def checklist_items(proven: list, recs: list, lesson_groups: list, mine: list,
               "chip": m.group(0) if m else "", "color": GREEN if k else RED})
     for gp in lesson_groups[:3]:
         q = THEME_CHECK.get(gp["theme"])
-        if not q:
+        if not q or _THEME_GATE.get(gp["theme"]) in (covered or ()):
             continue
         note = min((r["text"] for r in gp["rows"]), key=len)
         note = note if len(note) <= 80 else note[:78].rstrip() + "\u2026"
@@ -457,10 +461,16 @@ def render_focus(f_perf: pd.DataFrame, df_all: pd.DataFrame, styler) -> None:
     texts = state.get("texts") or {}
     mine = list(state.get("custom") or []) + [texts.get(rid, rid.split(":", 1)[-1])
                                               for rid in (state.get("accepted") or [])]
-    recs = rule_recommendations(m["good"], m["bad"]) if (m and _verdicts_on()) else []
+    # a suggestion that repeats a checklist box is not a second item (28 Sep:
+    # "It's a genuine A+ setup" and "Only take A+ setups" both made the four)
+    from edge_analysis.ui.plan_tabs import _REC_RULES
+    _cov = set((m or {}).get("covered") or ())
+    recs = ([r for r in rule_recommendations(m["good"], m["bad"])
+             if _REC_RULES.get(r[0].split(":", 1)[-1], ("",))[0] not in _cov]
+            if (m and _verdicts_on()) else [])
     groups = _ls.summary(track)["groups"]
     chk = checklist_items((m or {}).get("proven") or [] if _verdicts_on() else [], recs, groups, mine,
-                          (m or {}).get("beats"), (m or {}).get("gate_beats"))
+                          (m or {}).get("beats"), (m or {}).get("gate_beats"), covered=_cov)
     if chk:
         with st.container(border=True):
             st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)

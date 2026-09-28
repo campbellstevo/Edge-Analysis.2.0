@@ -301,8 +301,7 @@ def _a_game(df, styler) -> None:
                  f"total across {off['n']} off-plan trades", "#ef4444")
         elif off:
             _kpi("Off-plan net", f"{off['net']:+.0f}R",
-                 f"{off['n']} off-plan trades still made money — the A-game "
-                 "edge is quality, not survival", PURPLE)
+                 f"{off['n']} off-plan trades still made money", PURPLE)
         else:
             _kpi("Off-plan cost", "—", "no off-plan trades")
     st.caption("A-Game = " + " + ".join(used) + ".")

@@ -186,9 +186,9 @@ def plan_model(df_raw: pd.DataFrame):
         _st = _st[~_st.index.isin(["", "nan", "None"])]
         return set(_st[(_st["size"] >= min_n) & (_st["mean"] > 0)].index)
 
-    def _names(items, cap=8):  # all of them in practice: "+2" hid the best model
+    def _names(items, cap=8, sep=", "):  # all of them in practice: "+2" hid the best model
         items = sorted(items)
-        return ", ".join(items[:cap]) + (f" +{len(items) - cap}" if len(items) > cap else "")
+        return sep.join(items[:cap]) + (f" +{len(items) - cap}" if len(items) > cap else "")
 
     _good_sess = _proven_groups(sess)
     if _good_sess:
@@ -207,7 +207,10 @@ def plan_model(df_raw: pd.DataFrame):
     _em_series = g.get("Entry Model", pd.Series("", index=g.index))
     _good_em = _proven_groups(_em_series)
     if _good_em:
-        model_rule = (f"Your proven entry models — {_names(_good_em)} (from your data)",
+        # a two-model journal's "Entry Model" is "structure, trigger": read it as
+        # a pair, or two pairs read as four models with one listed twice (28 Sep)
+        _pairs = [x.replace(", ", " \u2192 ") for x in _good_em]
+        model_rule = (f"Your proven entry models — {_names(_pairs, sep='; ')} (from your data)",
                       _em_series.astype(str).str.strip().isin(_good_em), "proven", "other")
     else:
         model_rule = ("Your proven entry models", None, "", "")
@@ -382,6 +385,9 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
                       + ";border:1px solid rgba(148,163,184,0.4);border-radius:999px;padding:1px 7px;'>"
                       + ("beats chance" if _beat else "early read") + "</span>") if not low else ""
             stat = chip + lows + chance
+            if not _beat and not t._verdicts_on():
+                # members: no edge claimed for a box that hasn't beaten chance
+                stat = "<span style='font-size:12px;color:#64748b;'>not past chance yet</span>"
             small = (f"<div style='font-size:11px;color:#64748b;margin-top:3px;'>"
                      f"{lab_y} {_fmt_r(a)} ({na}) · {lab_n} {_fmt_r(b)} ({nb})</div>")
         # under-review rows read quieter through colour, not opacity: a faded
@@ -399,6 +405,11 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
             f"<div style='text-align:right;margin-left:auto;'>{stat}{small}</div></div>"
         )
 
+    if not t._verdicts_on():
+        # a member's "proven" box has to beat chance; the rest wait under review
+        _gb = m.get("gate_beats") or set()
+        review = [e for e in proven if e[0] not in _gb] + review
+        proven = [e for e in proven if e[0] in _gb]
     rows_html = "".join(_row(i, e) for i, e in enumerate(proven, 1))
     if review:
         rows_html += ("<div style='padding:9px 16px;font-size:11px;font-weight:700;"
@@ -488,6 +499,11 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
              if n >= n_all or _REC_RULES.get(name, ("",))[0] in covered or name in _sugg}
     good_s = [s for s in good if s[0] not in _drop]
     bad_s = [s for s in bad if s[0] not in _drop]
+    if not t._verdicts_on():
+        # members see only what beats chance (D4); the owner sees early reads labelled
+        _b = m.get("beats") or set()
+        good_s = [s for s in good_s if s[0] in _b]
+        bad_s = [s for s in bad_s if s[0] in _b]
     if good_s or bad_s:
         st.markdown("#### The edge, ranked")
         st.markdown("<div style='display:flex;gap:14px;flex-wrap:wrap;margin:4px 0 10px;'>"
@@ -495,7 +511,9 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
                     + (_ranklist("COSTING R — AVERAGE PER TRADE", bad_s, False) if bad_s else "")
                     + "</div>", unsafe_allow_html=True)
     # what this page already says, so the Refinements card below skips it
-    st.session_state["_ea_plan_said"] = (
+    st.session_state["_ea_plan_covered"] = set(covered)
+    st.session_state["_ea_plan_said"] = ({"model:*"} if any(e[0].startswith("Your proven entry models \u2014")
+                                                            and e[0] != "Your proven entry models" for e in m["entries"]) else set()) | (
         {f"session:{_SESSION_WORD[name]}" for name, _v, _n in good + bad if name in _SESSION_WORD}
         | {f"cat:Entry Timeframe \u00b7 {tf}" for tf in m.get("proven_tf", [])})
 

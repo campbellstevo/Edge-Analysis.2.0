@@ -58,3 +58,19 @@ def test_every_refinement_that_restates_a_leak_names_it():
     paired = [it for it in res["refinements"] if it.get("of")]
     assert paired, res["refinements"]
     assert all(it["of"] in leaks for it in paired)
+
+
+def test_the_a_plus_lesson_question_is_not_asked_twice():
+    # 28 Sep check: the demo's Plan had the A+ box on the checklist and the
+    # lesson question "Is this A+, or am I forcing it?" under it
+    from edge_analysis.ui.focus import checklist_items
+    groups = [{"theme": "Patience and rules", "n": 3, "rows": [{"text": "wait for A+"}]},
+              {"theme": "Bias", "n": 2, "rows": [{"text": "bias flip"}]}]
+    asked = [i["text"] for i in checklist_items([], [], groups, [], covered={"aplus"})]
+    assert "Is this A+, or am I forcing it?" not in asked and len(asked) == 1
+    assert "Is this A+, or am I forcing it?" in [i["text"] for i in checklist_items([], [], groups, [])]
+
+
+def test_proven_entry_models_read_as_pairs():
+    src = __import__("inspect").getsource(pt.plan_model)
+    assert r'x.replace(", ", " \u2192 ")' in src and "sep='; '" in src

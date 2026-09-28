@@ -737,7 +737,8 @@ def _ring(score: int, size: int = 132, what: str = "clean trades", name: str = "
 
 
 def discipline_hero(score: int, n_clean: int, n_total: int, causes: list, checked: str,
-                    clean_r=None, flag_r=None, days: list | None = None, facts: list | None = None) -> None:
+                    clean_r=None, flag_r=None, days: list | None = None, facts: list | None = None,
+                    tested: str | None = None, verdicts: bool = True) -> None:
     """Score ring, one sentence on what discipline is worth in R, the causes as
     pills and a strip of the last 90 trading days (green = no rule broken).
     The headline counts the breaks, not the clean trades (his note, 28 Sep:
@@ -759,6 +760,13 @@ def discipline_hero(score: int, n_clean: int, n_total: int, causes: list, checke
         _end = ("That gap is what discipline is worth." if clean_r > flag_r + 0.05 else
                 "So far, trades that broke a rule have done no worse on average; "
                 "the rules guard the bad days more than the average.")
+        if clean_r > flag_r + 0.05 and tested:
+            # owner: labelled; member: only a gap that beats chance is called one
+            if not verdicts and tested != "beats chance":
+                _end = ""
+            else:
+                _end += (f' <span style="font-size:11px;font-weight:700;color:{t["few"]};'
+                         f'white-space:nowrap;">{tested}</span>')
         worth = (f'<div class="ea-dh-s">Clean trades average <b style="color:{_cc}">{_h.escape(fmt_r(clean_r))}</b>; '
                  f'trades that broke a rule average <b style="color:{_fc}">{_h.escape(fmt_r(flag_r))}</b>. '
                  f'{_end}</div>')
