@@ -352,11 +352,26 @@ def _heatmap_hour_day(df, styler) -> None:
 
 
 # ── 7. Symbol × Session edge matrix ───────────────────────────────────────────
-def _symbol_session_matrix(df, styler) -> None:
+def symbol_session_ready(df) -> bool:
+    """Two or more instrument x session pairs with 3+ trades each."""
+    if df is None or df.empty:
+        return False
+    sym = next((c for c in ["Instrument", "Pair", "Symbol"] if c in df.columns), None)
+    sess = next((c for c in ["Session Norm", "Session"] if c in df.columns), None)
+    rr = pd.to_numeric(df.get("Closed RR"), errors="coerce") if "Closed RR" in df.columns else None
+    if sym is None or sess is None or rr is None:
+        return False
+    k = df.assign(__rr=rr)[rr.notna()].groupby([df[sym].astype(str).str.strip(),
+                                                  df[sess].astype(str).str.strip()]).size()
+    return int((k >= 3).sum()) >= 2
+
+
+def _symbol_session_matrix(df, styler, title: bool = True) -> None:
     t = _t()
-    st.markdown("### Where your edge lives")
-    st.caption("Average R per trade by instrument and session — your strongest and weakest "
-               "combinations, 3+ trades each.")
+    if title:
+        st.markdown("### Where your edge lives")
+        st.caption("Average R per trade by instrument and session — your strongest and weakest "
+                   "combinations, 3+ trades each.")
     g = df.copy()
     g["__rr"] = _num(g, "Closed RR") if _num(g, "Closed RR") is not None else pd.to_numeric(g.get("Closed RR"), errors="coerce")
     sym = next((c for c in ["Instrument", "Pair", "Symbol"] if c in g.columns), None)
@@ -396,6 +411,7 @@ def cost_in_r(df) -> dict | None:
             share = float((spr[ok] / risk[ok]).mean())
             if share < 0.25:            # bigger means the two columns use different units
                 out["spread"] = share
+                out["spread_n"] = int(ok.sum())
                 out["spread_lo"], out["spread_hi"] = float(spr[ok].min()), float(spr[ok].max())
     pnl, rr = _num(df, "PnL"), _num(df, "Closed RR")
     comm, swap = _num(df, "Commission"), _num(df, "Swap")
@@ -421,9 +437,14 @@ COST_WARN_R = 0.10   # a tenth of 1R a trade is worth a look; under it, one line
 def cost_line(c: dict) -> str:
     bits = []
     if c["spread"] is not None:
-        bits.append(f"spread about {c['spread'] * 100:.0f}% of your stop")
-    if c["fees"] is not None:
+        _n, _sn = c.get("n"), c.get("spread_n")
+        bits.append(f"spread about {c['spread'] * 100:.0f}% of your stop"
+                    + (f", from the {_sn} of {_n} trades that log it" if _n and _sn and _sn < _n else ""))
+    if c["fees"] is not None and c["fees"] >= 0.005:
         bits.append(f"commission and swap {c['fees']:.2f}R")
+    if c["total"] < 0.005:
+        # "about 0.00R" read as missing data (28 Sep check)
+        return "<b>Costs:</b> under <b>0.01R</b> a trade" + (f" ({', '.join(bits)})" if bits else "") + ". Nothing to fix."
     tail = (" Nothing to fix." if c["total"] < COST_WARN_R
             else " Worth checking your spread and commission tier.")
     return f"<b>Costs:</b> about <b>{c['total']:.2f}R</b> a trade ({', '.join(bits)}).{tail}"

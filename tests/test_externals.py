@@ -75,3 +75,23 @@ def test_members_see_no_early_reads(monkeypatch):
     out = _md(monkeypatch)
     ex.factor_board(_journal(), SPEC["ows"], verdicts=False)
     assert "early read" not in " ".join(out)
+
+
+def test_footer_reads_the_whole_journal_and_names_no_fields(monkeypatch):
+    # 28 Sep check: on the Challenge book the old line called GAP Alignment
+    # missing from a journal that fills it, and it listed the fields a second time
+    out = _md(monkeypatch)
+    journal = _journal()
+    book = journal.iloc[5:].copy()          # no gap ticked in this book
+    ex.footer(book, journal)
+    text = " ".join(out)
+    assert "None of the trades in this book carry gaps yet." in text
+    assert "My template names them" in text and "Volatility" not in text
+
+
+def test_untagged_trades_are_counted(monkeypatch):
+    out = _md(monkeypatch)
+    df = _journal()
+    df.loc[0, "Conditions MTF"] = None
+    ex.factor_board(df, SPEC["trend"])
+    assert "1 trade has no trend or range tag." in " ".join(out)

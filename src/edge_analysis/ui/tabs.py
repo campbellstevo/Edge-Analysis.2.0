@@ -3170,7 +3170,10 @@ def _powered_on_panel(df: pd.DataFrame) -> None:
             return "off"
         for c in present:
             v = df[c]
-            if v.dtype == object:
+            if v.dtype == bool or str(c).endswith("?"):
+                # a checkbox is logged once it is ticked, not because it is False
+                cnt = int(v.map(lambda x: str(x).strip().lower() in ("true", "yes", "__yes__", "1")).sum())
+            elif v.dtype == object:
                 nn = v.astype(str).str.strip()
                 nn = nn[~nn.isin(["", "nan", "NaN", "None", "[]"])]
                 cnt = int(nn.notna().sum())
@@ -3184,11 +3187,11 @@ def _powered_on_panel(df: pd.DataFrame) -> None:
         ("Entry models", state("Entry Model", "Entry Models List"), "Entry Model"),
         ("Entry criteria", state("Sweep?", "DIV?", "Multi Entry Model Setup", "Double Confirmation"),
          "Sweep? / DIV? / Multi Entry Model Setup"),
-        ("Market conditions", state("Conditions ETF", "Conditions MTF", "Conditions HTF"),
+        ("Trend or range", state("Conditions ETF", "Conditions MTF", "Conditions HTF"),
          "Conditions ETF/MTF/HTF"),
         ("Overbought / Oversold", state("Oversold or Overbought?"), "Oversold or Overbought?"),
-        ("External factors board", state("Volatility", "News Aspect", "GAP Alignment"),
-         "Volatility / News Aspect / GAP Alignment"),
+        ("News, volatility and gaps", state("Volatility", "News Aspect", "GAP Alignment?", "GAP Alignment"),
+         "Volatility / News Aspect / GAP Alignment?"),
         ("Loss post-mortem", state("Reason of loss"), "Reason of loss"),
         ("Mental state gate", state("Mental State"), "Mental State"),
         ("Timing (sessions & hours)", state("Session", "Session Norm", "Hour (Melb)", "Date"),
@@ -5538,7 +5541,11 @@ def _flip(key: str, chart_fn, table_fn) -> None:
         chart_fn()
 
 
-def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, hero_fn=None):
+def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, hero_fn=None,
+                    journal: pd.DataFrame | None = None):
+    """f: the view (book + dates); df_all: the book's full history; journal:
+    every trade in the connected journal, for what the journal itself holds
+    (My template, never-filled fields) whichever book is in view."""
     from edge_analysis.ui.mt5_tabs import (
         _section_header, _mae_mfe_section, _close_style_section, _missed_runner_section,
         _direction_section, _conviction_section,
@@ -5733,12 +5740,13 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                 _card_header(_spec[1], _spec[2])
                 with _budget(1):
                     _ext.factor_board(f_perf, _spec, _verdicts_on())
-        if _facs and _mt5 and not _one_inst:
+        from edge_analysis.ui.pro_tabs import symbol_session_ready as _ssr
+        if _facs and _mt5 and not _one_inst and _ssr(_data):
             with st.container(border=True):
                 st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
-                _card_header("Instruments by session", "Which instrument pays in which session.")
+                _card_header("Instruments by session", "Which instrument pays in which session, 3+ trades each.")
                 with _budget(1):
-                    _symbol_session_matrix(_data, styler)
+                    _symbol_session_matrix(_data, styler, title=False)
         if not _facs:
             # a journal that tags no market factor keeps the older sections
             with st.container(border=True):
@@ -5773,10 +5781,11 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                         st.markdown(cost_line(_c).replace("<b>Costs:</b> about", "About"), unsafe_allow_html=True)
                         if _c["total"] >= COST_WARN_R:
                             _cost_drag(_data, styler)
-        _nf = _ext.never_filled(f_perf)
-        if _nf and _facs:
-            st.caption("Not in your journal yet: " + ", ".join(_nf)
-                       + ". Tag any of them in Notion and it gets its own card here.")
+        # 28 Sep check: this line named the unfilled fields (a second list —
+        # My template already names them) and read the book in view, so on
+        # Challenge it called GAP Alignment missing from a journal that fills it
+        if _facs:
+            _ext.footer(f_perf, journal if journal is not None else df_all_safe)
 
     # ── Psychology: discipline card, losses card, WHOOP card ──────────────
     if _active == "Psychology":
@@ -5870,9 +5879,9 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
             st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
             _card_header("My template", "Your connected journal and what it unlocks.")
             with _budget(1):
-                _powered_on_panel(df_all_safe)
+                _powered_on_panel(journal if journal is not None else df_all_safe)
                 _gap(18)
-                _data_tab(df_all_safe, show_table)
+                _data_tab(journal if journal is not None else df_all_safe, show_table)
 
     # ── Review: one weekly card ────────────────────────────────────────────
     if _active == "Review":

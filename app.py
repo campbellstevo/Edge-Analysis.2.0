@@ -2228,7 +2228,7 @@ def render_dashboard(mobile: bool):
             # the whole journal, and the month cards then fell back to the live
             # account: live months under a Challenge chip (rule 8, 28 Sep)
             _df_hist = df[_paper_mask].copy() if _paper_mask is not None else df
-            render_all_tabs(f, _df_hist, styler, show_light_table, hero_fn=None)
+            render_all_tabs(f, _df_hist, styler, show_light_table, hero_fn=None, journal=df)
     except Exception as _exc:
         import traceback as _tb
         _ref = _report_error(_exc, where=str(st.session_state.get("ea_tab") or "view"))

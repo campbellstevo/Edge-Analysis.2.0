@@ -38,6 +38,27 @@ FACTORS = [
 FIELD = {"trend": "Conditions", "ows": "Opposing Weak Structure", "tier": "Tiers in pricing",
          "news": "News Aspect", "gap": "GAP Alignment", "vol": "Volatility", "obos": "Oversold or Overbought"}
 _NO_WORDS = {"no", "false", "__no__", "0", ""}
+# the rows' column header (the timeframe, when there is one, sits above the rows)
+NOUN = {"trend": "Condition", "ows": "Structure", "tier": "Tier", "news": "News",
+        "gap": "Gap", "vol": "Volatility", "obos": "Extreme"}
+
+
+def footer(view: pd.DataFrame, journal: pd.DataFrame) -> None:
+    """One quiet line under the cards: factors the journal logs but this book
+    has none of, and a pointer (not a second list) for the fields never filled."""
+    bits = []
+    here_none = [s[1] for s in FACTORS if logged(journal, s) and not logged(view, s)]
+    if here_none:
+        bits.append("None of the trades in this book carry " + ", ".join(here_none).lower() + " yet.")
+    nf = never_filled(journal)
+    if nf:
+        bits.append(f"{len(nf)} more market field{'s' if len(nf) != 1 else ''} in your journal "
+                    f"{'are' if len(nf) != 1 else 'is'} never filled (Plan \u2192 My template names them); "
+                    "tag one in Notion and it gets its own card here.")
+    if bits:
+        t = rx._tokens()
+        st.markdown(f'<div style="font-size:13px;line-height:1.5;color:{t["muted"]};margin:4px 2px 0;">'
+                    + " ".join(bits) + "</div>", unsafe_allow_html=True)
 
 
 def factor_values(df: pd.DataFrame, col: str, yes_no=None) -> pd.Series | None:
@@ -96,15 +117,22 @@ def factor_board(df: pd.DataFrame, spec, verdicts: bool = True) -> bool:
     t = rx._tokens()
     # one real value per block (all but a trade or two on one side): one honest line
     rows_by = [(label, rx.group_rows(sub, v)) for label, v, sub in blocks]
+    # trades in view with no value for this factor, said once at the end
+    _tagged = max(len(sub) for _l, _v, sub in blocks)
+    untagged = int(len(g)) - _tagged
+    tail_n = (f" {untagged} trade{'s have' if untagged != 1 else ' has'} no "
+              f"{_h.escape(title.lower())} tag." if untagged > 0 else "")
     thin = all(len(rows) < 2 or sorted(r["n"] for r in rows)[-2] < rx.STATE_MIN for _l, rows in rows_by)
+    many = len(rows_by) > 1
     if thin:
         bits = []
         for label, rows in rows_by:
             by_n = sorted(rows, key=lambda r: -r["n"])
             top, rest = by_n[0], by_n[1:]
-            where = f" ({label})" if label and len(rows_by) > 1 else ""
+            where = f" on the {label}" if label else ""
             tagged = sum(r["n"] for r in rows)
-            if yes_no and rest and rest[0]["m"] == yes_no[0]:
+            minority_ticked = bool(yes_no and rest and rest[0]["m"] == yes_no[0])
+            if minority_ticked:
                 y = rest[0]
                 _each = "" if y["n"] == 1 else " a trade"
                 bits.append(f"You ticked it on <b>{y['n']} of {tagged}</b> trades{where} "
@@ -118,9 +146,14 @@ def factor_board(df: pd.DataFrame, spec, verdicts: bool = True) -> bool:
                         f"<b>{_h.escape(r['m'])}</b>, {r['n']} trade{'s' if r['n'] != 1 else ''} at "
                         f"{_h.escape(rx.fmt_r(r['exp']))}" for r in rest) + "."
                 bits.append(s)
-        tail = (f" That's too few to compare yet — tick {_h.escape(FIELD[key])} on every trade "
-                f"{what}, and this becomes a comparison once {rx.STATE_MIN} are ticked." if yes_no else
-                f" No other value has {rx.STATE_MIN} trades yet, so there's nothing to compare.")
+        if yes_no and minority_ticked:
+            tail = (f" That's too few to compare yet \u2014 tick {_h.escape(FIELD[key])} on every trade "
+                    f"{what}, and the two read side by side from {rx.PAIR_FEW} ticked.")
+        elif yes_no:
+            tail = " Too few trades without it to compare yet."
+        else:
+            tail = f" No other value has {rx.STATE_MIN} trades yet, so there's nothing to compare."
+        tail += tail_n
         st.markdown(rx.css(f".ea-ms1{{font-size:15px;line-height:1.55;color:{t['ink']};background:{t['soft']};"
                            f"border:1px solid {t['line']};border-radius:10px;padding:12px 14px;margin:2px 0 6px;}}")
                     + f'<div class="ea-rx"><div class="ea-ms1">{" ".join(bits)}{tail}</div></div>',
@@ -151,7 +184,7 @@ def factor_board(df: pd.DataFrame, spec, verdicts: bool = True) -> bool:
         if len(ok) < 2:
             continue
         best, worst = ok[0], ok[-1]
-        where = f" on the {label}" if label and len(rows_by) > 1 else ""
+        where = f" on the {label}" if label and many else ""
         part = []
         if best["exp"] > 0 and said(label, best, "good"):
             part.append(f"<b>{_h.escape(best['m'])}</b>{where} leads at {_h.escape(rx.fmt_r(best['exp']))} a trade over "
@@ -162,9 +195,10 @@ def factor_board(df: pd.DataFrame, spec, verdicts: bool = True) -> bool:
         if part:
             bits.append("; ".join(part))
     head = (". ".join(bits) + ".") if bits else "Each row is what trades with that tag paid, best first."
-    many = len(rows_by) > 1
+    head += tail_n
+    labelled = many or any(label for label, _r in rows_by)
     for i, (label, rows) in enumerate(rows_by):
-        if many:
+        if labelled and label:
             # the column header hides on a phone, so a card with a block per
             # timeframe names each block where every screen shows it
             if i == 0:
@@ -174,8 +208,9 @@ def factor_board(df: pd.DataFrame, spec, verdicts: bool = True) -> bool:
                             + f'<div class="ea-rx"><div class="ea-rx-top">{head}</div></div>', unsafe_allow_html=True)
             st.markdown(f'<div class="ea-rx"><div class="ea-rx-k">On the {_h.escape(label)}</div></div>',
                         unsafe_allow_html=True)
-        rx.ranked_rows(rows, [f"<span>{_h.escape(r['m'])}</span>" for r in rows], "" if many else head,
-                       label or title, cap=i == len(rows_by) - 1)
+        rx.ranked_rows(rows, [f"<span>{_h.escape(r['m'])}</span>" for r in rows],
+                       "" if (labelled and label) else head,
+                       NOUN.get(key, title), cap=i == len(rows_by) - 1)
     return True
 
 
