@@ -1072,7 +1072,7 @@ def inject_theme():
     }}
 
     /* Small-sample rows show but sit back */
-    .entry-model-table tr.dim td, .table-wrap tr.dim td {{ opacity: 0.45; }}
+    .entry-model-table tr.dim td, .table-wrap tr.dim td {{ color: #687184; font-style: italic; }}
     .entry-model-table th {{ white-space: nowrap; }}
     /* Performance tables: denser, first column gets the room, R by sign */
     .entry-model-table {{ font-size: 14.5px !important; min-width: 0 !important; }}
@@ -1365,7 +1365,7 @@ def inject_theme():
     .ea-verdict-good {{ border-left-color: #16a34a; }}
     .ea-verdict-good .ea-verdict-tick {{ color: #16a34a; }}
     .ea-verdict-warn {{ border-left-color: #f59e0b; }}
-    .ea-verdict-warn .ea-verdict-tick {{ color: #f59e0b; }}
+    .ea-verdict-warn .ea-verdict-tick {{ color: #d97706; }}
     .ea-verdict-bad {{ border-left-color: #ef4444; }}
     .ea-verdict-bad .ea-verdict-tick {{ color: #ef4444; }}
 
@@ -2023,6 +2023,11 @@ def inject_dark_overlay():
     [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p {
         color: #8791a1 !important;
     }
+    [data-testid="stCaptionContainer"] { opacity: 1 !important; }
+    .ea-verdict-info .ea-verdict-tick { color: #a78bfa !important; }
+    .ea-verdict-good .ea-verdict-tick { color: #4ade80 !important; }
+    .ea-verdict-warn .ea-verdict-tick { color: #fbbf24 !important; }
+    .ea-verdict-bad .ea-verdict-tick { color: #f87171 !important; }
     .kpi { background: #161b27 !important; border-color: rgba(255,255,255,0.09) !important; }
     .kpi .label { color: #8791a1 !important; }
     .kpi .value { color: #e8ebf1; }
@@ -2151,6 +2156,7 @@ def inject_dark_overlay():
     /* Cells that carry their own colour (Win green, Loss red, ±R) keep it —
        one blanket colour here turned every result white. */
     .table-wrap td:not([style*="color"]) { color: #c9d0dc !important; }
+    .table-wrap tr.dim td:not([style*="color"]) { color: #8c95a6 !important; }
     :root { --ea-track: #2a3142; }
     .table-wrap tr:nth-child(even) td { background: #191f2c !important; }
     .ref-card {
@@ -2373,7 +2379,8 @@ div[style*="background: rgb(251, 252, 254)"] {
     .entry-model-table td.neg { color: #f87171 !important; }
     .ea-tbl-title { color: #eef1f6 !important; }
     .ea-pb-lab { color: #e5e7eb !important; }
-    .ea-pb-n { color: #6b7280 !important; }
+    .ea-pb-n { color: #8c95a6 !important; }
+    .ea-pb-row.ea-dim .ea-pb-lab { color: #9aa4b4 !important; }
     .ea-pb-track { background: #1a1f2b !important; }
     .ea-pb-zero { border-left-color: #3a4356 !important; }
     .ea-et { background: #161b27 !important; border-color: rgba(255,255,255,0.09) !important; }

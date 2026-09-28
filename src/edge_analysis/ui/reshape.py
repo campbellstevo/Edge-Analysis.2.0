@@ -18,6 +18,8 @@ import streamlit as st
 from edge_analysis.core.clock import local_now
 
 GREEN, RED, PURPLE = "#16a34a", "#dc2626", "#4800ff"
+# break-even dots and their legend: 3.6:1 on white (the old #94a3b8 was 2.6:1)
+BE_GREY = "#7c8799"
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 BLOCKS = [(0, 4), (4, 8), (8, 12), (12, 16), (16, 20), (20, 24)]
 METRICS = ["Expectancy", "Net R", "Win rate"]
@@ -431,11 +433,12 @@ def ranked_rows(rows: list[dict], names: list[str], head: str, col_head: str,
     its name (already escaped HTML), R a trade as a bar from break-even,
     trades, wins and total in words. Rows under PAIR_FEW trades are dashed."""
     t = _tokens()
+    pos, neg = ("#4ade80", "#f87171") if _dark() else (GREEN, RED)
     span = max(0.25, max(abs(r["exp"]) for r in rows))
     body = ""
     for r, name in zip(rows, names):
         w = min(50.0, abs(r["exp"]) / span * 50.0)
-        col = GREEN if r["exp"] > 0.005 else (RED if r["exp"] < -0.005 else t["grey"])
+        col = pos if r["exp"] > 0.005 else (neg if r["exp"] < -0.005 else t["grey"])
         left = 50.0 if r["exp"] >= 0 else 50.0 - w
         won = "" if r.get("won") is None else f" · {r['won']} won"
         few = " few" if r["n"] < PAIR_FEW else ""
@@ -455,7 +458,7 @@ def ranked_rows(rows: list[dict], names: list[str], head: str, col_head: str,
   padding:0 12px 6px;}}
 .ea-pl-row{{background:{t['soft']};border:1px solid {t['line']};border-radius:10px;padding:10px 12px;margin:0 0 6px;}}
 .ea-pl-row.few{{background:transparent;border-style:dashed;}}
-.ea-pl-row.few .ea-pl-n span,.ea-pl-row.few .ea-pl-v b{{opacity:.78;}}
+.ea-pl-row.few .ea-pl-n span{{color:{t['few']};}}
 .ea-pl-row.few .ea-pl-bar i{{opacity:.5;}}
 .ea-pl-n{{font-size:14.5px;font-weight:700;color:{t['ink']};min-width:0;}}
 .ea-pl-n em{{font-style:normal;font-weight:600;font-size:12.5px;color:{t['muted']};margin:0 7px;}}
@@ -860,7 +863,7 @@ def targets_ladder(df: pd.DataFrame) -> bool:
     for _, q in rows.iterrows():
         d = q["when"].strftime("%d %b").lstrip("0") if pd.notna(q["when"]) else ""
         x0, xm = X(0), X(q["mfe"])
-        dot = GREEN if q["r"] > 0.15 else (RED if q["r"] < -0.15 else "#94a3b8")
+        dot = GREEN if q["r"] > 0.15 else (RED if q["r"] < -0.15 else BE_GREY)
         tip = (f'{d}: planned {q["plan"]:.1f}R, price went {q["mfe"]:.1f}R, banked {fmt_r(q["r"])}')
         body += (f'<div class="ea-tl-r" title="{_h.escape(tip)}"><div class="ea-tl-d">{_h.escape(d)}</div>'
                  f'<div class="ea-tl-t">{grid}'
@@ -931,7 +934,7 @@ def hold_strip(df: pd.DataFrame) -> bool:
 
     def X(m):
         return (math.log10(max(m, lo)) - math.log10(lo)) / (math.log10(hi) - math.log10(lo)) * 100
-    col = {"Win": GREEN, "Loss": RED, "BE": "#94a3b8"}
+    col = {"Win": GREEN, "Loss": RED, "BE": BE_GREY}
     ticks = "".join(f'<span class="ea-hs-tk" style="left:{X(m):.2f}%">{lab}</span><i class="ea-hs-g" style="left:{X(m):.2f}%"></i>'
                     for m, lab in ((1, "1m"), (5, "5m"), (15, "15m"), (60, "1h"), (240, "4h"), (1440, "1d"), (10080, "1w"))
                     if lo < m < hi)
@@ -960,7 +963,7 @@ def hold_strip(df: pd.DataFrame) -> bool:
 .ea-hs-lg{{display:flex;gap:14px;font-size:12.5px;color:{t['muted']};margin-top:4px;}}
 """
     lg = "".join(f'<span><b style="color:{c}">\u25cf</b> {n}</span>' for n, c in
-                 (("won", GREEN), ("lost", RED), ("break-even", "#94a3b8")))
+                 (("won", GREEN), ("lost", RED), ("break-even", BE_GREY)))
     st.markdown(css(extra) + f'<div class="ea-rx"><div class="ea-hs-head">{head}</div>'
                 f'<div class="ea-hs">{ticks}{dots}</div><div class="ea-hs-lg">{lg}</div></div>',
                 unsafe_allow_html=True)
@@ -1208,7 +1211,7 @@ def management_overview(df: pd.DataFrame, styler) -> bool:
         dots = base.mark_circle(size=46, opacity=0.62).encode(
             x=X, y=Y,
             color=alt.Color("k:N", legend=None, scale=alt.Scale(domain=["Win", "BE", "Loss"],
-                                                                range=[GREEN, "#94a3b8", RED])),
+                                                                range=[GREEN, BE_GREY, RED])),
             tooltip=[alt.Tooltip("w:N", title="Trade"), alt.Tooltip("x:Q", title="Best (R)"),
                      alt.Tooltip("y:Q", title="Closed (R)")])
         # between the scratch row (0R) and the stop row (−1R), clear of both
@@ -1494,7 +1497,7 @@ def record_card(g: pd.DataFrame, styler) -> None:
         bars = alt.Chart(alt.Data(values=hv)).mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4).encode(
             x=hx, y=alt.Y("n:Q", title="Trades"),
             color=alt.Color("k:N", legend=None, scale=alt.Scale(domain=["Stops", "Scratch", "Winners"],
-                                                                range=[RED, "#94a3b8", GREEN])),
+                                                                range=[RED, BE_GREY, GREEN])),
             tooltip=[alt.Tooltip("lab:N", title="Around (R)"), alt.Tooltip("n:Q", title="Trades")])
         txt = alt.Chart(alt.Data(values=[h for h in hv if h["n"]])).mark_text(dy=-7, fontSize=11, fontWeight="bold", color="#64748b").encode(
             x=hx, y="n:Q", text="n:Q")
@@ -1692,7 +1695,7 @@ def _path_svg(row, w: int = 150, h: int = 14) -> str:
     X = lambda v: (min(max(v, lo), hi) - lo) / (hi - lo) * w
     mae = row["mae"] if pd.notna(row["mae"]) else min(row["r"], 0.0)
     mfe = row["mfe"] if pd.notna(row["mfe"]) else max(row["r"], 0.0)
-    col = GREEN if row["r"] > 0.15 else (RED if row["r"] < -0.15 else "#94a3b8")
+    col = GREEN if row["r"] > 0.15 else (RED if row["r"] < -0.15 else BE_GREY)
     return (f'<svg width="{w}" height="{h}" viewBox="0 0 {w} {h}"><rect x="0" y="{h/2-1}" width="{w}" height="2" fill="#e2e8f0"/>'
             f'<rect x="{X(mae):.1f}" y="{h/2-4}" width="{max(X(mfe)-X(mae), 2):.1f}" height="8" rx="4" fill="#c7d2fe"/>'
             f'<line x1="{X(0):.1f}" x2="{X(0):.1f}" y1="0" y2="{h}" stroke="#64748b"/>'
@@ -1717,7 +1720,7 @@ def _big_path(row, w: int = 400) -> str:
         svg += (f'<rect x="{X(mae):.1f}" y="37" width="{max(X(mfe) - X(mae), 2):.1f}" height="12" rx="6" fill="#c7d2fe"/>'
                 f'<text x="{X(mae):.1f}" y="16" font-size="11" fill="{t["muted"]}" text-anchor="middle">worst {fmt_r(mae)}</text>'
                 f'<text x="{X(mfe):.1f}" y="16" font-size="11" fill="{t["muted"]}" text-anchor="middle">best {fmt_r(mfe)}</text>')
-    col = GREEN if row["r"] > 0.15 else (RED if row["r"] < -0.15 else "#94a3b8")
+    col = GREEN if row["r"] > 0.15 else (RED if row["r"] < -0.15 else BE_GREY)
     svg += f'<circle cx="{X(row["r"]):.1f}" cy="43" r="8" fill="{col}" stroke="#fff" stroke-width="2"/>'
     # capped width: a viewBox stretched across a desktop card blew the labels up 3x
     return (f'<svg viewBox="0 0 {w} 86" style="width:100%;max-width:{w + 60}px;height:auto;display:block;" '

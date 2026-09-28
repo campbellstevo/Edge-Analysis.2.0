@@ -3368,10 +3368,11 @@ _EA_GREEN, _EA_RED, _EA_GREY = "#16a34a", "#ef4444", "#64748b"
 
 _EA_VIZ_CSS = """<style>
 .ea-pb{display:flex;flex-direction:column;gap:7px;margin:6px 0 10px;}
-.ea-pb-row.ea-dim{opacity:.45;}.ea-pb-row{display:flex;align-items:center;gap:10px;}
+.ea-pb-row.ea-dim .ea-pb-lab{color:#687184;font-style:italic;}.ea-pb-row.ea-dim .ea-pb-bar{opacity:.5;}
+.ea-pb-row{display:flex;align-items:center;gap:10px;}
 .ea-pb-lab{flex:0 0 34%;max-width:230px;min-width:0;text-align:right;font-size:13px;font-weight:600;
   color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.ea-pb-n{color:#64748b;font-weight:500;font-size:11px;margin-left:6px;}
+.ea-pb-n{color:#64748b;font-weight:500;font-size:11.5px;margin-left:6px;}
 .ea-pb-track{flex:1;position:relative;background:#f8fafc;border-radius:7px;height:14px;}
 .ea-pb-bar{height:14px;}
 .ea-pb-zero{position:absolute;left:50%;top:-3px;bottom:-3px;border-left:1.5px dashed #cbd5e1;}
