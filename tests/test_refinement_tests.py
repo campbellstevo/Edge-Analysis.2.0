@@ -98,9 +98,13 @@ def test_projection_paths_carry_the_sample_uncertainty():
     assert p(n2000) > p(n19)                          # more trades, more certainty
 
 
-def test_projections_fold_to_one_sentence_in_r(monkeypatch):
-    # round 17: the simulator sits in an expander; the card leads with R only
+def test_projections_lead_with_one_sentence_and_fold_nothing(monkeypatch):
+    # round 17: the card leads with one sentence in R. 28 Sep, his note on the
+    # folded simulator ("I don't like the hiding stuff away"): it is on the page
     import inspect
     src = inspect.getsource(T._projections_tab)
-    assert "st.expander(" in src and "_projections_body(df_raw, styler)" in src
+    assert "st.expander(" not in src and "_projections_body(df_raw, styler)" in src
+    body = inspect.getsource(T._projections_body)
+    assert "st.expander(" not in body                       # month by month is on a phone too
+    assert "Prob. of Profit</div>" not in body               # the sentence already says it
     assert "$" not in src.split('head.markdown(')[1]          # the sentence carries no dollars

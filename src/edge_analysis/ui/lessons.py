@@ -128,16 +128,19 @@ def render_lessons(df: pd.DataFrame) -> bool:
         head += " None repeats yet; the ones you write twice will group here."
     cards = ""
     shown, rest = s["groups"][:MAX_CARDS], s["groups"][MAX_CARDS:]
+    quoted = set()
     for g in shown:
         quotes = ""
-        for r in g["rows"][:4]:
+        # every lesson of the theme, in full (28 Sep: nothing folded away,
+        # no "+2 more", no cut-off quote)
+        for r in g["rows"]:
+            quoted.add((str(r["when"]), r["text"]))
             d = r["when"].strftime("%d %b").lstrip("0") if pd.notna(r["when"]) else ""
             rv = r["r"]
             rc = t["ink"] if pd.isna(rv) else ("#16a34a" if rv > 0 else "#ef4444")
-            txt = r["text"] if len(r["text"]) <= 110 else r["text"][:108].rstrip() + "…"
             quotes += (f'<div class="ea-ls-q"><b>{_h.escape(d)}</b> <span style="color:{rc}">{_fmt_r(rv)}</span>'
-                       f' · “{_h.escape(txt)}”</div>')
-        more = f'<div class="ea-ls-more">+{g["n"] - 4} more</div>' if g["n"] > 4 else ""
+                       f' · “{_h.escape(r["text"])}”</div>')
+        more = ""
         gr = g["r"]
         gc = "#16a34a" if gr > 0 else ("#ef4444" if gr < 0 else t["muted"])
         cards += (f'<div class="ea-ls-card"><div class="ea-ls-h"><span class="ea-ls-t">{_h.escape(g["theme"])}</span>'
@@ -156,6 +159,7 @@ def render_lessons(df: pd.DataFrame) -> bool:
 .ea-ls-q{{font-size:13px;line-height:1.4;color:{t['muted']};margin-top:5px;overflow-wrap:anywhere;}}
 .ea-ls-q b{{color:{t['ink']};}}
 .ea-ls-more{{font-size:12px;color:{t['muted']};margin-top:6px;}}
+.ea-ls-k{{font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:{t['muted']};margin:14px 0 8px;}}
 """
     body = f'<div class="ea-rx"><div class="ea-ls-head">{head}</div>'
     if cards:
@@ -164,14 +168,18 @@ def render_lessons(df: pd.DataFrame) -> bool:
         also = ", ".join(f"{_h.escape(g['theme'].lower())} {g['n']}\u00d7" for g in rest)
         body += f'<div class="ea-ls-more" style="margin-top:10px">Also written more than once: {also}.</div>'
     st.markdown(rx.css(extra) + body + "</div>", unsafe_allow_html=True)
-    if s["all"]:
-        with st.expander(f"All {s['n_lessons']} lessons, newest first"):
-            rows = ""
-            for r in s["all"]:
-                d = r["when"].strftime("%d %b %Y").lstrip("0") if pd.notna(r["when"]) else ""
-                rows += (f'<div class="ea-ls-q" style="margin:0 0 8px"><b>{_h.escape(d)}</b> {_fmt_r(r["r"])}'
-                         f' · <i>{_h.escape(r["theme"])}</i><br>{_h.escape(r["text"])}</div>')
-            st.markdown(rx.css(extra) + f'<div class="ea-rx">{rows}</div>', unsafe_allow_html=True)
+    # the lessons no card above quotes, newest first, on the page: each
+    # lesson appears once (the old folded list repeated every quote)
+    others = [r for r in s["all"] if (str(r["when"]), r["text"]) not in quoted]
+    if others:
+        rows = ""
+        for r in others:
+            d = r["when"].strftime("%d %b %Y").lstrip("0") if pd.notna(r["when"]) else ""
+            rows += (f'<div class="ea-ls-q" style="margin:0 0 8px"><b>{_h.escape(d)}</b> {_fmt_r(r["r"])}'
+                     f' · <i>{_h.escape(r["theme"])}</i><br>{_h.escape(r["text"])}</div>')
+        _lab = ("Your other lessons, newest first" if quoted else "Your lessons, newest first")
+        st.markdown(rx.css(extra) + f'<div class="ea-rx"><div class="ea-ls-k">{_lab}</div>{rows}</div>',
+                    unsafe_allow_html=True)
     st.caption("Grouped by the words you use, from your journal's lesson notes. "
                "Only the book you're viewing is counted.")
     return True

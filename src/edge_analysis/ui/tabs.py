@@ -2373,9 +2373,11 @@ def _timing_reshaped(f: pd.DataFrame, df_raw: pd.DataFrame, show_table) -> None:
     import contextlib
     _rich = _rich or not _rows
     if not _rich:
+        # on the page, not folded (28 Sep); a young journal is told so once
         _gap(6)
-    with (contextlib.nullcontext() if _rich else
-          st.expander(f"By hour and by day \u00d7 time of day \u2014 thin at {_n} trades")):
+        st.caption(f"By hour and by day \u00d7 time of day: thin at {_n} trades \u2014 most cells fill in "
+                   f"past {rx.TIMING_RICH}.")
+    with contextlib.nullcontext():
         metric = rx.metric_picker("ea_time_metric")
         st.markdown("### By hour of entry")
         st.caption("On your journal's own clock. Grey bars have too few trades to read yet.")
@@ -3965,12 +3967,12 @@ def _mc_paths(n_paths: int, total_trades: int, wr: float, be: float,
 
 
 def _projections_tab(df_raw: pd.DataFrame, styler) -> None:
-    """Round 17 (Projections, 6/10: "a model, not your data, and the tallest
-    block on the main tab"): one sentence in R on top, the whole simulator —
-    sliders, paths, drawdowns, month by month — one tap away."""
+    """Round 17: one sentence in R on top. 28 Sep, his note on the folded
+    simulator: "I don't like the hiding stuff away like this" — the sliders,
+    paths, drawdowns and month by month now sit on the page under it."""
     st.session_state.pop("_ea_proj_sum", None)
     head = st.empty()
-    with st.expander("Change the assumptions \u2014 paths, drawdowns, month by month"):
+    with st.container():
         _projections_body(df_raw, styler)
     s = st.session_state.get("_ea_proj_sum")
     if not s:
@@ -4282,72 +4284,40 @@ def _projections_body(df_raw: pd.DataFrame, styler) -> None:
     active_idx   = scenario_indices[selected]
     active_stats = stats[selected]
 
-    # ── Spaghetti chart ───────────────────────────────────────────────────────
-    trade_axis  = np.arange(0, total_trades + 1)
-    # keep the payload small: ~80 points per path, 30 background paths
-    step        = max(1, total_trades // 80)
-    sample_idxs = rng.choice(N_PATHS, size=min(30, N_PATHS), replace=False)
-
-    def _y(b):  # $ balance, or growth from the start when dollars are hidden
-        return float(b) / float(starting_balance) - 1.0 if _hide else float(b)
-
-    _y_title, _y_fmt = ("Growth", "+.0%") if _hide else ("Balance ($)", "$,.0f")
-
-    bg_rows = []
-    for i in sample_idxs:
-        eq_path = np.concatenate([[starting_balance], equity_paths[i]])
-        for t, b in zip(trade_axis[::step], eq_path[::step]):
-            bg_rows.append({"trade": int(t), "balance": _y(b), "path": str(i)})
-
-    hl_rows = []
-    for label, pidx in scenario_indices.items():
-        eq_path = np.concatenate([[starting_balance], equity_paths[pidx]])
-        for t, b in zip(trade_axis[::step], eq_path[::step]):
-            hl_rows.append({"trade": int(t), "balance": _y(b), "Scenario": label})
-
-    bg_chart = (
-        alt.Chart(alt.Data(values=bg_rows))
-        .mark_line(opacity=0.06, strokeWidth=1, color="#4800ff")
-        .encode(
-            x=alt.X("trade:Q", title="Trade #"),
-            y=alt.Y("balance:Q", title=_y_title, axis=alt.Axis(format=_y_fmt)),
-            detail="path:N"
-        )
-    )
-
-    hl_chart = (
-        alt.Chart(alt.Data(values=hl_rows))
-        .mark_line(strokeWidth=2.5)
-        .encode(
-            x="trade:Q",
-            y="balance:Q",
-            color=alt.Color(
-                "Scenario:N",
-                scale=alt.Scale(
-                    domain=["Most likely", "Worst", "Best"],
-                    range=["#4800ff", "#e03131", "#00a86b"]
-                ),
-                legend=alt.Legend(title=None, orient="top-left")
-            ),
-            tooltip=[
-                alt.Tooltip("trade:Q", title="Trade"),
-                alt.Tooltip("Scenario:N"),
-                alt.Tooltip("balance:Q", title=_y_title, format=_y_fmt),
-            ]
-        )
-    )
-
-    rule = (
-        alt.Chart(alt.Data(values=[{"y": _y(starting_balance)}]))
-        .mark_rule(strokeDash=[4, 4], color="#aaa", strokeWidth=1)
-        .encode(y="y:Q")
-    )
+    # ── Paths chart, in R ───────────────────────────────────────────────────
+    # 28 Sep: with the simulator on the page, the old growth-% spaghetti
+    # showed its flaw: the Best path compounded to +6,000,000% and flattened
+    # Most likely onto the zero line. It now reads in R, like the sentence on
+    # top: the band is where 8 in 10 of the paths sit after each trade, the
+    # line is the scenario picked above. Risk size doesn't move R.
+    cum_r = np.concatenate([np.zeros((N_PATHS, 1)), np.cumsum(rr_matrix, axis=1)], axis=1)
+    step = max(1, total_trades // 80)
+    pts = np.unique(np.r_[np.arange(0, total_trades + 1, step), total_trades])
+    lo_b = np.percentile(cum_r[:, pts], 10, axis=0)
+    hi_b = np.percentile(cum_r[:, pts], 90, axis=0)
+    band_rows = [{"trade": int(t), "lo": round(float(l), 2), "hi": round(float(h), 2)}
+                 for t, l, h in zip(pts, lo_b, hi_b)]
+    _col = {"Most likely": "#4800ff", "Worst": "#e03131", "Best": "#00a86b"}[selected]
+    line_rows = [{"trade": int(t), "r": round(float(v), 2)} for t, v in zip(pts, cum_r[active_idx, pts])]
+    band = (alt.Chart(alt.Data(values=band_rows))
+            .mark_area(opacity=0.14, color="#4800ff")
+            .encode(x=alt.X("trade:Q", title="Trade #"),
+                    y=alt.Y("lo:Q", title="Running R", axis=alt.Axis(format="+.0f")),
+                    y2="hi:Q"))
+    line = (alt.Chart(alt.Data(values=line_rows))
+            .mark_line(strokeWidth=2.5, color=_col)
+            .encode(x="trade:Q", y="r:Q",
+                    tooltip=[alt.Tooltip("trade:Q", title="Trade"),
+                             alt.Tooltip("r:Q", title=f"{selected} (R)", format="+.1f")]))
+    rule = (alt.Chart(alt.Data(values=[{"y": 0.0}]))
+            .mark_rule(strokeDash=[4, 4], color="#aaa", strokeWidth=1)
+            .encode(y="y:Q"))
 
     with st.spinner("Simulating…"):
-        st.altair_chart(
-            styler((bg_chart + hl_chart + rule).properties(height=360)),
-            use_container_width=True
-        )
+        st.altair_chart(styler((band + line + rule).properties(height=360)), use_container_width=True)
+    st.caption(f"Shaded: where 8 in 10 of the {N_PATHS} paths sit after each trade. "
+               f"Line: the {selected.lower()} path. In R, so the risk size doesn't change it; "
+               "the cards and months below are in % at the risk you set.")
 
     # ── Stats cards ───────────────────────────────────────────────────────────
     s = active_stats
@@ -4363,19 +4333,20 @@ def _projections_body(df_raw: pd.DataFrame, styler) -> None:
                "under 1%" if prob_profit <= 0.005 else f"{prob_profit:.0%}")
     # PROJ-01 fixed: every path samples its own rates from the trades they came
     # from, so this carries the sample's uncertainty and is shown to everyone.
-    _prob_cell = (f'<div class="proj-stat-cell"><div class="proj-stat-label">Prob. of Profit</div>'
-                  f'<div class="proj-stat-value">{_pp_txt}</div></div>')
+    # the sentence above the simulator already says how many paths end in
+    # profit (one number once, 28 Sep)
+    _prob_cell = ""
+    _bal_txt = _money(f"${s['result_balance']:,.0f}")
+    _bal_cell = ("" if _hide else
+                 '<div class="proj-stat-cell"><div class="proj-stat-label">Result Balance</div>'
+                 f'<div class="proj-stat-value">{_bal_txt}</div></div>')
 
     st.markdown(f"""
     <div class="proj-stat-grid">
         <div class="proj-stat-cell">
             <div class="proj-stat-label">Trades simulated</div>
             <div class="proj-stat-value">{total_trades:,}</div>
-        </div>
-        <div class="proj-stat-cell">
-            <div class="proj-stat-label">Result Balance</div>
-            <div class="proj-stat-value">{_money(f"${s['result_balance']:,.0f}")}</div>
-        </div>
+        </div>{_bal_cell}
         <div class="proj-stat-cell">
             <div class="proj-stat-label">Total Return</div>
             <div class="proj-stat-value">{ret_sign}{s['total_return']:.1%}</div>
@@ -4402,13 +4373,9 @@ def _projections_body(df_raw: pd.DataFrame, styler) -> None:
 
     # ── Monthly breakdown ─────────────────────────────────────────────────────
     monthly = monthly_breakdown(active_idx)
-    # on a phone the years stack into one very long table: fold it away
-    _phone_mb = st.session_state.get("layout_mode") == "mobile"
-    if _phone_mb:
-        _mb_box = st.expander(f"Monthly breakdown \u00b7 {len(monthly)} months")
-    else:
-        st.markdown("#### Monthly breakdown")
-        _mb_box = st.container()
+    # on the page on a phone as well (28 Sep: nothing folded away)
+    st.markdown("#### Monthly breakdown")
+    _mb_box = st.container()
 
     years_dict: dict = {}
     for row in monthly:
