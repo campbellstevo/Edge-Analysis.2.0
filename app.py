@@ -224,7 +224,7 @@ def _runtime_secret(key: str, default=None):
 
 # Pull in externalized modules for cleaner structure
 from data_loading import load_live_df, forget_journal_cache
-from filters import render_filters
+from filters import render_filters, book_mask
 from edge_analysis.core.constants import MODEL_SET, SESSION_CANONICAL
 from edge_analysis.ui.components import show_light_table
 from edge_analysis.ui.tabs import render_all_tabs, generate_overall_stats
@@ -2189,20 +2189,10 @@ def render_dashboard(mobile: bool):
             _reverse = {v: k for k, v in _ACCT_MAP.items()}
             mask &= (df["Account"] == _reverse.get(sel_acct, sel_acct))
 
-    _paper_mask = None
-    if sel_tot in ("Executed", "Live money", "Real money only") \
-            and "Type of Trade" in df.columns:
-        _tt = df["Type of Trade"].astype(str).str.lower()
-        _drop = (_tt.str.contains("forward") | _tt.str.contains("back test")
-                 | _tt.str.contains("backtest") | _tt.str.contains("paper"))
-        if sel_tot == "Live money":
-            _drop = _drop | _tt.str.contains("challenge") | _tt.str.contains("combine") \
-                | _tt.str.contains("evaluation")
-        _paper_mask = ~_drop
+    # the book in view (header chip / Filters > Trade type), whatever the dates
+    _paper_mask = book_mask(df, sel_tot)
+    if _paper_mask is not None:
         mask &= _paper_mask
-    elif sel_tot not in ("All", "Executed", "Live money",
-                         "Real money only") and "Type of Trade" in df.columns:
-        mask &= df["Type of Trade"].astype(str).str.contains(re.escape(sel_tot), case=False, na=False)
 
     mask &= _apply_date_filter(df, date_range)
 
@@ -2233,8 +2223,10 @@ def render_dashboard(mobile: bool):
             from edge_analysis.ui.feedback_page import render_feedback_page
             render_feedback_page(is_owner=_session_is_owner(), mobile=mobile)
         else:
-            # full-history views (month cards, records) must honour the money/paper
-            # split too — otherwise the hero and the card below it disagree
+            # full-history views (month cards, records, projections) follow the
+            # book in view too. A picked book (Challenge) used to leave this as
+            # the whole journal, and the month cards then fell back to the live
+            # account: live months under a Challenge chip (rule 8, 28 Sep)
             _df_hist = df[_paper_mask].copy() if _paper_mask is not None else df
             render_all_tabs(f, _df_hist, styler, show_light_table, hero_fn=None)
     except Exception as _exc:

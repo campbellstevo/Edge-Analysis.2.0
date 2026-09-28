@@ -14,6 +14,24 @@ from datetime import date as DateType
 import streamlit as st
 import pandas as pd
 
+
+def book_mask(df: pd.DataFrame, sel_tot) -> "pd.Series | None":
+    """Which trades belong to the book picked in Filters > Trade type (or the
+    header chip), whatever the dates; None = every trade. Live money is
+    executed trades minus challenges (rule 8: never mixed)."""
+    if df is None or "Type of Trade" not in df.columns or not sel_tot or sel_tot == "All":
+        return None
+    tt = df["Type of Trade"].astype(str).str.lower()
+    if sel_tot in ("Executed", "Live money", "Real money only"):
+        drop = (tt.str.contains("forward") | tt.str.contains("back test")
+                | tt.str.contains("backtest") | tt.str.contains("paper"))
+        if sel_tot == "Live money":
+            drop = drop | tt.str.contains("challenge") | tt.str.contains("combine") \
+                | tt.str.contains("evaluation")
+        return ~drop
+    import re as _re
+    return df["Type of Trade"].astype(str).str.contains(_re.escape(str(sel_tot)), case=False, na=False)
+
 # Replicate SessionKeys and PageNames here to avoid circular imports.
 
 class SessionKeys:
