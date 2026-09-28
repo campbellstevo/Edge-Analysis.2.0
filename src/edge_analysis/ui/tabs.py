@@ -5744,23 +5744,35 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                     if _salty:
                         _salty_execution_quality_tab(f_perf)
 
-    # ── Externals: market conditions card + costs card ────────────────────
+    # ── Externals: one card per market factor, then costs ─────────────────
     if _active == "Externals":
-        with st.container(border=True):
-            st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
-            _card_header("Market conditions",
-                         "The market around your trades \u2014 trend, volatility, news and gaps.")
-            with _budget(1):
-                from edge_analysis.ui import reshape as _rxc
-                # Round 11 (mockup M6): one board when the journal tags 2+ kinds
-                # of context; the older sections stay for journals that don't
-                if _rxc.context_board(f_perf, _verdicts_on()):
-                    _one_inst = ("Instrument" not in f_perf.columns
-                                 or f_perf["Instrument"].astype(str).nunique() <= 1)
-                    if _mt5 and not _one_inst:
-                        _gap(18)
-                        _symbol_session_matrix(_data, styler)
-                else:
+        # 28 Sep, his notes: "why don't we have anything on the website for
+        # gaps" and "only have Market conditions in externals and nothing
+        # else?". Round 11 had folded every tag into one board of segments;
+        # each factor the journal logs now gets its own card (externals.py).
+        from edge_analysis.ui import externals as _ext
+        _facs = [s for s in _ext.FACTORS if _ext.logged(f_perf, s)]
+        _one_inst = ("Instrument" not in f_perf.columns
+                     or f_perf["Instrument"].astype(str).nunique() <= 1)
+        for _spec in _facs:
+            with st.container(border=True):
+                st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
+                _card_header(_spec[1], _spec[2])
+                with _budget(1):
+                    _ext.factor_board(f_perf, _spec, _verdicts_on())
+        if _facs and _mt5 and not _one_inst:
+            with st.container(border=True):
+                st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
+                _card_header("Instruments by session", "Which instrument pays in which session.")
+                with _budget(1):
+                    _symbol_session_matrix(_data, styler)
+        if not _facs:
+            # a journal that tags no market factor keeps the older sections
+            with st.container(border=True):
+                st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
+                _card_header("Market conditions",
+                             "The market around your trades — trend, volatility, news and gaps.")
+                with _budget(1):
                     _conditions_tab(f_perf, show_table)
                     _gap(18)
                     _obos_section(f_perf)
@@ -5773,22 +5785,25 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                     if _mt5:
                         _gap(18)
                         _symbol_session_matrix(_data, styler)
-                    from edge_analysis.ui.pro_tabs import cost_in_r as _cir, cost_line as _cl, COST_WARN_R as _cw
-                    _c0 = _cir(_data)
-                    if _c0 is not None and _c0["total"] < _cw:
-                        _gap(12)
-                        st.caption(_cl(_c0).replace("<b>", "").replace("</b>", ""))
         if _mt5:
-            # Round-2 mockup M3: costs are one line in R unless they matter
+            # Round-2 mockup M3: costs are one line in R unless they matter.
+            # Its own card now, whatever the journal tags: the one-liner used
+            # to sit only under the older sections, so a tagged journal lost it.
             from edge_analysis.ui.pro_tabs import cost_in_r, cost_line, COST_WARN_R
             _c = cost_in_r(_data)
-            if _c is not None and _c["total"] >= COST_WARN_R:
+            if _c is not None:
                 with st.container(border=True):
                     st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
-                    _card_header("Costs", "What fees and slippage quietly take from the edge.")
+                    _card_header("Costs", "What spread and fees quietly take from the edge, in R.")
                     with _budget(1):
-                        st.markdown(cost_line(_c), unsafe_allow_html=True)
-                        _cost_drag(_data, styler)
+                        # the card is already called Costs: no "Costs:" lead-in
+                        st.markdown(cost_line(_c).replace("<b>Costs:</b> about", "About"), unsafe_allow_html=True)
+                        if _c["total"] >= COST_WARN_R:
+                            _cost_drag(_data, styler)
+        _nf = _ext.never_filled(f_perf)
+        if _nf and _facs:
+            st.caption("Not in your journal yet: " + ", ".join(_nf)
+                       + ". Tag any of them in Notion and it gets its own card here.")
 
     # ── Psychology: discipline card, losses card, WHOOP card ──────────────
     if _active == "Psychology":
