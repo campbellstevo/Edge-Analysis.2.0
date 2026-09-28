@@ -2014,9 +2014,9 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
         _cr, _fr = _r[~g["__flag"]].dropna(), _r[g["__flag"]].dropna()
         if len(_cr) >= 5 and len(_fr) >= 5:
             _clean_r, _flag_r = float(_cr.mean()), float(_fr.mean())
+    # no "rules followed on N of M" pill: the cause pill already says how
+    # many broke his own tag, so it was the same number twice (28 Sep)
     _facts = []
-    if rules_known:
-        _facts.append(f"rules followed on {rules_kept} of {rules_known} (your tag)")
     _facts.append(f"{_month_n} of {_cap} trades this month" if _cap_is_theirs
                   else f"{_month_n} trades this month")
     _dd = g.groupby(pd.to_datetime(g["__date"]))["__flag"].any().sort_index()
@@ -2048,7 +2048,7 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
                     .properties(height=240))
             st.altair_chart(styler(alt.layer(area, line)), use_container_width=True)
             st.markdown(
-                "<div class='muted'>Share of trades that broke nothing, rolling 4 weeks — higher is better</div>",
+                "<div class='muted'>Share of trades with no rule broken, rolling 4 weeks — higher is better</div>",
                 unsafe_allow_html=True)
         else:
             _empty_note("The rolling view appears once a few trades are logged.")

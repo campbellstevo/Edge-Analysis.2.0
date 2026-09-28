@@ -736,12 +736,17 @@ def _ring(score: int, size: int = 132, what: str = "clean trades", name: str = "
 def discipline_hero(score: int, n_clean: int, n_total: int, causes: list, checked: str,
                     clean_r=None, flag_r=None, days: list | None = None, facts: list | None = None) -> None:
     """Score ring, one sentence on what discipline is worth in R, the causes as
-    pills and a strip of the last 90 trading days (green = nothing broke)."""
+    pills and a strip of the last 90 trading days (green = no rule broken).
+    The headline counts the breaks, not the clean trades (his note, 28 Sep:
+    "wording how many broke, not didn't break")."""
     t = _tokens()
-    if n_clean == n_total:
-        head = f"All {n_total} trades broke nothing"
+    n_broke = n_total - n_clean
+    if n_broke == 0:
+        head = f"No trade broke a rule \u2014 all {n_total} clean"
+    elif n_broke == n_total:
+        head = f"All {n_total} trades broke a rule"
     else:
-        head = f"{n_clean} of {n_total} trades broke nothing"
+        head = f"{n_broke} of {n_total} trades broke a rule"
     worth = ""
     if clean_r is not None and flag_r is not None:
         _cc = GREEN if clean_r >= 0 else RED
@@ -749,10 +754,10 @@ def discipline_hero(score: int, n_clean: int, n_total: int, causes: list, checke
         # say what the numbers say: in some journals the rule-breakers still
         # average more, and claiming a "gap" there would be false
         _end = ("That gap is what discipline is worth." if clean_r > flag_r + 0.05 else
-                "So far, trades that broke something have done no worse on average; "
+                "So far, trades that broke a rule have done no worse on average; "
                 "the rules guard the bad days more than the average.")
         worth = (f'<div class="ea-dh-s">Clean trades average <b style="color:{_cc}">{_h.escape(fmt_r(clean_r))}</b>; '
-                 f'trades that broke something average <b style="color:{_fc}">{_h.escape(fmt_r(flag_r))}</b>. '
+                 f'trades that broke a rule average <b style="color:{_fc}">{_h.escape(fmt_r(flag_r))}</b>. '
                  f'{_end}</div>')
     pills = "".join(f'<span class="ea-dh-p bad">{n} {_h.escape(lab)}</span>' for n, lab in causes)
     pills += "".join(f'<span class="ea-dh-p">{_h.escape(x)}</span>' for x in (facts or []))
@@ -762,8 +767,8 @@ def discipline_hero(score: int, n_clean: int, n_total: int, causes: list, checke
                      for d, ok in days[-90:])
         strip = (f'<div class="ea-dh-strip"><div class="ea-dh-k">LAST {min(90, len(days))} TRADING DAYS</div>'
                  f'<div class="ea-dh-sq">{sq}</div>'
-                 f'<div class="ea-rx-cap"><span><i style="background:{GREEN}"></i>nothing broke</span>'
-                 f'<span><i style="background:#f4a3a3"></i>something broke</span></div></div>')
+                 f'<div class="ea-rx-cap"><span><i style="background:{GREEN}"></i>no rule broken</span>'
+                 f'<span><i style="background:#f4a3a3"></i>a rule broken</span></div></div>')
     s = f"""
 .ea-dh{{display:flex;gap:26px;align-items:center;flex-wrap:wrap;margin:4px 0 8px;}}
 .ea-dh-m{{flex:1 1 320px;min-width:0;}}
@@ -853,7 +858,7 @@ def targets_ladder(df: pd.DataFrame) -> bool:
     grid = "".join(f'<i class="ea-tl-g{" z" if v == 0 else ""}" style="left:{X(v):.2f}%"></i>' for v in steps)
     body = ""
     for _, q in rows.iterrows():
-        d = q["when"].strftime("%-d %b") if pd.notna(q["when"]) else ""
+        d = q["when"].strftime("%d %b").lstrip("0") if pd.notna(q["when"]) else ""
         x0, xm = X(0), X(q["mfe"])
         dot = GREEN if q["r"] > 0.15 else (RED if q["r"] < -0.15 else "#94a3b8")
         tip = (f'{d}: planned {q["plan"]:.1f}R, price went {q["mfe"]:.1f}R, banked {fmt_r(q["r"])}')

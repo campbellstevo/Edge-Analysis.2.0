@@ -38,7 +38,7 @@ def period_bounds(kind: str, now: Optional[pd.Timestamp] = None):
         now = now.tz_localize(None)
     if kind in ("This week", "Last week"):
         p = pd.Period(now, "W-SUN") - (1 if kind == "Last week" else 0)
-        return p, f"Week of {p.start_time.strftime('%-d %b %Y')}"
+        return p, f"Week of {p.start_time.strftime('%d %b %Y').lstrip('0')}"
     p = pd.Period(now, "M") - (1 if kind == "Last month" else 0)
     return p, p.start_time.strftime("%B %Y")
 

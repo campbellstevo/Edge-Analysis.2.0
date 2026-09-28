@@ -131,7 +131,7 @@ def render_lessons(df: pd.DataFrame) -> bool:
     for g in shown:
         quotes = ""
         for r in g["rows"][:4]:
-            d = r["when"].strftime("%-d %b") if pd.notna(r["when"]) else ""
+            d = r["when"].strftime("%d %b").lstrip("0") if pd.notna(r["when"]) else ""
             rv = r["r"]
             rc = t["ink"] if pd.isna(rv) else ("#16a34a" if rv > 0 else "#ef4444")
             txt = r["text"] if len(r["text"]) <= 110 else r["text"][:108].rstrip() + "…"
@@ -168,7 +168,7 @@ def render_lessons(df: pd.DataFrame) -> bool:
         with st.expander(f"All {s['n_lessons']} lessons, newest first"):
             rows = ""
             for r in s["all"]:
-                d = r["when"].strftime("%-d %b %Y") if pd.notna(r["when"]) else ""
+                d = r["when"].strftime("%d %b %Y").lstrip("0") if pd.notna(r["when"]) else ""
                 rows += (f'<div class="ea-ls-q" style="margin:0 0 8px"><b>{_h.escape(d)}</b> {_fmt_r(r["r"])}'
                          f' · <i>{_h.escape(r["theme"])}</i><br>{_h.escape(r["text"])}</div>')
             st.markdown(rx.css(extra) + f'<div class="ea-rx">{rows}</div>', unsafe_allow_html=True)
