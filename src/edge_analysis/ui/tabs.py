@@ -5673,6 +5673,10 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                         # Mockup V6: four numbers, every trade as a dot and the exit
                         # simulator as bars; the detail sits one click deeper
                         if rx.management_overview(_data, styler):
+                            from edge_analysis.ui import got_away as _gaw
+                            _gap(12)
+                            _ga = _gaw.what_got_away(_data)
+                            _gap(18)
                             # Round-6 mockup M3: how long trades live, and where
                             # breakeven decided them, side by side
                             _hc, _bc = st.columns(2, gap="large")
@@ -5688,13 +5692,14 @@ def render_all_tabs(f: pd.DataFrame, df_all: pd.DataFrame, styler, show_table, h
                             _gap(18)
                             _close_style_section(
                                 _data if (_data is not None and "Targeted RR" in _data.columns)
-                                else df_all_safe, styler)
+                                else df_all_safe, styler, provable=not _ga)
                             _gap(18)
                             _execution_section(_data, styler, planned_kpis=not _tl)
                             _gap(18)
                             _mae_stop_optimizer(_data, styler)
-                            _gap(18)
-                            _missed_runner_section(_data, styler)
+                            if not _ga:
+                                _gap(18)
+                                _missed_runner_section(_data, styler)
                         else:
                             _mae_mfe_section(_data, styler)
                             _gap(18)

@@ -157,8 +157,9 @@ def _parse_tgt(val):
     return float("nan")
 
 
-def _close_style_section(df: pd.DataFrame, styler) -> None:
-    """Manual early closes vs trades that ran to the set TP."""
+def _close_style_section(df: pd.DataFrame, styler, provable: bool = True) -> None:
+    """Manual early closes vs trades that ran to the set TP. provable=False
+    when "What got away" already carries the cut-then-hit-target row."""
     t = _t()
     if df is None or df.empty:
         return
@@ -185,8 +186,8 @@ def _close_style_section(df: pd.DataFrame, styler) -> None:
     stopped = g[(g["__rr"] <= -0.85) & ~tagged_early & (g["__rr"] < g["__tgt"] - tol)]
     early = g.drop(hit.index).drop(stopped.index)
     st.markdown("### Manual close vs set TP")
-    st.caption("Trades that ran to the target you set, versus the ones you cut before it — "
-               "and what cutting them provably cost.")
+    st.caption("Trades that ran to the target you set, versus the ones you cut before it"
+               + (" — and what cutting them provably cost." if provable else "."))
     left_prov = float("nan")
     reach_pct = float("nan")
     if "__mfe" in early.columns and early["__mfe"].notna().any():
@@ -197,6 +198,8 @@ def _close_style_section(df: pd.DataFrame, styler) -> None:
         rest = early[pd.notna(early["__mfe"]) & (early["__mfe"] < early["__tgt"] - tol)]
         if len(rest):
             reach_pct = float((rest["__mfe"].clip(lower=0) / rest["__tgt"]).mean() * 100)
+    if not provable:
+        left_prov = float("nan")
     _cols = st.columns(4 if left_prov == left_prov else 3)
     c1, c2, c3 = _cols[:3]
     with c1:

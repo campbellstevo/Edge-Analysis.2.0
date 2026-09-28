@@ -1177,15 +1177,12 @@ def management_overview(df: pd.DataFrame, styler) -> bool:
     heat = float(wins["mae"].median()) if wins["mae"].notna().any() else float("nan")
     deep = int((wins["mae"] <= -0.8).sum())
 
-    c1, c2, c3, c4 = st.columns(4)
+    # (28 Sep) what was left on winners and given back is said once, in
+    # "What got away" under this chart (got_away.py), not as two more tiles
+    c1, c2 = st.columns(2)
     with c1:
         _kpi("Captured on winners", "—" if cap != cap else f"{cap:.0f}%", "of the best price, on average")
     with c2:
-        _kpi("Left on winners", f"{left:.1f}R", f"across {len(wins)} winners", "#b45309")
-    with c3:
-        _kpi("Gave it back", f"{len(gave)} trade{'s' if len(gave) != 1 else ''}",
-             f"hit +1R, closed at BE or worse · {gave_r:.1f}R", RED if len(gave) else PURPLE)
-    with c4:
         _kpi("Heat on winners", "—" if heat != heat else fmt_r(heat),
              f"median dip first · {deep} went past −0.8R")
 
