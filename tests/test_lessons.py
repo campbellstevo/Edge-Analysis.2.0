@@ -115,3 +115,17 @@ def test_at_most_four_theme_cards(monkeypatch):
     first = html_out[0]
     assert first.count('class="ea-ls-card"') == 4
     assert "Also written more than once:" in first
+
+
+def test_each_lesson_opens_its_trade_in_notion(monkeypatch):
+    # 28 Sep: a lesson's date links to the trade it was written on
+    df = _journal(["TP2 hold", "TP2 hold", "BE early"])
+    df["__url"] = ["https://www.notion.so/abc123", "https://www.notion.so/def456", "not a notion link"]
+    lf = ls.lessons_frame(df)
+    assert set(lf["url"]) == {"https://www.notion.so/abc123", "https://www.notion.so/def456", ""}
+    html_out = []
+    monkeypatch.setattr(ls.st, "markdown", lambda body, **k: html_out.append(body))
+    monkeypatch.setattr(ls.st, "caption", lambda *a, **k: None)
+    ls.render_lessons(df)
+    text = " ".join(html_out)
+    assert 'href="https://www.notion.so/abc123"' in text and "not a notion link" not in text

@@ -60,7 +60,7 @@ def lessons_frame(df: pd.DataFrame) -> pd.DataFrame:
     """One row per trade with a real lesson: when, R, text, theme. Newest first."""
     col = lesson_col(df) if df is not None else None
     if col is None or df.empty:
-        return pd.DataFrame(columns=["when", "r", "text", "theme"])
+        return pd.DataFrame(columns=["when", "r", "text", "theme", "url"])
     out = pd.DataFrame(index=df.index)
     dcol = next((c for c in ("__Date", "Date", "Open Time", "Close Time") if c in df.columns), None)
     out["when"] = pd.to_datetime(df[dcol], errors="coerce") if dcol else pd.NaT
@@ -69,6 +69,9 @@ def lessons_frame(df: pd.DataFrame) -> pd.DataFrame:
     rcol = next((c for c in ("Closed RR", "PnL_from_RR", "R Multiple") if c in df.columns), None)
     out["r"] = pd.to_numeric(df[rcol], errors="coerce") if rcol else float("nan")
     out["text"] = df[col].map(rx._txt)
+    # each lesson's own trade in Notion (28 Sep: the last step to a 10 was a
+    # tap-through from the note to the trade it came from)
+    out["url"] = df["__url"].map(rx._notion_link) if "__url" in df.columns else ""
     out = out[out["text"].str.len() > 2]
     out["theme"] = out["text"].map(theme_of)
     return out.sort_values("when", ascending=False, na_position="last")
@@ -107,6 +110,15 @@ def _targets_line(df: pd.DataFrame) -> str:
             f"<b>{hit} of {m}</b> trades.")
 
 
+def _when(d: str, r: dict) -> str:
+    """The lesson's date, linked to its trade's Notion page when the row has one."""
+    u = r.get("url") or ""
+    if u and d:
+        return (f'<a href="{_h.escape(u)}" target="_blank" rel="noopener" '
+                f'title="Open this trade in Notion">{_h.escape(d)}</a>')
+    return _h.escape(d)
+
+
 def _fmt_r(v) -> str:
     return "" if v is None or pd.isna(v) else f"{v:+.2f}R".replace("-", "−")
 
@@ -138,7 +150,7 @@ def render_lessons(df: pd.DataFrame) -> bool:
             d = r["when"].strftime("%d %b").lstrip("0") if pd.notna(r["when"]) else ""
             rv = r["r"]
             rc = t["ink"] if pd.isna(rv) else ("#16a34a" if rv > 0 else "#ef4444")
-            quotes += (f'<div class="ea-ls-q"><b>{_h.escape(d)}</b> <span style="color:{rc}">{_fmt_r(rv)}</span>'
+            quotes += (f'<div class="ea-ls-q"><b>{_when(d, r)}</b> <span style="color:{rc}">{_fmt_r(rv)}</span>'
                        f' · “{_h.escape(r["text"])}”</div>')
         more = ""
         gr = g["r"]
@@ -160,6 +172,8 @@ def render_lessons(df: pd.DataFrame) -> bool:
 .ea-ls-q b{{color:{t['ink']};}}
 .ea-ls-more{{font-size:12px;color:{t['muted']};margin-top:6px;}}
 .ea-ls-k{{font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:{t['muted']};margin:14px 0 8px;}}
+.ea-ls-q a{{color:{t['ink']};text-decoration:underline;text-decoration-color:{t['zero']};text-underline-offset:3px;}}
+.ea-ls-q a:hover{{text-decoration-color:currentColor;}}
 """
     body = f'<div class="ea-rx"><div class="ea-ls-head">{head}</div>'
     if cards:
@@ -175,7 +189,7 @@ def render_lessons(df: pd.DataFrame) -> bool:
         rows = ""
         for r in others:
             d = r["when"].strftime("%d %b %Y").lstrip("0") if pd.notna(r["when"]) else ""
-            rows += (f'<div class="ea-ls-q" style="margin:0 0 8px"><b>{_h.escape(d)}</b> {_fmt_r(r["r"])}'
+            rows += (f'<div class="ea-ls-q" style="margin:0 0 8px"><b>{_when(d, r)}</b> {_fmt_r(r["r"])}'
                      f' · <i>{_h.escape(r["theme"])}</i><br>{_h.escape(r["text"])}</div>')
         _lab = ("Your other lessons, newest first" if quoted else "Your lessons, newest first")
         st.markdown(rx.css(extra) + f'<div class="ea-rx"><div class="ea-ls-k">{_lab}</div>{rows}</div>',
