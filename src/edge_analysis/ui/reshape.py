@@ -53,7 +53,8 @@ def css(extra: str = "") -> str:
 .ea-rx-cap{{font-size:12.5px;color:{t['muted']};margin:6px 0 2px;display:flex;gap:14px;flex-wrap:wrap;align-items:center;}}
 .ea-rx-cap i{{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:5px;vertical-align:-1px;}}
 .ea-hb{{display:flex;min-width:calc(var(--hbn,24) * 32px);gap:3px;}}
-@media (max-width:640px){{.ea-hb{{min-width:0;gap:1px;}} .ea-hb-v{{display:none;}}
+@media (max-width:640px){{.ea-hb{{min-width:0;gap:1px;}}
+  .ea-hb-v{{writing-mode:vertical-rl;transform:rotate(180deg);font-size:9px;line-height:1;margin:2px 0;}}
   .ea-hb-h{{font-size:9.5px;}} .ea-hb-n{{font-size:9px;}}
   .ea-hm{{min-width:0 !important;border-spacing:2px;}} .ea-hm td{{font-size:12px !important;padding:6px 1px !important;}}
   .ea-hm td small{{font-size:9.5px;}} .ea-hm th{{font-size:10.5px;padding:2px 1px;}}}}
@@ -252,8 +253,11 @@ def hour_bars(df: pd.DataFrame, metric: str = "Expectancy", min_n: int = 8) -> b
         v = _metric_val(s, metric)
         if v is not None and s["n"] >= min_n:
             vals.append(abs(v - base_win) if metric == "Win rate" else abs(v))
-    mx = max(vals) if vals else max([abs((_metric_val(s, metric) or 0) - (base_win if metric == "Win rate" else 0))
-                                     for s in by.values()] or [1.0])
+    # (29 Sep) one readable hour set the scale on a young journal, so every
+    # thin hour hit full height: a 1-trade -0.26R bar stood as tall as the
+    # best. Readable hours set it once there are three of them
+    mx = max(vals) if len(vals) >= 3 else max([abs((_metric_val(s, metric) or 0) - (base_win if metric == "Win rate" else 0))
+                                               for s in by.values()] or [1.0])
     mx = mx or 1.0
     t = _tokens()
     cols = []
@@ -270,7 +274,7 @@ def hour_bars(df: pd.DataFrame, metric: str = "Expectancy", min_n: int = 8) -> b
             col = t["grey"] if few else (GREEN if d >= 0 else RED)
             # bar labels drop the R: 24 columns must fit a phone
             lab = f'<span class="ea-hb-v{" few" if few else ""}">{_h.escape(_metric_txt(v, metric).rstrip("R"))}</span>'
-            bar = f'<div class="ea-hb-bar" style="height:{pct * 0.8:.0f}%;background:{col};"></div>'
+            bar = f'<div class="ea-hb-bar" style="height:{pct * 0.72:.0f}%;background:{col};"></div>'
             if d >= 0:
                 up = lab + bar
             else:

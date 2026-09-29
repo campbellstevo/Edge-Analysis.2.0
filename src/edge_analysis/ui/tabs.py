@@ -1989,7 +1989,8 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
     n_flagged = int(g["__flag"].sum())
     n_clean = n_total - n_flagged
     discipline_score = round(n_clean / max(1, n_total) * 100)
-    _causes = [(int(g[c].sum()), lab) for c, lab in _checks if int(g[c].sum())]
+    _causes = [(int(g[c].sum()), ("was" + lab[4:]) if int(g[c].sum()) == 1 and lab.startswith("were ") else lab)
+               for c, lab in _checks if int(g[c].sum())]
     _causes.sort(key=lambda x: -x[0])
     n_revenge = int(g["__revenge"].sum())
 
