@@ -234,7 +234,9 @@ def plan_model(df_raw: pd.DataFrame):
     planned = (pd.to_numeric(g["Planned R:R"], errors="coerce")
                if "Planned R:R" in g.columns else pd.Series(float("nan"), index=g.index))
     _min_rr, _min_rr_ev, _min_rr_derived = min_rr_recommendation(g)
-    ok_room = planned >= _min_rr
+    # a trade with no planned RR is unanswered, not "<3R" (28 Sep check: the
+    # two sides added up to every trade)
+    ok_room = (planned >= _min_rr).where(planned.notna())
     ok_obos = _yes(g, "Oversold or Overbought?")
 
     def seg(mask, known=None):
@@ -533,7 +535,9 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
             if n == 0:
                 continue
             sub = g.loc[m, "__rr"]
-            wr = float((sub > 0).mean() * 100)
+            # a win is the Outcome tag, as on every card
+            from edge_analysis.ui.reshape import outcome_class
+            wr = float((outcome_class(sub, g.loc[m, "Outcome"] if "Outcome" in g.columns else None) == 1).mean() * 100)
             ex = _avg(sub)
             if abs(ex) < 0.005:
                 ex = 0.0  # never render a red "-0.00R"
@@ -542,7 +546,9 @@ def render_plan_tab(df_raw: pd.DataFrame, styler) -> None:
                     f"<td class='num'>{wr:.0f}%</td>"
                     f"<td class='num' style='color:{GREEN if ex >= 0 else RED};font-weight:700;'>{_fmt_r(ex)}</td></tr>")
         st.markdown(
-            "<div class='table-wrap'><table><thead><tr><th class='text'>Target</th>"
+            # four columns fit a phone: keep Expectancy (the site-wide phone
+            # rule hid every table's 4th column)
+            "<div class='table-wrap ea-keepcols'><table><thead><tr><th class='text'>Target</th>"
             "<th class='num'>Trades</th><th class='num'>Win %</th><th class='num'>Expectancy</th>"
             f"</tr></thead><tbody>{rws}</tbody></table></div>", unsafe_allow_html=True)
 
