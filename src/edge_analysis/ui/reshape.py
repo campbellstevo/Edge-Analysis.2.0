@@ -492,6 +492,7 @@ def ranked_rows(rows: list[dict], names: list[str], head: str, col_head: str,
 .ea-pl-row.few .ea-pl-bar i{{opacity:.5;}}
 .ea-pl-n{{font-size:14.5px;font-weight:700;color:{t['ink']};min-width:0;}}
 .ea-pl-n em{{font-style:normal;font-weight:600;font-size:12.5px;color:{t['muted']};margin:0 7px;}}
+.ea-pl-n small.ea-pl-tf{{display:block;font-size:12px;font-weight:600;color:{t['muted']};margin-top:3px;}}
 .ea-pl-bar{{position:relative;height:12px;border-radius:6px;background:{t['h1']};}}
 .ea-pl-bar s{{position:absolute;left:50%;top:-3px;bottom:-3px;width:2px;margin-left:-1px;background:{t['zero']};}}
 .ea-pl-bar i{{position:absolute;top:0;bottom:0;border-radius:6px;}}
@@ -716,23 +717,25 @@ def pair_list(counted: pd.DataFrame, m1: pd.Series, m2: pd.Series, verdicts: boo
                         f"{worst['n']} <span class='ea-pl-l'>{lab(worst, 'bad')}</span>")
     else:
         bits.append("Every pair has under 3 trades so far, so none is a read yet")
-    # the model pair and the timeframe pair are one setup: name the full one
-    # he takes most (a sentence, not a third list of one-trade rows)
+    # the model pair and the timeframe pair are one setup (28 Sep check: the
+    # cross was one sentence, "Most taken in full", with no rows): each pair's
+    # row names the timeframes it was taken on, with their trades and R
+    tf_line = {}
     if tfpair is not None:
         tp = tfpair.reindex(g.index).fillna("").astype(str)
-        full = g.assign(__tp=tp)
-        full = full[full["__tp"] != ""]
-        if len(full):
-            top = full.groupby(["__m1", "__m2", "__tp"])["__r"].agg(["size", "mean"]).sort_values(
-                ["size", "mean"], ascending=False)
-            (a, b, tf_), row = next(iter(top.iterrows()))
-            if int(row["size"]) >= 3:
-                bits.append(f"Most taken in full: <b>{_h.escape(a)}</b> then <b>{_h.escape(b)}</b> on "
-                            f"<b>{_h.escape(tf_)}</b>, {int(row['size'])} trades at "
-                            f"{_h.escape(fmt_r(float(row['mean'])))} a trade")
+        if (tp != "").any():
+            for r in rows:
+                x = g.loc[g.index.isin(r["idx"]), "__r"]
+                by = x.groupby(tp.reindex(x.index).replace("", "no timeframes")).agg(["size", "mean"])
+                by = by.sort_values(["size", "mean"], ascending=False)
+                tf_line[(r["m1"], r["m2"])] = " \u00b7 ".join(
+                    f"{_h.escape(str(k))}: {int(v['size'])} at {_h.escape(fmt_r(float(v['mean'])))}"
+                    for k, v in by.iterrows())
     head = ". ".join(bits) + "."
 
     names = [f'<span>{_h.escape(r["m1"])}</span><em>then</em><span>{_h.escape(r["m2"])}</span>'
+             + (f'<small class="ea-pl-tf">{tf_line[(r["m1"], r["m2"])]}</small>'
+                if (r["m1"], r["m2"]) in tf_line else "")
              for r in rows]
     ranked_rows(rows, names, head, col_head)
     return True

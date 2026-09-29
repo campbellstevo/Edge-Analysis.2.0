@@ -87,4 +87,9 @@ def test_the_full_setup_is_named_once(monkeypatch):
     df = _journal().assign(**{"Timeframe 1": ["5M"] * 9 + ["15M"] * 4, "Timeframe 2": ["1M"] * 9 + ["5M"] * 4})
     tp = df["Timeframe 1"] + " → " + df["Timeframe 2"]
     html = _html(monkeypatch, lambda: rx.pair_list(df, df["Entry Model 1"], df["Entry Model 2"], tfpair=tp))
-    assert "Most taken in full: <b>Internal Protected Structure</b> then <b>Internal NC+S</b> on <b>5M → 1M</b>, 5 trades" in html
+    # (29 Sep) each pair's row names the timeframes it was taken on; the one
+    # "Most taken in full" sentence that stood in for the cross is gone
+    assert "Most taken in full" not in html
+    row = html[html.index("<span>Internal Protected Structure</span><em>then</em><span>Internal NC+S</span>"):]
+    row = row[:row.index("</small>")]
+    assert 'class="ea-pl-tf"' in row and "5M → 1M: 5 at " in row
