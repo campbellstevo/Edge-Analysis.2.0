@@ -52,7 +52,11 @@ def css(extra: str = "") -> str:
 .ea-rx-scroll{{overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px;}}
 .ea-rx-cap{{font-size:12.5px;color:{t['muted']};margin:6px 0 2px;display:flex;gap:14px;flex-wrap:wrap;align-items:center;}}
 .ea-rx-cap i{{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:5px;vertical-align:-1px;}}
-.ea-hb{{display:flex;min-width:760px;gap:3px;}}
+.ea-hb{{display:flex;min-width:calc(var(--hbn,24) * 32px);gap:3px;}}
+@media (max-width:640px){{.ea-hb{{min-width:0;gap:1px;}} .ea-hb-v{{display:none;}}
+  .ea-hb-h{{font-size:9.5px;}} .ea-hb-n{{font-size:9px;}}
+  .ea-hm{{min-width:0 !important;border-spacing:2px;}} .ea-hm td{{font-size:12px !important;padding:6px 1px !important;}}
+  .ea-hm td small{{font-size:9.5px;}} .ea-hm th{{font-size:10.5px;padding:2px 1px;}}}}
 .ea-hb-col{{flex:1 1 0;display:flex;flex-direction:column;align-items:stretch;min-width:0;}}
 .ea-hb-up,.ea-hb-dn{{height:92px;display:flex;flex-direction:column;align-items:center;}}
 .ea-hb-up{{justify-content:flex-end;border-bottom:1.5px dashed {t['zero']};}}
@@ -280,7 +284,7 @@ def hour_bars(df: pd.DataFrame, metric: str = "Expectancy", min_n: int = 8) -> b
            f'<span><i style="background:{t["grey"]}"></i>under {min_n} trades</span>'
            f'<span>{"R per trade" if metric == "Expectancy" else ("net R" if metric == "Net R" else "win rate")} on each bar · '
            f'hour, then trades, underneath{(" · " + wr_note) if wr_note else ""}</span></div>')
-    st.markdown(css() + f'<div class="ea-rx ea-rx-scroll"><div class="ea-hb" style="min-width:{len(_hours) * 32}px;">'
+    st.markdown(css() + f'<div class="ea-rx ea-rx-scroll"><div class="ea-hb" style="--hbn:{len(_hours)};">'
                 f'{"".join(cols)}</div></div>' + cap, unsafe_allow_html=True)
     return True
 
@@ -290,7 +294,7 @@ def heat_grid(g: pd.DataFrame, row_col: str, col_col: str, rows: list, cols: lis
               metric: str = "Expectancy", min_n: int = 5, row_head: str = "",
               col_labels: dict | None = None, row_labels: dict | None = None, totals: bool = True,
               total_row_label: str = "All", total_col_label: str = "All",
-              name_w: str = "72px", col_order_by_n: bool = False) -> None:
+              name_w: str = "72px", col_order_by_n: bool = False, total_col: bool = True) -> None:
     """Rows × columns of `metric`, coloured around zero (win rate around your
     overall rate). Cells under `min_n` trades are hatched and never coloured;
     empty cells say so. With `totals`, the last column and row are the old
@@ -327,23 +331,25 @@ def heat_grid(g: pd.DataFrame, row_col: str, col_col: str, rows: list, cols: lis
         cols = sorted(cols, key=lambda c: -int((g[col_col] == c).sum()))
     labels = col_labels or {}
     head = "".join(f"<th>{_h.escape(str(labels.get(c, c)))}</th>" for c in cols)
-    if totals:
+    if totals and total_col:
         head += f"<th>{_h.escape(total_col_label)}</th>"
     body = ""
     for r in rows:
         rg = g[g[row_col] == r]
         tds = "".join(_cell(rg[rg[col_col] == c]) for c in cols)
-        if totals:
+        if totals and total_col:
             tds += _cell(rg[rg[col_col].isin(cols)], True)
         body += f'<tr><td class="name">{_h.escape(str((row_labels or {}).get(r, r)))}</td>{tds}</tr>'
     if totals:
         tds = "".join(_cell(g[(g[col_col] == c) & g[row_col].isin(rows)], True) for c in cols)
-        body += f'<tr class="tot"><td class="name">{_h.escape(total_row_label)}</td>{tds}<td class="name"></td></tr>'
+        body += (f'<tr class="tot"><td class="name">{_h.escape(total_row_label)}</td>{tds}'
+                 + ('<td class="name"></td>' if total_col else '') + '</tr>')
     st.markdown(css() + f'<div class="ea-rx ea-rx-scroll"><table class="ea-hm"><tr><th class="l" style="--nw:{name_w};">{_h.escape(row_head)}</th>'
                 f'{head}</tr>{body}</table></div>', unsafe_allow_html=True)
 
 
-def day_time_grid(df: pd.DataFrame, metric: str = "Expectancy", min_n: int = 5) -> bool:
+def day_time_grid(df: pd.DataFrame, metric: str = "Expectancy", min_n: int = 5,
+                  day_totals: bool = True) -> bool:
     """Weekday × four-hour block (mockup V3). The All column is the old
     day-of-week table; the All row is the time-of-day totals."""
     hrs = trade_hours(df)
@@ -367,7 +373,7 @@ def day_time_grid(df: pd.DataFrame, metric: str = "Expectancy", min_n: int = 5) 
     blocks = [f"{a:02d}–{b:02d}" for a, b in BLOCKS]
     heat_grid(g, "__day", "__blk", days, blocks, metric=metric, min_n=min_n,
               row_labels={d: d[:3] for d in days},
-              total_row_label="All days", total_col_label="All day")
+              total_row_label="All days", total_col_label="All day", total_col=day_totals)
     return True
 
 
@@ -2047,10 +2053,14 @@ def journal_health(df: pd.DataFrame) -> dict:
     # used: ..."); this card said it too, with a different count (4 vs 3)
     # fill rate: automatic vs hand-tagged
     auto = [c for c in ("Closed RR", "Session", "Direction", "MFE (R)", "MAE (R)") if c in g.columns]
-    for lab, cols in (("Result, session, direction, MFE/MAE", auto), ("Hand tags: " + ", ".join(c.replace("?", "") for c in tags), tags)):
-        if cols:
-            pct = float(pd.concat([~g[c].map(lambda v, _m=(c == "Mistake"): _blank(v, _m)) for c in cols], axis=1).all(axis=1).mean() * 100)
-            out["fill"].append((lab, pct))
+    # (28 Sep check: the hand-tag bar repeated the ring's % a third time, and
+    # "75%" beside "95% complete" never said what the 25% was) — one bar, for
+    # the synced fields, naming the ones that are short
+    if auto:
+        pct = float(pd.concat([~g[c].map(_blank) for c in auto], axis=1).all(axis=1).mean() * 100)
+        short = [(c, int(g[c].map(_blank).sum())) for c in auto]
+        short = [f"{c.replace(' (R)', '')} on {k}" for c, k in short if k]
+        out["fill"].append(("Synced fields" + (" \u2014 missing " + ", ".join(short) if short else ""), pct))
     return out
 
 
@@ -2067,8 +2077,9 @@ def journal_health_card(h: dict) -> None:
     fill = "".join(f'<div class="fr"><div class="fl"><span>{_h.escape(a)}</span><b>{b:.0f}%</b></div>'
                    f'<div class="fb"><div style="width:{max(b, 1.5):.0f}%;background:{GREEN if b >= 90 else ("#f59e0b" if b >= 50 else RED)};"></div></div></div>'
                    for a, b in h["fill"])
-    head = (f"Your journal is {pct}% complete" if pct < 100 else "Every trade is fully tagged")
-    sub = (f"{h['full']} of {h['total']} trades carry every hand tag. Every number on this site is only as good as this."
+    # the % lives in the ring; the headline says it in trades
+    head = (f"{h['full']} of {h['total']} trades carry every hand tag" if pct < 100 else "Every trade is fully tagged")
+    sub = ("Every number on this site is only as good as this."
            if pct < 100 else "Nice. The checks below still look for contradictions and gaps.")
     extra = f"""
 .ea-jh{{display:flex;gap:22px;align-items:center;flex-wrap:wrap;}}
@@ -2084,7 +2095,7 @@ def journal_health_card(h: dict) -> None:
 .ea-jp .jt{{flex:1;min-width:0;font-size:13.5px;color:{t['muted']};line-height:1.45;}}
 .ea-jp .jt b{{display:block;font-size:15px;color:{t['ink']};}}
 .ea-jp .ja{{flex:none;font-size:12.5px;font-weight:700;white-space:nowrap;}}
-@media (max-width:640px){{.ea-jp .ja{{display:none;}}}}
+@media (max-width:640px){{.ea-jp .jr{{flex-wrap:wrap;}} .ea-jp .ja{{flex-basis:100%;padding-left:58px;margin-top:-4px;}}}}
 """
     ring = _ring(pct, 112, what="fully tagged", name="Journal completeness")
     body = (f'<div class="ea-rx"><div class="ea-jh">{ring}<div class="hm"><div class="hh">{_h.escape(head)}</div>'

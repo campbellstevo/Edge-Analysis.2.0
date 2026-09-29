@@ -770,8 +770,7 @@ def _digest_card(f: pd.DataFrame) -> None:
         with st.container(border=True):
             st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
             _card_header("What needs work",
-                         "Your three biggest leaks across your executed history "
-                         "\u2014 fix the top one first.")
+                         "Leaks that beat chance show here, biggest first.")
             _n_ex = int(len(f)) if f is not None else 0
             _empty_note(f"Nothing here yet beats chance \u2014 a leak shows once 5+ trades share a "
                         f"pattern that luck can't explain. {_n_ex} executed so far.")
@@ -789,9 +788,10 @@ def _digest_card(f: pd.DataFrame) -> None:
     import html as _h2
     with st.container(border=True):
         st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
+        _nl = min(3, len(fs))
         _card_header("What needs work",
-                     "Your three biggest leaks across your executed history \u2014 "
-                     "fix the top one first.")
+                     ("Your biggest leak" if _nl == 1 else f"Your {_nl} biggest leaks")
+                     + " across your executed history \u2014 fix the top one first.")
         rows = []
         for i, f_ in enumerate(fs[:3], 1):
             _sev = "#ef4444" if i == 1 else ("#b45309" if i == 2 else "#64748b")
@@ -1980,6 +1980,10 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
                ("__extra_sess", "were a second entry in the same session"),
                ("__overtrade", f"were trade {OVERTRADE_LIMIT + 1}+ of a day"),
                ("__revenge", f"came within {REVENGE_WINDOW_MINS // 60}h of a loss")]
+    if _scol and bool(g["__extra_sess"].any()):
+        _xs = _sess[g["__extra_sess"].astype(bool)].value_counts()
+        _checks[2] = ("__extra_sess", "were a second entry in the same session ("
+                      + ", ".join(f"{k} {v}" for k, v in _xs.items()) + ")")
     g["__flag"] = g[[c for c, _ in _checks]].any(axis=1)
     n_total = len(g)
     n_flagged = int(g["__flag"].sum())
@@ -2070,7 +2074,8 @@ def _psychology_tab(f: pd.DataFrame, df_raw: pd.DataFrame, styler):
         _gap(14)
         _rxm.state_board(f, _ms, _verdicts_on())
     _psych_bad_beat_tracker(raw)
-    _psych_3sl_compliance(raw, styler)
+    # (the "One trade per session" line said the Discipline chip's count again,
+    # from a different frame — the demo read 27 there and 20 here; 28 Sep)
 
 
 
@@ -2389,13 +2394,17 @@ def _timing_reshaped(f: pd.DataFrame, df_raw: pd.DataFrame, show_table) -> None:
         metric = rx.metric_picker("ea_time_metric")
         st.markdown("### By hour of entry")
         st.caption("On your journal's own clock. Grey bars have too few trades to read yet.")
-        if not rx.hour_bars(data, metric):
+        # 5 trades, like every row and cell on the view (the bars used 8, so a
+        # young journal's were all grey)
+        if not rx.hour_bars(data, metric, min_n=5):
             _empty_note("Hours appear once your trades carry an entry time.")
         _gap(14)
         st.markdown("### Day \u00d7 time of day")
-        st.caption("Four-hour blocks. Hatched cells have under 5 trades. "
-                   "The All day column is each weekday on its own.")
-        if not rx.day_time_grid(data, metric):
+        st.caption("Four-hour blocks. Hatched cells have under 5 trades."
+                   + (" The All day column is each weekday on its own." if _rich else ""))
+        # the day rows above already carry each weekday; the grid's All-day
+        # column said them again (28 Sep check)
+        if not rx.day_time_grid(data, metric, day_totals=_rich):
             # no entry times: keep the plain day-of-week view
             _time_days_tab(f, show_table)
 
@@ -3857,6 +3866,12 @@ def _data_tab(f_all: pd.DataFrame, show_table):
             filled = int((col.notna()
                           & ~col.astype(str).str.strip().isin(
                               ["", "nan", "None", "NaT", "[]", "False"])).sum())
+            # a checkbox he ticks sometimes is answered on every trade: an
+            # unticked box is No (Rules Followed? is the exception — unticked
+            # there is unanswered, 3b667bd); one never ticked stays never used
+            if (cs.endswith("?") and cs != "Rules Followed?" and filled
+                    and set(col.dropna().astype(str).str.strip().str.lower()) <= {"true", "false"}):
+                filled = n
         except Exception:
             filled = int(col.notna().sum())
         rows.append((cs, filled))
