@@ -1758,6 +1758,25 @@ def _path_svg(row, w: int = 150, h: int = 14) -> str:
             f'<circle cx="{X(row["r"]):.1f}" cy="{h/2}" r="4.5" fill="{col}" stroke="#fff" stroke-width="1.5"/></svg>')
 
 
+def _spread(items: list, lo: float, hi: float, gap: float = 6.0) -> list:
+    """Label centres that never overlap: items are (x, width) in drawing
+    units; each label keeps its x unless a neighbour is in the way, and none
+    runs off either edge (29 Sep: stop and entry collided on a phone)."""
+    order = sorted(range(len(items)), key=lambda i: items[i][0])
+    xs = [float(x) for x, _ in items]
+    edge = lo
+    for k, i in enumerate(order):
+        wd = items[i][1]
+        xs[i] = max(xs[i], edge + (gap if k else 0) + wd / 2)
+        edge = xs[i] + wd / 2
+    edge = hi
+    for k, i in enumerate(reversed(order)):
+        wd = items[i][1]
+        xs[i] = min(xs[i], edge - (gap if k else 0) - wd / 2)
+        edge = xs[i] - wd / 2
+    return xs
+
+
 def _big_path(row, w: int = 400) -> str:
     t = _tokens()
     plan = row["plan"] if pd.notna(row["plan"]) else None
@@ -1769,13 +1788,17 @@ def _big_path(row, w: int = 400) -> str:
     marks = [(-1.0, "stop −1R", RED), (0.0, "entry", t["muted"])]
     if plan:
         marks.append((plan, f"target {plan:.1f}R", "#a78bfa" if _dark() else PURPLE))
+    # each label keeps clear of its neighbours; its line stays on the value
+    lx = _spread([(X(v), len(lab) * 6.9) for v, lab, _ in marks], 2, w - 2)
     svg = "".join(f'<line x1="{X(v):.1f}" x2="{X(v):.1f}" y1="24" y2="62" stroke="{c}" stroke-dasharray="3 3"/>'
-                  f'<text x="{X(v):.1f}" y="78" font-size="11.5" fill="{c}" text-anchor="middle" font-weight="700">{lab}</text>'
-                  for v, lab, c in marks)
+                  f'<text x="{x_:.1f}" y="78" font-size="11.5" fill="{c}" text-anchor="middle" font-weight="700">{lab}</text>'
+                  for (v, lab, c), x_ in zip(marks, lx))
     if mae is not None and mfe is not None:
+        _wl, _bl = f"worst {fmt_r(mae)}", f"best {fmt_r(mfe)}"
+        tx = _spread([(X(mae), len(_wl) * 6.2), (X(mfe), len(_bl) * 6.2)], 2, w - 2)
         svg += (f'<rect x="{X(mae):.1f}" y="37" width="{max(X(mfe) - X(mae), 2):.1f}" height="12" rx="6" fill="#c7d2fe"/>'
-                f'<text x="{X(mae):.1f}" y="16" font-size="11" fill="{t["muted"]}" text-anchor="middle">worst {fmt_r(mae)}</text>'
-                f'<text x="{X(mfe):.1f}" y="16" font-size="11" fill="{t["muted"]}" text-anchor="middle">best {fmt_r(mfe)}</text>')
+                f'<text x="{tx[0]:.1f}" y="16" font-size="11" fill="{t["muted"]}" text-anchor="middle">{_wl}</text>'
+                f'<text x="{tx[1]:.1f}" y="16" font-size="11" fill="{t["muted"]}" text-anchor="middle">{_bl}</text>')
     col = GREEN if row["r"] > 0.15 else (RED if row["r"] < -0.15 else BE_GREY)
     svg += f'<circle cx="{X(row["r"]):.1f}" cy="43" r="8" fill="{col}" stroke="#fff" stroke-width="2"/>'
     # capped width: a viewBox stretched across a desktop card blew the labels up 3x
@@ -1935,6 +1958,8 @@ def trade_explorer(g: pd.DataFrame, key: str = "ea_tx") -> None:
     extra = f"""
 .ea-tc{{border:1px solid {'#4c3a99' if _dark() else '#c4b5fd'};border-radius:14px;padding:16px 18px;background:{t['base']};}}
 .ea-tc .top{{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;}}
+.ea-tc .ea-bp-m{{display:none;}}
+@media (max-width:640px){{.ea-tc .ea-bp-d{{display:none;}} .ea-tc .ea-bp-m{{display:block;}}}}
 .ea-tc .e{{font-size:11.5px;font-weight:700;letter-spacing:.07em;color:{t['muted']};}}
 .ea-tc .h{{font-size:19px;font-weight:800;color:{t['ink']};margin-top:2px;}}
 .ea-tc .r{{font-size:28px;font-weight:800;white-space:nowrap;}}
@@ -1953,7 +1978,8 @@ def trade_explorer(g: pd.DataFrame, key: str = "ea_tx") -> None:
     card = (f'<div class="ea-rx ea-tc"><div class="top"><div><div class="e">{_h.escape(when.upper())}'
             f'{(" · " + _h.escape(r["session"].upper())) if r["session"] else ""}</div>'
             f'<div class="h">{_h.escape(head)}</div></div><div class="r" style="color:{rc};">{_h.escape(fmt_r(r["r"]))}</div></div>'
-            f'<div class="e" style="margin-top:12px;">HOW THE TRADE MOVED</div>{_big_path(r)}'
+            f'<div class="e" style="margin-top:12px;">HOW THE TRADE MOVED</div>'
+            f'<div class="ea-bp-d">{_big_path(r)}</div><div class="ea-bp-m">{_big_path(r, 300)}</div>'
             f'<div class="kv">{kvh}</div>'
             + (f'<div class="rec">{rec}</div>' if rec else "")
             + f'<div class="e" style="margin-top:12px;">YOUR NOTES</div>{notes}'
