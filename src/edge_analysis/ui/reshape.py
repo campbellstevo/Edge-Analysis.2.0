@@ -1362,14 +1362,30 @@ def tiles(stats: list) -> None:
     st.markdown(css(extra) + f'<div class="ea-rx ea-tl">{body}</div>', unsafe_allow_html=True)
 
 
-def record_stats(r: pd.Series, dates: pd.Series) -> dict:
-    """Headline numbers over every trade, in order. Wins are > +0.15R and
-    losses < −0.15R; a scratch breaks no streak."""
+def outcome_class(r, outcome=None) -> pd.Series:
+    """1 win, 0 break-even, -1 loss per trade: his Outcome tag where it says
+    Win, BE or Loss, as on every card; the R band (over +0.15R a win, under
+    -0.15R a loss) only where there is no tag. Record's "avg loss -0.8R" sat
+    beside Projections' "average loss 1.1R" because they used one each (28 Sep)."""
+    r = pd.to_numeric(pd.Series(r), errors="coerce")
+    band = r.gt(0.15).astype(int) - r.lt(-0.15).astype(int)
+    if outcome is None or len(outcome) != len(r):
+        return band
+    tag = pd.Series(list(outcome), index=r.index, dtype=object).map(
+        lambda v: {"win": 1, "loss": -1, "be": 0}.get(str(v).strip().lower()))
+    return tag.where(tag.notna(), band).astype(int)
+
+
+def record_stats(r: pd.Series, dates: pd.Series, outcome=None) -> dict:
+    """Headline numbers over every trade, in order. Wins, losses and
+    break-evens by outcome_class; a break-even breaks no streak."""
     r = pd.to_numeric(r, errors="coerce").reset_index(drop=True)
     dates = pd.to_datetime(dates).reset_index(drop=True)
+    cls = outcome_class(r, outcome)
     ok = r.notna()
-    r, dates = r[ok].reset_index(drop=True), dates[ok].reset_index(drop=True)
-    wins, losses = r[r > 0.15], r[r < -0.15]
+    r, dates, cls = (r[ok].reset_index(drop=True), dates[ok].reset_index(drop=True),
+                     cls[ok].reset_index(drop=True))
+    wins, losses = r[cls == 1], r[cls == -1]
     n = len(r)
     cum = r.cumsum()
     dd = cum - cum.cummax()
@@ -1386,7 +1402,7 @@ def record_stats(r: pd.Series, dates: pd.Series) -> dict:
         back = cum.iloc[i_to:][cum.iloc[i_to:] >= cum.iloc[i_from]]
         out.update(dd_from=dates[i_from], dd_to=dates[i_to],
                    dd_back=(dates[int(back.index[0])] if len(back) else None))
-    seq = [1 if x > 0.15 else (-1 if x < -0.15 else 0) for x in r]
+    seq = [int(c) for c in cls]
     bw = bl = cw = cl = 0
     for s in seq:
         if s == 1:
@@ -1437,6 +1453,17 @@ def _calendar(g: pd.DataFrame, month: pd.Period) -> str:
     return css(extra) + f'<div class="ea-rx ea-cal">{head}{cells}</div>'
 
 
+def _date_axis(dates):
+    """Weeks as "07 Sep" on a record under four months, months as "Sep 2026"
+    after. The old "%b %y" put one tick, "Sep 26", under a five-week record,
+    which reads as 26 September (28 Sep check)."""
+    import altair as alt
+    d = pd.to_datetime(pd.Series(dates), errors="coerce").dropna()
+    short = d.empty or (d.max() - d.min()).days <= 120
+    return alt.Axis(format="%d %b" if short else "%b %Y", labelOverlap=True,
+                    tickCount="week" if short else "month")
+
+
 def record_card(g: pd.DataFrame, styler) -> None:
     """Mockup V1 as one card under the month and all-time cards: six numbers,
     the whole equity curve with its drawdown, the month as a calendar, and
@@ -1448,7 +1475,7 @@ def record_card(g: pd.DataFrame, styler) -> None:
     g = g[g["__r"].notna()].sort_values("__d").reset_index(drop=True)
     if len(g) < 5:
         return
-    s = record_stats(g["__r"], g["__d"])
+    s = record_stats(g["__r"], g["__d"], g["Outcome"] if "Outcome" in g.columns else None)
     f = lambda d: d.strftime("%d %b") if d is not None else ""
     dd_sub = ("no drawdown yet" if s["maxdd"] >= 0 else
               f"{f(s['dd_from'])} → {f(s['dd_to'])}, " + (f"back by {f(s['dd_back'])}" if s["dd_back"] is not None
@@ -1472,14 +1499,14 @@ def record_card(g: pd.DataFrame, styler) -> None:
     eq = pd.DataFrame({"Date": g["__d"].dt.strftime("%Y-%m-%dT%H:%M:%S"), "R": cum.round(2),
                        "DD": (cum - cum.cummax()).round(2), "Trade": g["__r"].round(2)})
     vals = eq.to_dict("records")
-    x = alt.X("Date:T", title=None, axis=alt.Axis(format="%b %y", labelOverlap=True, tickCount="month"))
+    x = alt.X("Date:T", title=None, axis=_date_axis(g["__d"]))
     area = alt.Chart(alt.Data(values=vals)).mark_area(color=PURPLE, opacity=0.08).encode(x=x, y=alt.Y("R:Q", title="Running R"))
     line = alt.Chart(alt.Data(values=vals)).mark_line(color=PURPLE, strokeWidth=2).encode(
         x=x, y=alt.Y("R:Q", title="Running R"),
         tooltip=[alt.Tooltip("Date:T", format="%a %d %b %Y"), alt.Tooltip("Trade:Q", title="This trade (R)"),
                  alt.Tooltip("R:Q", title="Running R")])
     ddc = alt.Chart(alt.Data(values=vals)).mark_area(color=RED, opacity=0.25, line={"color": RED, "strokeWidth": 1}).encode(
-        x=alt.X("Date:T", title=None, axis=alt.Axis(format="%b %y", labelOverlap=True, tickCount="month")),
+        x=alt.X("Date:T", title=None, axis=_date_axis(g["__d"])),
         y=alt.Y("DD:Q", title="Drawdown"), tooltip=[alt.Tooltip("Date:T", format="%a %d %b %Y"),
                                                      alt.Tooltip("DD:Q", title="Below peak (R)")])
     st.markdown("#### The whole record")
@@ -1535,7 +1562,7 @@ def edge_check(g: pd.DataFrame, styler, all_exp: float, window: int = 30) -> Non
     if d.empty:
         return
     vals = d.to_dict("records")
-    x = alt.X("Date:T", title=None, axis=alt.Axis(format="%b %y", labelOverlap=True, tickCount="month"))
+    x = alt.X("Date:T", title=None, axis=_date_axis(g["__d"]))
     line = alt.Chart(alt.Data(values=vals)).mark_line(color=PURPLE, strokeWidth=2.2).encode(
         x=x, y=alt.Y("Roll:Q", title=f"Last {w} trades (R)"),
         tooltip=[alt.Tooltip("Date:T", format="%a %d %b %Y"), alt.Tooltip("Roll:Q", title=f"Last {w} avg", format="+.2f")])

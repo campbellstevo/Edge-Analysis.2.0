@@ -1388,9 +1388,12 @@ def _alltime_card(f: pd.DataFrame, styler) -> None:
             else:
                 _empty_note("The equity chart appears once a few trades are logged.")
 
-        rrs = pd.to_numeric(g["PnL_from_RR"], errors="coerce").dropna()
+        from edge_analysis.ui.reshape import outcome_class
+        _rr_all = pd.to_numeric(g["PnL_from_RR"], errors="coerce")
+        _cls = outcome_class(_rr_all, g["Outcome"] if "Outcome" in g.columns else None)
+        rrs = _rr_all[_rr_all.notna()]
         n = int(len(rrs))
-        wins = rrs[rrs > 0.15]
+        wins = rrs[_cls[_rr_all.notna()] == 1]
         win_pct = 100.0 * len(wins) / n if n else 0.0
         avg_win = float(wins.mean()) if len(wins) else float("nan")
         expc = float(rrs.mean()) if n else float("nan")
@@ -1401,8 +1404,12 @@ def _alltime_card(f: pd.DataFrame, styler) -> None:
                  ("TRADES", f"{n}", "#0f172a"),
                  ("WIN", f"{win_pct:.0f}%", "#0f172a"),
                  # avg win lives in Your record's "Win vs loss size" (27 Sep)
+                 # the site's headline claim carries its caveat, as Plan's does
+                 # (a sign-flip test on its own; never "beats chance" here, so
+                 # it can't contradict Plan's family-wise check)
                  ("EXPECTANCY", "—" if expc != expc else f"{expc:+.2f}R",
-                  "#16a34a" if expc == expc and expc >= 0 else "#ef4444"),
+                  "#16a34a" if expc == expc and expc >= 0 else "#ef4444",
+                  "early read" if n >= 2 and expc == expc and _signflip_p(rrs, lower=expc < 0) >= 0.05 else ""),
                  ("PROFIT FACTOR", "—" if pf != pf else f"{pf:.2f}",
                   "#16a34a" if pf == pf and pf >= 1 else "#ef4444")]
         if has_usd:
@@ -1415,8 +1422,10 @@ def _alltime_card(f: pd.DataFrame, styler) -> None:
                 f"padding:11px 13px;'>"
                 f"<div style='font-size:10.5px;font-weight:600;letter-spacing:0.05em;"
                 f"color:#64748b;'>{k}</div>"
-                f"<div style='font-size:19px;font-weight:800;color:{c};'>{v}</div></div>"
-                for k, v, c in chips) + "</div>", unsafe_allow_html=True)
+                f"<div style='font-size:19px;font-weight:800;color:{c};'>{v}</div>"
+                + (f"<div style='font-size:11px;font-weight:600;color:#64748b;'>{rest[0]}</div>" if rest and rest[0] else "")
+                + "</div>"
+                for k, v, c, *rest in chips) + "</div>", unsafe_allow_html=True)
 
 
 # ── Account comparison cards ──────────────────────────────────────────────────
