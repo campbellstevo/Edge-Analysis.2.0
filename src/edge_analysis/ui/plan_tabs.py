@@ -88,7 +88,9 @@ def _fmt_r(v, plus=True) -> str:
         return "—"
     if abs(v) < 0.005:
         v = 0.0  # kill negative zero at the formatter, for every caller
-    return f"{v:+.2f}R" if plus else f"{v:.2f}R"
+    # the true minus sign, as on every other card ("-1.33R" sat beside
+    # "\u22121.3R" in one debrief; 28 Sep check)
+    return (f"{v:+.2f}R" if plus else f"{v:.2f}R").replace("-", "\u2212")
 
 
 def _blankish(s: pd.Series) -> pd.Series:
@@ -749,6 +751,12 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
     weeks = sorted(g["__dt"].dt.to_period("W-SUN").unique())
     labels = {p: f"{p.start_time.strftime('%d %b')} – {p.end_time.strftime('%d %b %Y')}" for p in weeks}
     default_p = now.to_period("W-SUN")
+    # (28 Sep check) a Monday opened on the week that began that morning, one
+    # trade and "too few to grade", with the finished week a dropdown away.
+    # Under 3 trades so far, the debrief opens on the last week before it
+    _before = [p for p in weeks if p < default_p]
+    if _before and int((g["__dt"].dt.to_period("W-SUN") == default_p).sum()) < 3:
+        default_p = _before[-1]
     opts = [labels[p] for p in weeks[::-1]]
     sel = st.selectbox("Week", opts, index=0 if labels.get(default_p) not in opts
                        else opts.index(labels[default_p]), label_visibility="collapsed")
@@ -763,7 +771,9 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
 
     rr = wk["__rr"]
     n = len(wk)
-    n_w, n_l = int((rr > 0.15).sum()), int((rr < -0.15).sum())
+    from edge_analysis.ui.reshape import outcome_class
+    _wc = outcome_class(rr, wk["Outcome"] if "Outcome" in wk.columns else None)
+    n_w, n_l = int((_wc == 1).sum()), int((_wc == -1).sum())
     n_be = n - n_w - n_l
     net = float(rr.sum())
     usd = pd.to_numeric(wk["PnL"], errors="coerce") if "PnL" in wk.columns else None
@@ -809,6 +819,18 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
     if "A+ Setup?" in wk.columns:
         apl = int(wk["A+ Setup?"].astype(str).str.strip().str.lower()
                   .isin(["yes", "true", "__yes__", "1"]).sum())
+    pn = len(pw)
+    pr = pw["__rr"]
+    p_full = int(pw.apply(_tagged, axis=1).sum()) if (manual and pn) else None
+    p_rk = p_kn = None
+    if pn and "Rules Followed?" in pw.columns:
+        _pv = pw["Rules Followed?"].astype(str).str.strip().str.lower()
+        _pk = _pv.isin(["yes", "no", "true", "false", "__yes__", "__no__", "1", "0"])
+        if int(_pk.sum()):
+            p_kn = int(_pk.sum())
+            p_rk = int((_pv.isin(["yes", "true", "__yes__", "1"]) & _pk).sum())
+    p_mfe = pd.to_numeric(pw["MFE (R)"], errors="coerce") if "MFE (R)" in pw.columns else None
+    p_give = float(((p_mfe - pr).clip(lower=0)).sum()) if p_mfe is not None and p_mfe.notna().any() else float("nan")
     comps = []
     if full_n is not None and n:
         comps.append(full_n / n)
@@ -833,7 +855,7 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
     _carried = n > 1 and net >= 0 and ex_best < -0.5
     _all_rules = bool(rules_known) and rules_kept == rules_known and rules_known == n
     if n < 3:
-        headline = f"A quiet week: {n} trade{'s' if n != 1 else ''}."
+        headline = "A quiet week."
     elif _carried:
         headline = "A green week, made by one trade."
     elif net > 0:
@@ -850,17 +872,28 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
                + (f" {rx._h.escape(_best_em)}" if _best_em else "")
                + f" carried it. Without it: <b>{_fmt_r(ex_best)}</b>.")
     else:
-        sub = f"{n_w} won \u00b7 {n_be} break-even \u00b7 {n_l} lost."
+        # won / break-even / lost is the Trades tile's; this line says why
+        # there is no grade, when there isn't one (it was a caption further
+        # down that blamed "too few" on a 4-trade week that was untagged)
+        sub = ""
+    if not grade and comps:
+        sub = ((sub + " ") if sub else "") + ("Too few trades to grade the process." if n < 3 else
+                                              "Tag at least half the week's trades to grade the process.")
     stats = [("Net", rx.fmt_r(net), (f"last 4 weeks: {rx.fmt_r(_avg4)} a week" if _avg4 is not None else "first weeks logged"),
               GREEN if net >= 0 else RED),
-             ("Trades", f"{n}", f"{n_w}W \u00b7 {n_be}BE \u00b7 {n_l}L", "#4800ff")]
+             ("Trades", f"{n}", f"{n_w} won \u00b7 {n_be} BE \u00b7 {n_l} lost", "#4800ff")]
     if rules_known:
-        stats.append(("Rules followed", f"{rules_kept} of {rules_known}", "by your own tag",
+        stats.append(("Rules followed", f"{rules_kept} of {rules_known}",
+                      f"last week {p_rk} of {p_kn}" if p_kn else "by your own tag",
                       GREEN if rules_kept == rules_known else "#b45309"))
-    elif full_n is not None:
-        stats.append(("Logged in full", f"{full_n} of {n}", "every tag filled", GREEN if full_n == n else "#b45309"))
+    if full_n is not None:
+        stats.append(("Logged in full", f"{full_n} of {n}",
+                      f"last week {p_full} of {pn}" if p_full is not None else "every tag filled",
+                      GREEN if full_n == n else "#b45309"))
     if give == give:
-        stats.append(("Given back", f"{give:.1f}R", "best price not banked", RED if give > 2 else "#4800ff"))
+        stats.append(("Given back", f"{give:.1f}R",
+                      f"last week {p_give:.1f}R" if p_give == p_give else "best price not banked",
+                      RED if give > 2 else "#4800ff"))
     _dn = wk.assign(__d=wk["__dt"].dt.day_name())
     _days = []
     for _d in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]:
@@ -889,14 +922,17 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
         _mk = _mk[~_mk.str.lower().isin(["", "na", "none", "no mistake"])]
         if len(_mk):
             fix.append(("Mistakes logged", ", ".join(f"{k} \u00d7{v}" for k, v in _mk.value_counts().items())))
-    if rules_known and rules_kept < rules_known:
-        fix.append((f"Rules broken on {rules_known - rules_kept} of {rules_known}", "by your own tag"))
     if give == give and give > 2 and t._verdicts_on():
-        fix.append(("Define the +1R action before entry",
-                    f"{give:.1f}R given back vs {_fmt_r(net)} banked \u2014 partial or trail, executed mechanically"))
+        fix.append(("Define the +1R action before entry", "partial or trail, executed mechanically"))
     if full_n is not None and full_n < n:
-        fix.append((f"Backfill the journal \u2014 {n - full_n} of {n} trades not fully tagged",
-                    "the discipline score can't see unlogged trades"))
+        fix.append(("Backfill the journal", "the discipline score can't see unlogged trades"))
+    _traded = [_d for _d in _days if _d[2]]
+    if len(_traded) < 2:
+        _days = []
+        if n > 1:
+            _full = {"Mon": "Monday", "Tue": "Tuesday", "Wed": "Wednesday", "Thu": "Thursday",
+                     "Fri": "Friday", "Sat": "Saturday", "Sun": "Sunday"}[_traded[0][0]]
+            sub = f"All on {_full}." + ((" " + sub) if sub else "")
     rx.week_report("", headline, sub, grade if grade else None, stats, _days, keep, fix)
     # the share card: R only, so it is safe to post in the group
     with st.expander("Share this week \u2014 an image for the group, R only"):
@@ -913,17 +949,16 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
                            file_name=f"edge-week-{sel_p.start_time.strftime('%Y-%m-%d')}.png",
                            key="ea_share_week")
         st.caption("Nothing on it but R: no balance, lot size or dollars.")
-    if not grade and comps:
-        st.caption(f"{n} trade{'s' if n != 1 else ''} \u2014 too few to grade the week's process.")
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
     # round 21: the week's trades one by one are the "Week of ..." group in
     # Every trade right below this card (path, tags, notes, and each opens
     # into its trade card), so the scoreboard table that repeated them is gone
     st.markdown(
-        f"<div style='font-size:14px;margin:2px 0 8px;'>The week's {n} trade{'s' if n != 1 else ''}, one by one, "
-        f"are under <b>Week of {sel_p.start_time.strftime('%d %b')}</b> in Every trade below \u2014 "
-        f"open any of them there.</div>", unsafe_allow_html=True)
+        "<div style='font-size:14px;margin:2px 0 8px;'>"
+        + ("The week's trade is" if n == 1 else "The week's trades, one by one, are")
+        + f" under <b>Week of {sel_p.start_time.strftime('%d %b')}</b> in Every trade below \u2014 "
+        + ("open it there." if n == 1 else "open any of them there.") + "</div>", unsafe_allow_html=True)
 
     # what worked / didn't
     sess_s = wk.get("Session", pd.Series("", index=wk.index)).astype(str)
@@ -932,46 +967,15 @@ def render_review_tab(df_raw: pd.DataFrame, styler) -> None:
     for name, grp in wk.groupby(dir_s):
         if name and str(name) != "nan":
             lines.append(f"{name}s {_fmt_r(float(grp['__rr'].sum()))} over {len(grp)}")
-    if lines:
+    if len(lines) > 1:
         st.caption("Direction split: " + " · ".join(lines))
     # No "Stop trading <session>" fix: one week's session total is one or two
     # trades — it fired on a single stop-out in 37 of 46 demo weeks (STAT-06).
     # The week's sessions are on the scoreboard above.
 
-    # vs last week
-    if not pw.empty:
-        st.markdown("#### vs last week — process, not profit")
-        pr = pw["__rr"]
-        pn = len(pw)
-        p_full = int(pw.apply(_tagged, axis=1).sum()) if manual else None
-        p_rk = p_kn = None
-        if "Rules Followed?" in pw.columns:
-            _pv = pw["Rules Followed?"].astype(str).str.strip().str.lower()
-            _pk = _pv.isin(["yes", "no", "true", "false", "__yes__", "__no__", "1", "0"])
-            if int(_pk.sum()):
-                p_kn = int(_pk.sum())
-                p_rk = int((_pv.isin(["yes", "true", "__yes__", "1"]) & _pk).sum())
-        p_mfe = pd.to_numeric(pw["MFE (R)"], errors="coerce") if "MFE (R)" in pw.columns else None
-        p_give = float(((p_mfe - pr).clip(lower=0)).sum()) if p_mfe is not None and p_mfe.notna().any() else float("nan")
-        _cmp = []
-        if full_n is not None and p_full is not None and pn:
-            _cmp.append(("Fully logged", f"{p_full} of {pn}", f"{full_n} of {n}",
-                         (full_n / max(1, n)) >= (p_full / max(1, pn))))
-        if rules_known and p_kn:
-            _cmp.append(("Rules followed", f"{round(p_rk / p_kn * 100)}%", f"{round(rules_kept / rules_known * 100)}%",
-                         (rules_kept / rules_known) >= (p_rk / p_kn)))
-        if give == give and p_give == p_give:
-            _cmp.append(("Given back", f"{p_give:.1f}R", f"{give:.1f}R", float(give) <= p_give))
-        if not _cmp:
-            _cmp.append(("Net R", _fmt_r(float(pr.sum())), _fmt_r(net), net >= float(pr.sum())))
-        st.markdown("".join(
-            f"<div style='display:flex;gap:18px;align-items:center;padding:5px 0;'>"
-            f"<div style='flex:0 1 150px;min-width:0;font-size:13.5px;font-weight:700;color:#0f172a;'>{_l}</div>"
-            f"<div style='flex:0 1 140px;min-width:0;font-size:12.5px;color:#64748b;'>last {_a}</div>"
-            f"<div style='font-size:13px;font-weight:800;color:{GREEN if _ok else RED};'>now {_b}</div></div>"
-            for _l, _a, _b, _ok in _cmp), unsafe_allow_html=True)
+    if pn:
         # prescriptive on two weeks of trades — owner only until it passes a
-        # null test (1.12); members keep the side-by-side above
+        # null test (1.12); members keep last week on the tiles above
         if n > pn and net < float(pr.sum()) and t._verdicts_on():
             t._insight_box("Activity up, edge down — more trades produced less R than last week. "
                            "Fewer, better entries beat more entries.", "warn")
