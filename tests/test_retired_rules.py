@@ -57,4 +57,6 @@ def test_demo_psychology_scores_no_window():
     assert not at.exception
     text = " ".join(str(m.value) for m in at.markdown).lower()
     assert "window compliance" not in text
-    assert "one trade per session" in text
+    # the session lock's frequency half still scores every trade: it is named in
+    # Discipline's checked-on line (its separate section, a second count, went 28 Sep)
+    assert "one entry per session" in text
