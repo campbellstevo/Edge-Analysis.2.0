@@ -437,6 +437,26 @@ def pair_rows(counted: pd.DataFrame, m1: pd.Series, m2: pd.Series) -> list[dict]
     return out
 
 
+def pair_tests(counted: pd.DataFrame, m1: pd.Series, m2: pd.Series, rows: list | None = None) -> set:
+    """The (m1, m2, "good"|"bad") pairs that beat chance, Holm across every
+    readable pair both ways. Entry's pair rows and Focus's best setup read the
+    same family, so they name the same pair (28 Sep: Focus ranked by total,
+    Entry by R a trade, and named two different bests)."""
+    rows = pair_rows(counted, m1, m2) if rows is None else rows
+    from edge_analysis.digest import _perm_p, _holm_pass
+    g = _counted(counted.assign(__m1=m1.values, __m2=m2.values))
+    g = g[(g["__m1"] != "") & (g["__m2"] != "")]
+    x, total = g["__r"], int(len(g))
+    keys, ps = [], []
+    for r in rows:
+        if PAIR_FEW <= r["n"] < total - 1:
+            mask = x.index.isin(r["idx"])
+            for d in ("good", "bad"):
+                keys.append((r["m1"], r["m2"], d))
+                ps.append(_perm_p(x, pd.Series(mask, index=x.index), lower=d == "bad"))
+    return {keys[i] for i in _holm_pass(ps)} if ps else set()
+
+
 def ranked_rows(rows: list[dict], names: list[str], head: str, col_head: str,
                 cap: bool = True) -> None:
     """The plain ranked rows (27 Sep): a sentence, then one row per group —
@@ -659,19 +679,10 @@ def pair_list(counted: pd.DataFrame, m1: pd.Series, m2: pd.Series, verdicts: boo
     rows = pair_rows(counted, m1, m2)
     if not rows:
         return False
-    from edge_analysis.digest import _perm_p, _holm_pass
     g = _counted(counted.assign(__m1=m1.values, __m2=m2.values))
     g = g[(g["__m1"] != "") & (g["__m2"] != "")]
-    x = g["__r"]
     total = int(len(g))
-    keys, ps = [], []
-    for r in rows:
-        if PAIR_FEW <= r["n"] < total - 1:
-            mask = x.index.isin(r["idx"])
-            for d in ("good", "bad"):
-                keys.append((r["m1"], r["m2"], d))
-                ps.append(_perm_p(x, pd.Series(mask, index=x.index), lower=d == "bad"))
-    passed = {keys[i] for i in _holm_pass(ps)} if ps else set()
+    passed = pair_tests(counted, m1, m2, rows)
 
     def lab(r, d):
         return "beats chance" if (r["m1"], r["m2"], d) in passed else "early read"

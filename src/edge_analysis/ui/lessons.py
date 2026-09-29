@@ -80,8 +80,12 @@ def lessons_frame(df: pd.DataFrame) -> pd.DataFrame:
 def summary(df: pd.DataFrame) -> dict:
     """Themes written 2+ times (most first), singles, and the headline counts."""
     lf = lessons_frame(df)
+    # a note copied onto two trades the same day was written once (28 Sep
+    # check: copies made "written 4x" of three)
+    once = (lf[~(pd.DataFrame({"d": lf["when"].dt.normalize(), "t": lf["text"]}).duplicated()
+                 & lf["when"].notna())] if len(lf) else lf)
     groups = []
-    for name, sub in lf.groupby("theme", sort=False):
+    for name, sub in once.groupby("theme", sort=False):
         if name == "Other" or len(sub) < 2:
             continue
         groups.append({"theme": name, "n": len(sub), "r": float(sub["r"].sum(skipna=True)),
@@ -89,7 +93,18 @@ def summary(df: pd.DataFrame) -> dict:
     groups.sort(key=lambda g: (-g["n"], -(g["last"].value if pd.notna(g["last"]) else 0)))
     grouped = {r["text"] for g in groups for r in g["rows"]}
     return {"n_trades": 0 if df is None else len(df), "n_lessons": len(lf), "groups": groups,
-            "singles": lf[~lf["text"].isin(grouped)].to_dict("records"), "all": lf.to_dict("records")}
+            "singles": once[~once["text"].isin(grouped)].to_dict("records"), "all": lf.to_dict("records")}
+
+
+def top_line(groups: list) -> tuple:
+    """The most-written theme in words, or every theme tied with it (28 Sep:
+    one of a three-way tie was named as "the one"). Returns (html, tied)."""
+    k = groups[0]["n"]
+    tied = [g for g in groups if g["n"] == k]
+    names = [f"<b>{_h.escape(g['theme'].lower())}</b>" for g in tied]
+    if len(names) == 1:
+        return f"{names[0]} ({k}\u00d7)", False
+    return f"{', '.join(names[:-1])} and {names[-1]} ({k}\u00d7 each)", True
 
 
 def _targets_line(df: pd.DataFrame) -> str:
@@ -133,8 +148,9 @@ def render_lessons(df: pd.DataFrame) -> bool:
     head = f"You've written a lesson on <b>{s['n_lessons']} of {s['n_trades']}</b> trades."
     if s["groups"]:
         top = s["groups"][0]
-        head += f" The one you come back to most: <b>{_h.escape(top['theme'].lower())}</b> ({top['n']}×)."
-        if top["theme"] == "Taking profit":
+        _tl, _many = top_line(s["groups"])
+        head += f" The one{'s' if _many else ''} you come back to most: {_tl}."
+        if top["theme"] == "Taking profit" and not _many:
             head += _targets_line(df)
     else:
         head += " None repeats yet; the ones you write twice will group here."

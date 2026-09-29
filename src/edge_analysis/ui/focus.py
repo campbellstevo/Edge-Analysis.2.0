@@ -136,6 +136,18 @@ _CSS = """
 .ea-fo-i .e{{flex:none;font-size:12px;font-weight:800;border-radius:999px;padding:2px 9px;white-space:nowrap;}}
 """
 
+# a tone as text: dark enough on its light tint, light enough on its dark one
+# (29 Sep, the first contrast scan of Focus: green chips 2.9:1 in light,
+# "Target reached" purple 2.0:1 in dark)
+_INK = {GREEN: ("#166534", "#4ade80"), RED: ("#b91c1c", "#f87171"),
+        PURPLE: ("#4800ff", "#b9a8ff"), AMBER: ("#92400e", "#fbbf24")}
+
+
+def _ink(c: str) -> str:
+    pair = _INK.get(c)
+    return c if pair is None else pair[1 if rx._dark() else 0]
+
+
 _STATES = {
     "clear": ("\u2713", GREEN, "Clear to trade"),
     "target": ("\u2605", PURPLE, "Target reached \u2014 protect it"),
@@ -168,17 +180,20 @@ def _right_now_html(s: dict, label: str | None, t: dict, after: str = "") -> str
     icon, c, head = _STATES[s["state"]]
     to_tgt = s["tgt"] - s["mtd"]
     if s["state"] == "stop":
-        sub = f"Past your {fmt_r(s['stop'], 1)} max loss. Flat until the 1st \u2014 that's the rule that keeps the account."
+        # the bar underneath marks the month, the stop and the target, so the
+        # line only says what it doesn't (28 Sep: the month's R twice)
+        sub = "Past your max loss. Flat until the 1st \u2014 that's the rule that keeps the account."
     elif s["state"] == "careful":
-        sub = f"{s['room']:.1f}R above your {fmt_r(s['stop'], 1)} stop. Half size, A+ only, or sit this one out."
+        sub = f"{s['room']:.1f}R of room left. Half size, A+ only, or sit this one out."
     elif s["state"] == "target":
-        sub = f"{fmt_r(s['mtd'], 1)} against a {fmt_r(s['tgt'], 1)} target. Anything more is a bonus; a giveback isn't."
+        sub = "Anything more is a bonus; a giveback isn't."
     else:
-        sub = (f"{s['month_name']} {fmt_r(s['mtd'], 1)} \u00b7 {s['room']:.1f}R of room to your stop"
+        sub = (f"{s['month_name']}: {s['room']:.1f}R of room to your stop"
                + (f" \u00b7 {to_tgt:.1f}R to target" if to_tgt > 0 else ""))
     if label:
         sub += f" \u00b7 {_h.escape(label)}"
     bg = c + ("22" if rx._dark() else "12")
+    # the heading's ink is inline: Plan formats this same template too
     css = _CSS.format(bg=bg, bc=c + "55", c=c, **t)
     last = s["last"]
     bits = [f"This week {fmt_r(s['week_r'], 1)} over {s['n_week']} trade{'s' if s['n_week'] != 1 else ''}"]
@@ -187,7 +202,7 @@ def _right_now_html(s: dict, label: str | None, t: dict, after: str = "") -> str
     joined = " \u00b7 ".join(bits)
     line = f'<div class="ea-fo-line">{joined}.' + (f" {after}" if after else "") + "</div>"
     return (rx.css(css) + f'<div class="ea-rx ea-fo"><div class="ea-fo-head"><div class="ea-fo-dot">{icon}</div>'
-            f'<div><b>{head}</b><span>{sub}</span></div></div>{_month_bar(s)}{line}</div>')
+            f'<div><b style="color:{_ink(c)};">{head}</b><span>{sub}</span></div></div>{_month_bar(s)}{line}</div>')
 
 
 def _checklist_html(items: list[dict], t: dict) -> str:
@@ -196,7 +211,7 @@ def _checklist_html(items: list[dict], t: dict) -> str:
         chip = ""
         if it.get("chip"):
             cc = it.get("color", PURPLE)
-            chip = f'<span class="e" style="color:{cc};background:{cc}1f;">{_h.escape(it["chip"])}</span>'
+            chip = f'<span class="e" style="color:{_ink(cc)};background:{cc}1f;">{_h.escape(it["chip"])}</span>'
         sub = f'<small>{_h.escape(it["sub"])}</small>' if it.get("sub") else ""
         rows += (f'<div class="ea-fo-i"><span class="n"></span><span class="t">{_h.escape(it["text"])}{sub}</span>'
                  f'{chip}</div>')
@@ -356,16 +371,18 @@ def rundown(g: pd.DataFrame, verdicts: bool) -> list[dict]:
             if parts:
                 items.append({"area": "When you trade", "tab": "Entry", "tone": "",
                               "html": "; ".join(parts) + "."})
-    if "setup" in cols:
-        stats = rr.groupby(cols["setup"]).agg(["count", "sum"])
-        stats = stats[stats["count"] >= 3]
-        if len(stats):
-            bst = stats["sum"].idxmax()
-            ok = ("setup", bst, "good") in fam["passed"]
-            if stats.loc[bst, "sum"] > 0 and (verdicts or ok):
+    if e1 and e2:
+        from edge_analysis.ui.tabs import _clean_model_cell
+        _gc = g.assign(**{"Closed RR": rr}) if "Closed RR" not in g.columns else g
+        pm1, pm2 = g[e1].map(_clean_model_cell), g[e2].map(_clean_model_cell)
+        prs = rx.pair_rows(_gc, pm1, pm2)
+        best = next((r for r in prs if r["n"] >= 3), None)
+        if best is not None and best["exp"] > 0:
+            ok = (best["m1"], best["m2"], "good") in rx.pair_tests(_gc, pm1, pm2, prs)
+            if verdicts or ok:
                 items.append({"area": "Best setup", "tab": "Entry", "tone": "",
-                              "html": f"<b>{_h.escape(str(bst))}</b>: {fmt_r(stats.loc[bst, 'sum'], 1)} over "
-                                      f"{int(stats.loc[bst, 'count'])} trades{_lab(ok)}."})
+                              "html": f"<b>{_h.escape(best['m1'])}</b> then <b>{_h.escape(best['m2'])}</b>: "
+                                      f"{fmt_r(best['exp'])} a trade over {best['n']}{_lab(ok)}."})
     tg = rx.targets_frame(g.assign(**{"Closed RR": rr}) if "Closed RR" not in g.columns else g)
     if tg is not None:
         ts = rx.targets_summary(tg)
@@ -391,9 +408,9 @@ def rundown(g: pd.DataFrame, verdicts: bool) -> list[dict]:
                                      if untagged else ".")})
     grp = _ls.summary(g)["groups"]
     if grp:
+        top, many = _ls.top_line(grp)
         items.append({"area": "Your lessons", "tab": "Psychology", "tone": "",
-                      "html": f"The one you write most: <b>{_h.escape(grp[0]['theme'].lower())}</b> "
-                              f"({grp[0]['n']}\u00d7)."})
+                      "html": f"The one{'s' if many else ''} you write most: {top}."})
     return items
 
 
@@ -448,12 +465,28 @@ def render_focus(f_perf: pd.DataFrame, df_all: pd.DataFrame, styler) -> None:
 
     # 2. The rundown: the most important line from every part of the site
     from edge_analysis.ui.tabs import _verdicts_on
-    items = rundown(g, _verdicts_on())
-    if items:
+    # (28 Sep check: Focus took the filtered trades and never used them) the
+    # rundown reads what the views it sums up read, the trades the filters
+    # leave; the month above and the checklist below read the whole book,
+    # like the month card and Plan
+    _ss = st.session_state
+    _filtered = any(_ss.get(k, "All") != "All" for k in
+                    ("filters_inst_select", "filters_sess_select", "filters_em_select", "filters_date_mode"))
+    gf, _nf = g, None
+    if _filtered and f_perf is not None:
+        gf = dated(T._track_only(f_perf)[0]) if not f_perf.empty else None
+        _nf = 0 if gf is None else len(gf)
+    items = rundown(gf, _verdicts_on())
+    if items or _nf is not None:
         with st.container(border=True):
             st.markdown('<div class="ea-card-anchor"></div>', unsafe_allow_html=True)
-            T._card_header("The rundown", "The most important thing each part of the site is telling you.")
-            st.markdown(_rundown_html(items, t), unsafe_allow_html=True)
+            T._card_header("The rundown", "The most important thing each part of the site is telling you"
+                           + (f" \u2014 for the {_nf} trade{'s' if _nf != 1 else ''} your filters leave."
+                              if _nf is not None else "."))
+            if items:
+                st.markdown(_rundown_html(items, t), unsafe_allow_html=True)
+            else:
+                st.caption("No trades match your filters.")
 
     # 3. The top of the checklist; the whole list lives on Plan
     m = plan_model(df_all)
@@ -477,4 +510,5 @@ def render_focus(f_perf: pd.DataFrame, df_all: pd.DataFrame, styler) -> None:
             T._card_header("Before your next trade", "The top of your checklist. The whole list is on Plan.")
             st.markdown(rx.css(_CSS.format(bg="", bc="", c="", **t)) + _checklist_html(chk[:4], t),
                         unsafe_allow_html=True)
-    st.caption("Everything else is one switch away: turn Focus off in the header.")
+    st.caption("Everything else is one switch away: turn Focus off at the top of the page "
+               "(on a phone it's in the \u22ef menu).")
