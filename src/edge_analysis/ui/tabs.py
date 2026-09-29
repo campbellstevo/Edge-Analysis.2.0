@@ -2481,19 +2481,14 @@ def _instruments_tab(f: pd.DataFrame, show_table):
                          **{"Win %": r["win_rate"], "BE %": r["be_rate"], "Loss %": r["loss_rate"],
                             "Net PnL (R)": net_rr, "Expectancy (R)": ex_rr}))
     if rows:
-        inst_df = pd.DataFrame(rows).sort_values("Win %", ascending=False).reset_index(drop=True)
+        inst_df = pd.DataFrame(rows).sort_values("Expectancy (R)", ascending=False).reset_index(drop=True)
         st.markdown("### Assets")
-        if not inst_df.empty:
-            best_inst = inst_df.iloc[0]
-            worst_inst = inst_df.iloc[-1]
-            if len(inst_df) > 1 and best_inst["Instrument"] != worst_inst["Instrument"]:
-                _insight_box(
-                    f"<b>{best_inst['Instrument']}</b> is your best-performing asset at "
-                    f"<b>{best_inst['Win %']:.1f}%</b> win rate. "
-                    f"<b>{worst_inst['Instrument']}</b> trails at <b>{worst_inst['Win %']:.1f}%</b>. "
-                    f"Focus on the assets where your system behaves — and switch when "
-                    f"conditions stop suiting your edge.")
-        render_entry_model_table(inst_df, title=None)
+        # the house rows (R a trade, tested), the table one tap away
+        from edge_analysis.ui import reshape as rx
+        rx.label_board(counted, counted["Instrument"].map(_asset_label), "Asset", _verdicts_on(),
+                       empty="Each row is what trades on that asset paid, best first.")
+        with st.expander("Every number, as a table"):
+            render_entry_model_table(inst_df, title=None)
     else:
         _empty_note("No instrument stats available.")
 

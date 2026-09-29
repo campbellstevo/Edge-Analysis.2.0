@@ -596,6 +596,48 @@ def when_board(df: pd.DataFrame, sessions: bool = True, verdicts: bool = True,
     return True
 
 
+def label_board(df: pd.DataFrame, labels: pd.Series, kind: str, verdicts: bool = True,
+                empty: str = "Each row is what those trades paid, best first.") -> bool:
+    """One block of the plain ranked rows for any label (assets, say): one
+    sentence, R a trade, Holm-tested across every row both ways; members see
+    only what beats chance. The Assets box it replaced ranked by win rate
+    and said "GC is your best-performing asset at 0.0% ... MGC trails at
+    0.0%" over a table that had GC the worse (28 Sep check). False when
+    fewer than two labels carry trades."""
+    g = _counted(df.assign(__lab=pd.Series(list(labels), index=df.index).map(_txt)))
+    g = g[g["__lab"] != ""]
+    if g["__lab"].nunique() < 2:
+        return False
+    total = int(len(g))
+    rows = group_rows(g, g["__lab"])
+    from edge_analysis.digest import _perm_p, _holm_pass
+    x = g["__r"]
+    keys, ps = [], []
+    for r in rows:
+        if PAIR_FEW <= r["n"] < total - 1:
+            m = pd.Series(x.index.isin(r["idx"]), index=x.index)
+            for d in ("good", "bad"):
+                keys.append((r["m"], d))
+                ps.append(_perm_p(x, m, lower=d == "bad"))
+    passed = {keys[i] for i in _holm_pass(ps)} if ps else set()
+    ok = [r for r in rows if r["n"] >= 3]
+    part = []
+    if ok:
+        best, worst = ok[0], ok[-1]
+
+        def lab_(r, d):
+            return "beats chance" if (r["m"], d) in passed else "early read"
+        if best["exp"] > 0 and (verdicts or (best["m"], "good") in passed):
+            part.append(f"<b>{_h.escape(best['m'])}</b> leads at {_h.escape(fmt_r(best['exp']))} a trade over "
+                        f"{best['n']} <span class='ea-pl-l'>{lab_(best, 'good')}</span>")
+        if worst is not best and worst["exp"] < 0 and (verdicts or (worst["m"], "bad") in passed):
+            part.append(f"<b>{_h.escape(worst['m'])}</b> costs {_h.escape(fmt_r(worst['exp']))} a trade over "
+                        f"{worst['n']} <span class='ea-pl-l'>{lab_(worst, 'bad')}</span>")
+    head = ("; ".join(part) + ".") if part else empty
+    ranked_rows(rows, [f"<span>{_h.escape(r['m'])}</span>" for r in rows], head, kind)
+    return True
+
+
 STATE_MIN = 3         # a second state needs this many trades before states are compared
 
 
